@@ -1,0 +1,238 @@
+\documentclass[a4paper, 11pt]{article}
+
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{subscript}
+% Use symbols like degrees
+\usepackage{gensymb}
+% In case we need to rotate a table
+\usepackage{rotating}
+% To insert code samples
+\usepackage{listings}
+
+% Change margins because article class is too small
+\addtolength{\oddsidemargin}{-2cm}
+\addtolength{\evensidemargin}{12cm}
+\addtolength{\textwidth}{4cm}
+\addtolength{\topmargin}{-3cm}
+\addtolength{\textheight}{5cm}
+
+% define some colors here if needed
+\definecolor{_green}{rgb}{0,0.6,0}
+\definecolor{_gray}{rgb}{0.5,0.5,0.5}
+\definecolor{_mauve}{rgb}{0.58,0,0.82}
+\definecolor{_lyellow}{rgb}{0.1,0.1,0.1}
+
+% code listing settings
+\lstset{
+  %rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
+  tabsize=2,	                   
+  title=\lstname                    % show the filename of files included with \lstinputlisting; also try caption instead of title
+  backgroundcolor=\color{white},  % choose the background color;
+  language=C++,                     % the language of the code
+  basicstyle=\ttfamily\small,       % the size of the fonts that are used for the code 
+  aboveskip={1.0\baselineskip},
+  belowskip={1.0\baselineskip},
+  columns=fixed,
+  extendedchars=true,               % lets you use non-ASCII characters; for 8-bits encodings only, does not work with UTF-8
+  breaklines=true,                  % sets automatic line breaking
+  tabsize=4,                        % sets default tabsize to X spaces
+  prebreak=\raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+  frame=lines,                      % adds a frame around the code (eg. single)
+  showtabs=false,                   % show tabs within strings adding particular underscores
+  showspaces=false,                 % show spaces everywhere adding particular underscores; it overrides 'showstringspaces'
+  showstringspaces=false,           % underline spaces within strings only
+  keywordstyle=\color{_mauve},      % keyword style
+  commentstyle=\color{_green},      % comment style
+  stringstyle=\color{_gray},        % string literal style
+  deletekeywords={...},             % if you want to delete keywords from the given language
+  otherkeywords={*,...},            % if you want to add more keywords to the set
+  numbers=left,                     % where to put the line-numbers;
+  keepspaces=true,                  % keeps spaces in text, useful for keeping indentation of code (possibly needs columns=flexible)
+  numberstyle=\footnotesize\color{_gray},% the style that is used for the line-numbers 
+  stepnumber=1,                     % the step between two line-numbers.
+  numbersep=5pt,                    % how far the line-numbers are from the code
+  captionpos=t,                     % sets the caption-position bottom(b), top(t)
+  escapeinside={\%*}{*)}            % if you want to add LaTeX within your code
+}
+
+
+\begin{document}
+\title{Add new modules in the CASToR code}
+\maketitle
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section*{Foreword}
+
+CASToR is designed to be flexible, but also as generic as possible.
+Any new implementation should be thought to be usable in as many contexts as possible; among all modalities, all types of data, all types of algorithms, etc.
+
+Before adding some new code to CASToR, it is highly recommended to read the general documentation \textit{CASToR\_general\_documentation.pdf} to get a good overview of the project, as well as the programming guidelines \textit{CASToR\_\_programming\_guidelines.pdf}.
+The doxygen documentation is also a very good resource to help understanding the code architecture.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Summary}
+
+This HowTo guide describes the philosophy of the modular organization of the CASToR code.
+It explains how it is built and how to add your own modules by simply observing a few rules and implementing a few mandatory functions.\\
+
+Adding a module can be done in any part of the code where a manager class makes use of an abstract class (prefixed by the letter 'v', \textit{e.g. vProjector}).
+To add your own module, the idea is to build a specific class that inherits from this abstract class.
+In this abstract class, a few pure virtual functions are declared and used in the rest of the code.
+These pure virtual functions are empty and have to be implemented by your specific class defining your own module.\\
+
+To make things even easier, we provide an example of template class associated to each abstract class that already implements the whole squeleton.
+Basically, you will have to change the name of the class and fill the functions up with your own code.
+Considering an abstract class \textit{vClass} located in a thematic sub-folder \textit{theme}, the actual template files will be \textit{include/theme/iClassTemplate.hh} and \textit{src/theme/iClassTemplate.cc}.
+These files are actually already part of the source code and can be used as a starting point for your own development.\\
+
+Right below are the instructions to help you fill the mandatory part of these template files according to the CASToR architecture.
+As a matter of illustration, the example of creating a new projector is used throughout this guide.
+It can be replaced by any type of module as the philosophy is the same in the whole CASToR project: \textit{e.g.} projectors, optimizers, convolvers, processing, etc.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Constructor and destructor}
+
+As specified in the \textit{CASToR\_HowTo\_\_programming\_guidelines.pdf}, using parameters in a constructor or destructor is forbidden.
+The aim of the constructor is strictly to set a default value to all members.
+All parameters will be set using a different mechanism explained below.
+The destructor should only destroy what was constructed by the class, still checking the validity of any pointer before calling a \textit{delete} or \textit{free} function.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Auto-inclusion mechanism}
+
+When you want to add a new module in CASToR, you only have to implement the associated class inheriting from the corresponding abstract class.
+In order to get this new class operating in the CASToR code, there is an automatic mechanism that do the trick for you.
+What you have to do is adding two mandatory lines of code in the header file associated to your own class.
+The macro definitions associated to these lines can be found at the end of the abstract class header (\textit{vProjector.hh} for example in the case of a projector).
+It makes use of the sAddonManager class that manages the modules, as the name suggests (can be found in the \textit{management} sub-folder).
+It is inspired by the same mechanism used in the GATE simulation software (www.opengatecollaboration.org).\\
+
+The first line has to be added inside the corpus of the class definition in the header file, as a public declaration, as shown in the sample code below.
+You simply have to change the name of the macro function by the one used inside the abstract class, and change the parameter of the macro function by the name of your class.
+As a matter of organization, keep the name of the abstract class as a suffix (replacing the first letter 'v' by 'i') and add the suffix of your choice.
+Here is an example for the case of a projector.
+\begin{lstlisting}[label={make_function},caption=The function that creates the projector.]
+public:
+  FUNCTION_PROJECTOR( iProjectorYourName )
+\end{lstlisting}
+
+The second line has to be added outside of the corpus of the class definition in the header file, as shown in the sample code below.
+This is where the association of your class with a parameter's name (to call it from the command line) is made.
+You simply have to change the first parameter with the command line name of your projector, and the second parameter by the actual name of your class.
+\begin{lstlisting}[label={class_creator},caption=The singleton class that uses the maker function to create the projector.]
+CLASS_PROJECTOR( myProjector, iProjectorYourName )
+\end{lstlisting}
+
+Be sure not to add semi-colon at the end of those lines.\\
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Mandatory functions to be implemented}
+
+In order to try to keep the code as robust as possible, the addition of modules in CASToR has to follow some pre-defined rules.
+To constrain the user/developer to respect these rules and make the code robust, abstract classes with pure virtual functions are used.
+This means that if those functions are not implemented within the module inheriting from the abstract class, the compiler will crash and ask you to implement these functions.
+These pure virtual functions can be separated in three groups: interface-related functions, management functions and specific functions.
+Below is a description of the functions included into these three groups.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\subsection{Interface-related functions}
+
+CASToR is designed to be user-friendly (understand convenient command-line options with detailed command-line help).
+For a given family of modules (\textit{e.g.} the projectors), the choice of the module (\textit{i.e.} the actual projector) is made through the use of a command-line option dedicated to this family (\textit{-proj} for the projectors), followed by the name of the chosen module (\textit{i.e. myProjector} in this example).
+To customize the parameters peculiar to the module, CASToR offers two possibilities that both should be implemented: read parameters from a configuration file, or read parameters from a list.
+One additional function should provide some help on to how to use this projector and provide its associated parameters.
+There are three possible ways to call a module through the command-line options (example for the projector):
+
+\begin{description}
+  \item [-proj myProjector]: No argument is given, then the default configuration file while be used to get the values associated to the specific parameters. The
+                             default configuration file has to be located inside the \textit{projector} sub-folder of the CASToR configuration folder. Its name
+                             has to be \textit{myProjector.conf}. By construction, a default configuration file is mandatory, even without parameter, just leave
+                             an empty file.
+  \item [-proj myProjector:path/to/configuration/file.conf]: In this case, the configuration file provided along with the chosen projector will be used instead of
+                                                             the default configuration file.
+  \item [-proj myProjector,parameter1,parameter2,...,parameterN]: In this case, the specific parameters are directly read from the provided list of parameters. No
+                                                                  configuration will be read. The order of the provided parameters and their syntax must be in
+                                                                  agreement with the help provided by the mandatory \textit{ShowHelp()} function (see below).
+\end{description}
+
+For families of modules that can be used in different parts of the program, the option is completed by the sign \textit{::} followed by a list of keywords describing when to apply the module, separated by commas.
+As an example, here is how to write the option to use a stationary Gaussian image convolver within iterations as well as a post-processing, with a transaxial FWHM of 3mm, an axial FWHM of 4mm and 3.5 sigmas included in the convolution kernel:
+
+\begin{lstlisting}[label={},caption={A command line option to use a gaussian convolver within iterations as well as a post-processing, with a transaxial FWHM of 3mm, an axial FWHM of 4mm and 3.5 sigmas included in the convolution kernel.}]
+-conv gaussian,3.,4.,3.5::intra,post
+\end{lstlisting}
+
+The reading of a configuration file associated to the module is made by the following function:
+\begin{lstlisting}[label={ReadConfigurationFile},caption=Function to read a configuration file for your module.]
+int ReadConfigurationFile(const string& a_configurationFile);
+\end{lstlisting}
+
+A configuration file is basically a text file containing on each line, the name of a parameter, a colon (\textit{i.e. ':'}), and the value of the parameter.
+To ease the implementation, some functions designed to read parameters from a text file or a string are already implemented within the \textit{include/management/gOptions.hh}
+file.
+If you want to see examples on how to use these functions, have a look at some other modules already implemented.
+The parameters' name read into the configuration file have to be consistent with the help provided by the \textit{ShowHelp()} function (see below).
+This function returns 0 if no issue was encountered and a positive value otherwise, so that errors can be caught.\\
+
+The reading of the parameters through a list is made by the following function:
+\begin{lstlisting}[label={ReadOptionsList},caption=Function to read a list of options for your module.]
+int ReadOptionsList(const string& a_optionsList);
+\end{lstlisting}
+
+All parameters' values are separated by commas.
+To ease the implementation, some functions designed to read parameters from a text file or a string are already implemented within the \textit{include/management/gOptions.hh} file.
+If you want to see examples on how to use these functions, have a look at some other projectors already implemented.
+The parameters' values read into the list and their order have to be consistent with the help provided by the \textit{ShowHelp()} function (see below).
+This function returns 0 if no problem was encountered and a positive value otherwise, so that errors can be caught.\\
+
+The function that provides some help about how to use your module (when using the \textit{-help-proj} option in the case of projectors) is the following:
+\begin{lstlisting}[label={ShowHelpSpecific},caption=Function to give specific help on how to use your module.]
+void ShowHelpSpecific();
+\end{lstlisting}
+or sometimes simply:
+\begin{lstlisting}[label={ShowHelp},caption=Function to give specific help on how to use your module.]
+void ShowHelp();
+\end{lstlisting}
+
+This function should provide some clear and detailed description and instructions about what your module does and how to use it through its specific parameters.
+The list of all parameters should be detailed and well documented.
+Their order when reading a parameters list from the \textit{ReadOptionsList()} function should also be clear.
+If the method you use has already been published, the relevant references must be provided.
+This function is called when using the help option associated to the family of modules in the command-line (\textit{-help-proj} in the case of projectors).
+More precisely, the \textit{sAddonManager} will ask all modules to describe themselves through their specific \textit{ShowHelp()} or \textit{ShowHelpSpecific()} functions.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\subsection{Management functions}
+
+CASToR makes its best to keep a standardized and robust code.
+For all modules, once the object is constructed and the parameters are set, one has to check the parameters' values and initialize what needs to be initialized.
+To do that, two pure virtual functions have to be implemented.
+
+First, a function to check all parameters pecular to the module must be implemented.
+This function must return 0 if no problem was encountered and a positive value otherwise, so that errors can be caught.
+It has the following definition:
+\begin{lstlisting}[label={CheckSpecificParameters},caption=Function to check the value of all parameters pecular to your module.]
+int CheckSpecificParameters();
+\end{lstlisting}
+
+Second, a function to initialize all specific parameter that has to be initialized in order to be usable.
+This function must also return 0 if no problem was encountered and a positive value otherwise, so that errors can be caught.
+It has the following definition:
+\begin{lstlisting}[label={InitializeSpecific},caption=Function to initialize all pecular stuff to your module.]
+int InitializeSpecific();
+\end{lstlisting}
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\subsubsection{Specialized functions}
+
+The specialized functions are those whose purpose is specific to the family the module belongs to.
+These functions are also pure virtual and their definitions can be found in the abstract class associated to the module family.
+For any module family, a dedicated guide can be found that describes the purpose of these functions and the tools to implement them.
+The doxygen language is also used to directly document the code, \textit{i.e.} purpose and aim of each class/function.
+So please refer to these sources of documentation.
+
+\end{document}
+

@@ -1,0 +1,195 @@
+\documentclass[a4paper, 11pt]{article}
+
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{subscript}
+% Use symbols like degrees
+\usepackage{gensymb}
+% In case we need to rotate a table
+\usepackage{rotating}
+% To insert code samples
+\usepackage{listings}
+
+% Change margins because article class is too small
+\addtolength{\oddsidemargin}{-2cm}
+\addtolength{\evensidemargin}{12cm}
+\addtolength{\textwidth}{4cm}
+\addtolength{\topmargin}{-3cm}
+\addtolength{\textheight}{5cm}
+
+% define some colors here if needed
+\definecolor{_green}{rgb}{0,0.6,0}
+\definecolor{_gray}{rgb}{0.5,0.5,0.5}
+\definecolor{_mauve}{rgb}{0.58,0,0.82}
+\definecolor{_lyellow}{rgb}{0.1,0.1,0.1}
+
+% code listing settings
+\lstset{
+  %rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
+  tabsize=2,	                   
+  title=\lstname                    % show the filename of files included with \lstinputlisting; also try caption instead of title
+  backgroundcolor=\color{white},  % choose the background color;
+  language=C++,                     % the language of the code
+  basicstyle=\ttfamily\small,       % the size of the fonts that are used for the code 
+  aboveskip={1.0\baselineskip},
+  belowskip={1.0\baselineskip},
+  columns=fixed,
+  extendedchars=true,               % lets you use non-ASCII characters; for 8-bits encodings only, does not work with UTF-8
+  breaklines=true,                  % sets automatic line breaking
+  tabsize=4,                        % sets default tabsize to X spaces
+  prebreak=\raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+  frame=lines,                      % adds a frame around the code (eg. single)
+  showtabs=false,                   % show tabs within strings adding particular underscores
+  showspaces=false,                 % show spaces everywhere adding particular underscores; it overrides 'showstringspaces'
+  showstringspaces=false,           % underline spaces within strings only
+  keywordstyle=\color{_mauve},      % keyword style
+  commentstyle=\color{_green},      % comment style
+  stringstyle=\color{_gray},        % string literal style
+  deletekeywords={...},             % if you want to delete keywords from the given language
+  otherkeywords={*,...},            % if you want to add more keywords to the set
+  numbers=left,                     % where to put the line-numbers;
+  keepspaces=true,                  % keeps spaces in text, useful for keeping indentation of code (possibly needs columns=flexible)
+  numberstyle=\footnotesize\color{_gray},% the style that is used for the line-numbers 
+  stepnumber=1,                     % the step between two line-numbers.
+  numbersep=5pt,                    % how far the line-numbers are from the code
+  captionpos=t,                     % sets the caption-position bottom(b), top(t)
+  escapeinside={\%*}{*)}            % if you want to add LaTeX within your code
+}
+
+
+\begin{document}
+\title{Image convolvers in CASToR}
+\maketitle
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section*{Foreword}
+
+CASToR is designed to be flexible, but also as generic as possible.
+Any new implementation should be thought to be usable in as many contexts as possible; among all modalities, all types of data, all types of algorithms, etc.
+
+Before adding some new code to CASToR, it is highly recommended to read the general documentation \textit{CASToR\_general\_documentation.pdf} to get a good overview of the project, as well as the programming guidelines \textit{CASToR\_\_programming\_guidelines.pdf}.
+Also, the philosophy about adding new modules in CASToR (\textit{e.g.} projectors, optimizers, deformations, image processing, etc) is fully explained in \textit{CASToR\_\_add\_new\_modules.pdf}.
+Finally, the doxygen documentation is a very good resource to help understanding the code architecture.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Summary}
+
+This HowTo guide describes how to add your own image convolver into CASToR. CASToR is mainly designed to be modular in the sense that adding a new feature should
+be as easy and flexible as possible. This guide begins with a rough description of the image convolver part of the CASToR architecture that explains the chosen philosophy.
+Then follows a step-by-step guide that explains how to add a new image convolver by simply adding a new class with few mandatory requirements.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{The image convolver architecture}
+
+The image convolver part of the code is based on 2 main classes: \textit{oImageConvolverManager} and \textit{vImageConvolver}. The main program will instantiate
+and initialize the \textit{oImageConvolverManager}. It is in charge of reading command line options and instantiating the different children of \textit{vImageConvolver}.
+As many convolvers as desired can be used/combined, each one is declared by the option \textit{-conv} when executing the reconstruction code. To get some help on how to use it and a list of the implemented
+convolvers, execute the program with the option \textit{-help-conv}. The option format follows the philosophy described in \textit{CASToR\_HowTo\_\_add\_new\_modules.pdf}.
+Any image convolver can be used at different places during the program execution. For iterative algorithms, it can be used on the image to be forward-projected,
+on the back-projected correction terms, on the current estimated image either as a post-processing step (applied to the image to be saved), or as an intra-iterations
+processing (the convolved image is put back into the next update as the current estimate).\\
+
+During the initialization the \textit{oImageConvolverManager} will call the \textit{BuildConvolutionKernel()} function of each image convolver to actually build the
+convolution kernels. All convolutions are based on a pre-computed convolution kernel which is then used by the \textit{Convolve()} and \textit{ConvolveTranspose()}
+functions when applying the convolution to images. These functions are already implemented by the \textit{vImageConvolver} abstract class, for stationary kernels. If
+one wants to implement a non-stationary convolution, one has to overload these functions in the child convolver. The \textit{Convolve()} and \textit{ConvolveTranspose()}
+are used by the \textit{oImageConvolverManager} to apply the convolution when the user asked for during the execution of the program. More specifically, the
+\textit{ConvolverTranspose()} function is applied on the back-projected correction terms and on the sensitivity image, when used within iterative algorithms. In any
+other cases, the \textit{Convolve()} function is applied.\\
+
+Below is a more detailed description of how the image convolvers are used and how to add your own.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Add your own image convolver}
+
+\subsection{Basic concept}
+
+To add your own image convolver, you only have to build a specific class that inherits from the abstract class \textit{vImageConvolver}. Then, you just have to implement
+a bunch of pure virtual functions that will correspond to the specific stuff you want your new image convolver to do. Please refer to the
+\textit{CASToR\_\_add\_new\_modules.pdf} guide in order to fill up the mandatory parts of adding a new module (your new image convolver is a module); namely
+the auto-inclusion mechanism, the interface-related functions and the management functions. Right below are some instructions to help you fill the specific
+pure virtual functions of your image convolver.\\
+
+To make things easier, we provide an example of template class that already implements all the squeleton. Basically, you will have to change the name of the class
+and fill the functions up with your own code. The actual files are \textit{include/image/iImageConvolverTemplate.hh} and \textit{src/image/iImageConvolverTemplate.cc}
+and are actually already part of the source code.
+
+\subsection{Implementation of the specific functions}
+
+There are 3 functions of interest:
+
+\begin{description}
+  \item [BuildConvolutionKernel()]: This function is pure virtual in \textit{vImageConvolver} so it has to be implemented by the specific image convolver inheriting from it.
+  \item [Convolve()]: This function is virtual but has an implementation within \textit{vImageConvolver}. However it is only designed for stationary kernels. It has to be
+                      overloaded in the case of non-stationary kernels.
+  \item [ConvolveTranspose()]: This function is virtual but has an implementation within \textit{vImageConvolver}. However it is only designed for stationary kernels. It has
+                               to be overloaded in the case of non-stationary kernels.
+\end{description}
+
+All information and the tools needed to implement these functions are fully described in the template source file \textit{src/image/iImageConvolverTemplate.cc}, so please
+refer to it.\\
+
+To be as generic as possible, a convolution is not performed in the Fourrier space but is based on convolution kernels. The kernels built by the \textit{BuildConvolutionKernel()}
+function are computed during the initialization. The kernels are described using the following members of \textit{vImageConvolver}:
+
+\begin{lstlisting}[label={Kernel members},caption=Variables members of vImageConvolver describing the convolution kernels.]
+  // The number of kernels (1 if stationary, more otherwise
+  INTNB m_nbKernels;
+  // The dimension of each kernel along X
+  INTNB* mp_dimKernelX;
+  // The dimension of each kernel along Y
+  INTNB* mp_dimKernelY;
+  // The dimension of each kernel along Z
+  INTNB* mp_dimKernelZ;
+  // The actual kernels, first pointer for the number of kernels, second pointer for the kernel values
+  FLTNB** mpp_kernel;
+\end{lstlisting}
+
+The member \textit{m\_nbKernels} specifies the number of kernels. In the stationary case, this number is equal to 1. In the non-stationary case, it is greater than 1. For each kernel, its dimensions
+along each axis are specified by the members \textit{mp\_dimKernelX}, \textit{mp\_dimKernelY} and \textit{mp\_dimKernelZ}. Finally, the values of each kernel are specified by the member
+\textit{mpp\_kernel}. The values for a kernel \textit{i} are specified in the table \textit{mpp\_kernel[i]}. These values are organized as for the images: the 3 spatial dimensions are
+flattened in a single dimension. Basically, if one wants the kernel value for \textit{X=x}, \textit{Y=y} and \textit{Z=z}, this is done through:
+
+\begin{lstlisting}[label={3D},caption={How to access kernel value for X=x, Y=y and Z=z of kernel i}]
+  INTNB kernel_index = z*mp_dimKernelX[i]*mp_dimKernelY[i] + y*mp_dimKernelX[i] + x;
+  FLTNB kernel_value = mpp_kernel[i][kernel_index];
+\end{lstlisting}
+
+So inside the \textit{BuildConvolutionKernel()} function, one has to allocate and specify all these members describing the convolution kernels. If the convolution is stationary, this
+is the only thing to do. In the non-stationary case, the organization of the actual kernels values and positions is up to the user who has to overload the
+\textit{Convolve()} and \textit{ConvolveTranspose()} functions. Their implementation is also up to the user, so as to be in agreement with how the kernels are organized.\\
+
+To speed up the convolution operations, the image to be convolved is copied into a padded buffer. Note that this is automatically done by the \textit{oImageConvolverManager} before
+calling any of the \textit{Convolve()} or \textit{ConvolveTranspose()} functions. The padded buffer is the actual image with some null (zero) values added all around. The amount of
+zeros added along each dimension is based on the maximum kernel size with respect to this dimension. In the convolution code, all loops can thus be made without any checks, speeding
+up the execution. To see how it is done for stationary kernels, look at the implementation of the \textit{vImageConvolver::Convolve()} function. So, when implementing the convolution
+for non-stationary kernels, the image to be convolved is in \textit{mp\_paddedImage} member of \textit{vImageConvolver}. Its dimensions and pad offsets can be found in the following
+members:
+
+\begin{lstlisting}[label={Pad members},caption={Variables members of vImageConvolver describing the padded image buffer.}]
+  // The actual padded buffer image
+  FLTNB* mp_paddedImage;
+  // The offset of the padded image along X
+  INTNB m_offsetX;
+  // The offset of the padded image along Y
+  INTNB m_offsetY;
+  // The offset of the padded image along Z
+  INTNB m_offsetZ;
+  // The number of voxels of the padded image along X
+  INTNB m_dimPadX;
+  // The number of voxels of the padded image along Y
+  INTNB m_dimPadY;
+  // The number of voxels of the padded image along Z
+  INTNB m_dimPadZ;
+  // The number of voxels of the padded image in a slice
+  INTNB m_dimPadXY;
+  // The total number of voxels of the padded image
+  INTNB m_dimPadXYZ;
+\end{lstlisting}
+
+The convolved image has to be written inside the output image provided as a parameter of the \textit{Convolve()} or \textit{ConvolveTranspose()} functions.
+
+\end{document}
+

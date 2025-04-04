@@ -1,0 +1,19 @@
+
+## New features
+- Add Time-Of-Flight support for both histogram and list-mode PET data.
+  All projectors now have 3 different implementations: withoutTOF, withTOFBin (histogram), withTOFPos (list-mode).
+- Add the distance driven projector from De Man and Basu.
+- Add CT support, currently through ascii description only for flat panel detectors:
+  - add the MLTR optimizer.
+  - adapt the MLEM and Landweber optimizers to deal with transmission data using their log converted expression.
+- Add a zoom option for SPECT monolithic block detectors. This is used during acquisition, so the zoom along with the
+  total size of the detector block define the new effective size of the detector in which the acquisition bins are
+  included (the rest of the detector being blind/ignored).
+
+## Bug corrections, code changes, that can affect the results in some way
+- Minor changes in projectors incrementalSiddon and Joseph.
+- Add HPFLTNB float number macro definition. It is dedicated to parts of code that need high precision computation accuracy.
+
+## Small bug fixes
+- Several but not listed...
+

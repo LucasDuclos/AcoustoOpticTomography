@@ -1,0 +1,306 @@
+\documentclass[a4paper, 11pt]{article}
+
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{subscript}
+% Use symbols like degrees
+\usepackage{gensymb}
+% In case we need to rotate a table
+\usepackage{rotating}
+% To insert code samples
+\usepackage{listings}
+
+% Change margins because article class is too small
+\addtolength{\oddsidemargin}{-2cm}
+\addtolength{\evensidemargin}{12cm}
+\addtolength{\textwidth}{4cm}
+\addtolength{\topmargin}{-3cm}
+\addtolength{\textheight}{5cm}
+
+% define some colors here if needed
+\definecolor{_green}{rgb}{0,0.6,0}
+\definecolor{_gray}{rgb}{0.5,0.5,0.5}
+\definecolor{_mauve}{rgb}{0.58,0,0.82}
+\definecolor{_lyellow}{rgb}{0.1,0.1,0.1}
+
+% code listing settings
+\lstset{
+  %rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
+  tabsize=2,	                   
+  title=\lstname                    % show the filename of files included with \lstinputlisting; also try caption instead of title
+  backgroundcolor=\color{white},  % choose the background color;
+  language=C++,                     % the language of the code
+  basicstyle=\ttfamily\small,       % the size of the fonts that are used for the code 
+  aboveskip={1.0\baselineskip},
+  belowskip={1.0\baselineskip},
+  columns=fixed,
+  extendedchars=true,               % lets you use non-ASCII characters; for 8-bits encodings only, does not work with UTF-8
+  breaklines=true,                  % sets automatic line breaking
+  tabsize=4,                        % sets default tabsize to X spaces
+  prebreak=\raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+  frame=lines,                      % adds a frame around the code (eg. single)
+  showtabs=false,                   % show tabs within strings adding particular underscores
+  showspaces=false,                 % show spaces everywhere adding particular underscores; it overrides 'showstringspaces'
+  showstringspaces=false,           % underline spaces within strings only
+  keywordstyle=\color{_mauve},      % keyword style
+  commentstyle=\color{_green},      % comment style
+  stringstyle=\color{_gray},        % string literal style
+  deletekeywords={...},             % if you want to delete keywords from the given language
+  otherkeywords={*,...},            % if you want to add more keywords to the set
+  numbers=left,                     % where to put the line-numbers;
+  keepspaces=true,                  % keeps spaces in text, useful for keeping indentation of code (possibly needs columns=flexible)
+  numberstyle=\footnotesize\color{_gray},% the style that is used for the line-numbers 
+  stepnumber=1,                     % the step between two line-numbers.
+  numbersep=5pt,                    % how far the line-numbers are from the code
+  captionpos=t,                     % sets the caption-position bottom(b), top(t)
+  escapeinside={\%*}{*)}            % if you want to add LaTeX within your code
+}
+
+
+\begin{document}
+\title{Image deformation model in CASToR}
+\maketitle
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section*{Foreword}
+
+CASToR is designed to be flexible, but also as generic as possible.
+Any new implementation should be thought to be usable in as many contexts as possible; among all modalities, all types of data, all types of algorithms, etc.
+
+Before adding some code to CASToR, it is highly recommended to read the general documentation \textit{CASToR\_general\_documentation.pdf} to get a good
+picture of the project, as well as the programming guidelines \textit{CASToR\_\_programming\_guidelines.pdf}.
+Also, the philosophy about adding new modules in CASToR (\textit{e.g.} projectors, optimizers, deformations, dynamic models, etc) is fully explained in \textit{CASToR\_\_add\_new\_modules.pdf}.
+Finally, the doxygen documentation is a very good resource to help understanding the code architecture.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Summary}
+
+This HowTo guide describes how to add a new image transformation class for applications such as motion correction. CASToR can implement image transformations
+for several types of image-based motion correction, such as physiological motion (respiratory and cardiac), as well as involuntary patient motion. It is assumed
+that only one type of motion correction can be enabled in a reconstruction, therefore involuntary motion correction cannot be performed with either respiratory
+or cardiac motion. Simultaneous respiratory and cardiac motion can be performed using a unique set of transformations handling both types of motion.
+
+CASToR is mainly designed to be modular in the sense that adding a new feature should be easy. This guide begins with a rough description of the image deformation
+part of the CASToR architecture that explains the chosen implementation. Then follows one step-by-step guide that explains how to add a new image deformation by
+simply adding a new class with few mandatory requirements.
+
+
+\clearpage
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Before using any image-based deformation model}
+
+\subsection{Pre-requisites}
+Motion management in CASToR differs from the type of motion (physiological or involuntary patient motion). The former requires a prior organization of the raw dataset in \textit{gates} in addition to the deformation parameters, while the latter only requires temporal information and the related transformation vectors.
+
+
+
+\subsubsection{Physiological motion management (-rm, -cm, -rcm)}
+
+Physiological motion includes respiratory and cardiac motions. Due to the cyclic nature of these motions, the CASToR implementation requires a specific organization of the datafile. The following points details the requirements on the dataset and on the characterization of the motion parameters.
+
+\paragraph{Gating:} The implementation of image-based correction for these types of motion assumes the elements of the raw datafile (list-mode lines of response, or histogram bins) has previously been sorted into different subsets (\textit{gates}), corresponding to a specific phase of the motion surrogate (e.g, to a respiratory or cardiac phase/amplitude). Several information regarding the gating of the data have to be provided in the reconstruction command-line options using the \textbf{-g} option  along with a text file containing gating information, in order to enable gating management. The required information for physiological motion correction are the number of respiratory/cardiac gates, and the number of data elements (events) inside each gates. These informations could be given either in the datafile header, or from a separate text file whose path after the -g command-line option (see section \ref{section_Meta-data command line options} for more details). 
+
+Figure \ref{fig_ex_gate_file} presents an example of a gating set up file for a dynamic dataset containing 10 frames and 8 (respiratory) gates. The gating associated to each frame must be entered on a separate line. The number of events in each gate are separated by commas. \textcolor{red}{(TODO : Once dual-gating is validated, rather show a file with double gating in order to illustrate with the most complex case )}. Using the \textbf{-g} command-line option and this set up, an image will be reconstructed for each gate within each frame.
+
+\bigskip
+% TODO : show in the figure : the gf file, the output image files, and some reconstructed images
+
+\begin{figure} [h!]
+\centering
+\includegraphics[width=0.8\columnwidth]{./figures/ex_gate_file.eps}
+\caption{Set up of a gating file related to a dynamic dataset with respiratory gating}
+\label{fig_ex_gate_file}
+\end{figure}
+
+
+\subsubsection{Involuntary patient motion correction management (-im)}
+
+\paragraph{Timestamp based motion:} The implementation of image-based patient motion correction requires the timestamp of the transformations to correct the data. During image reconstruction, the image-based transformation operations will be performed when the timestamp of the event is greater than the next timestamp of the deformation. Figure \ref{fig_ex_pmotion_file} presents an example of a patient motion file indicating the timestamp of each transformation.
+
+\bigskip
+
+\begin{figure} [h!]
+\centering
+\includegraphics[width=1\columnwidth]{./figures/ex_pmotion_file.eps}
+\caption{Set up of a motion file indicating the timestamp of the transformations for involuntary patient motion. The timestamps must be provided in seconds.}
+\label{fig_ex_pmotion_file}
+\end{figure}
+
+
+
+\clearpage
+\section{Deformation model initialization}
+A deformation module can be enabled in order to perform image-based transformations between each gate, in order to perform respiratory, cardiac, or both motion corrections. The \textbf{-rm}, \textbf{-cm}, \textbf{-rcm} and \textbf{-im} command line options (for respiratory, cardiac, dual-gating, and involuntary patient motion correction respectively) must be used to provide the image deformation information for physiological motion. This option allows to initialize a rigid or elastic deformation model and associated parameters (see details in section \ref{section_Meta-data command line options}). CASToR contains a rigid (\textbf{deformationRigid}, section\ref{ss_rigid}) and a non-rigid (\textbf{deformationElastic}, section\ref{ss_elastic}) deformation modules in order to perform image-based transformation, as described below. Details about the available deformation models and information regarding their initialization can be displayed using the command  \textbf{-help-motion}. 
+
+\paragraph{Transformation vectors:} During image reconstruction, the image-based motion correction operations will be applied when the code reach a trigger computed from the number elements in each gate (for gated dataset), or from a timestamp (for patient motion). These operations requires a set of \textit{forward} transformations (from a reference position, corresponding to the position in which the images will be reconstructed, to any other position (gate or patient motion time subset) of the dataset), and \textit{backward} transformations (from any position to the reference position), as presented in figure \ref{fig_transformation_orientations}. Therefore, for a dataset containing \textit{n} gates (or patient motion time subsets), \textit{n-1} forward and \textit{n-1} backward transformations must be set up.
+
+
+
+\begin{figure} [h!]
+\centering
+\includegraphics[width=0.4\columnwidth]{./figures/fwd_bwd_deformation.eps}
+\caption{Definition of \textit{forward} (left arrows) and \textit{backward} (right arrows) transformations between the gates of the dataset}
+\label{fig_transformation_orientations}
+\end{figure}
+
+
+\subsection{deformationRigid:}
+\label{ss_rigid}
+
+This class uses rigid deformations parameterized by 3 translations and 3 rotations in order to perform image-based transformations. As most modules, it can be initialized from the command-line options or using a configuration file (fig \ref{fig_ex_rigid_file}): 
+
+\verb| -im deformationRigid,tx1,ty1,tz1,ra1,rb1,rc1,tx2,ty2,tz2,ra2,rb2,rc2,...|
+
+(where tx, ty, tz represents the translations along the different axis, and ra, rb, rc represents the 3 rotations to perform along specific axis (x, y, and z) by default)
+
+\verb| -im deformationRigid:/path/to/conf/file.txt|
+
+\begin{figure} [h!]
+\centering
+\includegraphics[width=0.4\columnwidth]{./figures/ex_rigid_file.eps}
+\caption{Example of a configuration file for rigid transformation. Each transformation parameters (3 translations (mm), 3 rotations (degrees)) must be entered on a separate line. }
+\label{fig_ex_rigid_file}
+\end{figure}
+
+
+By default, the transformation parameters correspond to the transformation between the subset (or gate) \textit{i} to the subset (gate) \textit{i+1}. The forward and backward deformations as defined in figure \ref{fig_transformation_orientations} will be automatically computed from the provided parameters. One can also directly provide the parameters from the reference position to each other position by setting the optionnal parameter \textit{Compute transformations} to 0. Another optional parameter \textit{Rotation convention} defines the axis for the rotation of the 3 angles according to the different conventions (\textit{XYZ}, \textit{ZYX}, \textit{XYX}, etc.. default is \textit{XYZ}).
+
+
+
+\subsection{deformationElastic:} 
+\label{ss_elastic}
+This class implements non-rigid deformation using the \textit{Elastix} library\cite{Elastix}. Elastix is a program for image registration which supports many registration methods and various transformation models. Most part of the Elastix code requires the Insight Segmentation and Registration Toolkit (ITK), so CASToR must be first compiled with both ITK and Elastix in order to be used.
+
+
+\color{red}
+\paragraph{Compilation instructions:} TODO Fred (detailler la compilation avec ITK et Elastix)
+
+
+\paragraph{Initialization:} TODO Fred (detailler la configuration et l'utilisation de deformationElastic)
+\color{black}
+
+
+\clearpage
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{The image deformation architecture}
+
+The image deformation part of the code is based on 2 main classes: \textit{oDeformationManager} and \textit{vDeformation}. The main program will instantiate and initialize the \textit{oDeformationManager}, and during the iterative reconstruction process, the \textit{oDeformationManager::PerformDeformation()} function will apply the required deformations on the different image matrices when the event counter hits a trigger (a certain number of events in the case of gated dataset, or a certain timestamp for involuntary patient motion). The various steps of application of the deformations on the different image matrices of the algorithm (forward image containing the image to project, backward image containing the correction factors, etc...) is natively managed by the vDeformation mother class, so that the developper doesn't need to handle this in his deformation class. 
+
+The \textit{vDeformation} class only requires that the child implements the \textit{ApplyDeformations()} function, which will perform the deformation on an input image matrix, and recover the result in an output image matrice, both passed in argument. Please have a look to the section \ref{section_Add your own deformation model} for more help about the deformation model implementation itself.
+
+It is worthy to note that the deformation process itself is NOT multithreaded, therefore a synchronization of the threads will be performed before each image deformation. This is to limit the RAM requirements on some image matrices which should not be multithreaded a-priori. 
+
+Regarding the sensitivity image of list-mode reconstruction, the algorithm will generate an image corresponding to the reference position using the \textit{Forward} and \textit{Backward} transformations. The algorithm will simply loop on the total number of transformations, generate a reference image for each set of \textit{Forward} and \textit{Backward} transformation, and average all these images to get a standard reference sensitivity image.
+
+
+\clearpage
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Add your own deformation model}
+\label{section_Add your own deformation model}
+
+\subsection{Basic concept}
+
+To add a new image-based deformation module, the user only has to build a specific class that inherits from the abstract class \textit{vDeformation}. Then, one just has to implement a set of pure virtual functions for the initialization and application of the model. Please refer to the \textit{CASToR\_\_add\_new\_modules.pdf} guide in order to fill up the mandatory parts of adding a new module; namely the auto-inclusion mechanism, the interface-related functions and the management functions. Right below are some instructions to help you fill the specific pure virtual projection functions of deformation model.
+
+\bigskip
+To ease the implementation, a template class is provided in the source code and already implements all the squeleton. Basically, one will have to change the name of the class and fill the related functions up in his own code. The actual files are \textit{include/image/iDeformationTemplate.hh} and \textit{src/image/iDeformationTemplate.cc} and are actually already part of the source code.
+
+\subsection{Implementation of the deformation functions}
+
+Several mandatory functions should be implemented (or return an error by default) in a new deformation model class :
+
+\begin{description}
+\item \textbf{ShowHelp()}: Simply output some help and guidance to describe what the deformation model does and how to use it.
+\item \textbf{ReadAndCheckOptionsList()}: Implement here the reading of any options specific to this deformation model passed through the argument \texttt{const string\& a\_listOptions}. The user can make use of the \textit{ReadStringOption()} function to parse the list of parameters. If the function is not mandatory (e.g initialization of the model using a file is required tather than with command-line parameters), just send an error message and return 1.
+\item \textbf{ReadAndCheckConfigurationFile()}: Implement here the reading of any configuration file specific to this deformation model, passed through the argument \texttt{const string\& a\_fileOptions}. The user can make use of the \textit{ReadDataASCIIFile()} function to read data from a file. If the function is not mandatory (e.g initialization of the model using command line options is required rather than with a file), just send an error message and return 1.
+\item \textbf{CheckParameters()}: Use this function to check if the private parameters of your class have correctly been initialized. It might be a good idea to initialize all private parameters in the constructor with default erroneous value to properly check their initialization.
+\item \textbf{Initialize()}: Use this function to Instanciate/Initialize any member variables/arrays after the parameters have been checked in the previous function.  
+\item \textbf{ApplyDeformation()}: The deformation model must be implemented here, with the help of any private functions if required. This function is described in the pseudocode below. This function has 4 arguments:
+\begin{description}
+\item[\texttt{ap\_inputImage}]: vector containing the input image to deform
+\item[\texttt{ap\_outputImage}]: vector in which the transformed image must be recovered
+\item[\texttt{a\_direction}]:  integer which indicates the direction of the deformation to perform, i.e: 
+
+\texttt{FORWARD\_DEFORMATION} (from the reference position to the \texttt{a\_defIdx} position), 
+
+\texttt{BACKWARD\_DEFORMATION} (from the \texttt{a\_defIdx} position to the reference position). 
+
+The integers \texttt{FORWARD\_DEFORMATION} and \texttt{BACKWARD\_DEFORMATION} are defined in the beginning of vDeformation.hh as macros
+\item[\texttt{a\_defIdx}]: defines the index of the transformation
+\end{description}
+
+All information and the tools needed to implement these functions are fully described in the template source file \textit{src/projector/iDeformationTemplate.cc}, so please refer to it.
+
+\end{description}
+
+
+
+
+\begin{lstlisting}[label={sample},caption= Description of ApplyDeformations function.]
+
+int iDeformationTemplate::ApplyDeformations(FLTNB* ap_inputImage, 
+                                            FLTNB* ap_outputImage, 
+                                            string a_direction, 
+                                            int a_defIdx)
+{
+  // This function is an implementation of the pure virtual mother function. The actual deformation should be implemented here, with the help of any private functions if required
+
+  // IMAGE DIMENSIONS:
+  // For code efficiency and readability, the spatial index of a voxel is a cumulative 1D index. 
+  // That is to say, given a voxel [indexX,indexY,indexZ],
+  // its cumulative 1D index is computed by 'index = indexZ*nbVoxXY + indexY*nbVoxX + indexX'.
+
+  // The image dimensions can be recovered from the mp_ImageDimensionsAndQuantification class
+  // Total number of voxels         : 
+  mp_ImageDimensionsAndQuantification->GetNbVoxXYZ()
+  // Number of voxels in a slice    : 
+  mp_ImageDimensionsAndQuantification->GetNbVoxXY()
+  // Number of voxels on the X-axis : 
+  mp_ImageDimensionsAndQuantification->GetNbVoxX()
+ 
+
+  // Any error should return a value >0.
+  
+  return 0;
+}
+\end{lstlisting}
+
+
+\clearpage
+\section{Meta-data command line options}
+\label{section_Meta-data command line options}
+List of the different set of options related to image-based deformations :
+\begin{itemize}
+\item \textbf{-g} \textit{file}: Give a text file defining the dynamic data splitting (due to respiratory/cardiac gating or involuntary patient motion correction).
+      The file should contain the some of the following keywords :
+\begin{description}
+\item \texttt{nb\_respiratory\_gates}: number of respiratory gates in the data
+\item \texttt{respiratory\_gates\_data\_splitting}: enter the number of events within each gate, separated by commas. If the data contains several frame (dynamic
+      acquisition), the data splitting of each frame should be entered on a new line
+\item \texttt{nb\_cardiac\_gates}: number of cardiac gates in the data
+\item \texttt{cardiac\_gates\_data\_splitting}: enter the number of events within each gate, separated by commas. If the data contains several frame (dynamic
+      acquisition), the data splitting of each frame should be entered on a new line.
+\item \texttt{nb\_involuntary\_motion\_triggers}: number of involuntary patient motion triggers in the data
+\item \texttt{listt\_involuntary\_motion\_triggers}: enter the timestamp of each transformation, separated by commas. No specific nomenclature is required for dynamic acquisitions (data containing several frames). However, if the data contains several bed positions, the data splitting of each bed should be entered on a new line.
+\end{description}
+\item \textbf{-rm} \textit{param}: Give the deformation to be used for respiratory motion correction, along with a configuration file (deformationModel:file), or the list of parameters associated to the deformation model (deformationModel,param1,param2,...).
+\item \textbf{-cm} \textit{param}: Give the deformation to be used for cardiac motion correction, along with a configuration file (deformationModel:file), or the list of parameters associated to the deformation model (deformationModel,param1,param2,...).
+\item \textbf{-rcm} \textit{param}: Give the deformation to be used for dual gating motion correction (both respiratory and cardiac), along with a configuration file (deformationModel:file), or the list of parameters associated to the deformation model (deformationModel,param1,param2,...).
+\item \textbf{-im} \textit{param}: Give the deformation to be used for patient motion correction, along with a configuration file (deformationModel:file), or the list of parameters associated to the deformation model (deformationModel,param1,param2,...).
+\end{itemize}
+
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+%          R E F E R E N C E S
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\bibliographystyle{IEEEtran} 
+%\bibliographystyle{apalike} 
+\bibliography{CASToR_general_documentation}
+
+\end{document}

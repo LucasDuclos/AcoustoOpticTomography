@@ -1,0 +1,1519 @@
+Fichier binaire ./bin/castor-recon correspondant
+Fichier binaire ./bin/castor-datafileExplorer correspondant
+Fichier binaire ./bin/castor-sumImages correspondant
+Fichier binaire ./bin/castor-makeReplicates correspondant
+Fichier binaire ./build/__src_algorithm/oIterativeAlgorithm.o correspondant
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  mp_ID->ResetCurrentDynamicIndices();
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  if (m_verbose>=VERBOSE_NORMAL && mp_ID->GetMPIRank()==0)
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  omp_set_num_threads(mp_ID->GetNbThreadsForProjection());
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  bool* p_end_loop_flags = (bool*)malloc(mp_ID->GetNbThreadsForProjection()*sizeof(bool));
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++) p_end_loop_flags[th] = false;
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:    if (m_verbose>=2 && th==0 && mp_ID->GetMPIRank()==0)
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:    int dynamic_switch_value = mp_ID->DynamicSwitch(index, event->GetTimeInMs(), a_bed, th);
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:      if (th==0 && m_verbose>=3 && mp_ID->GetMPIRank()==0)
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:                                                                   0, //////////////////////////////////////////////////////////// mp_ID->GetCurrentTimeFrame(th)
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:                                                                   mp_ID->GetCurrentRespImage(th),
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:                                                                   mp_ID->GetCurrentCardImage(th),
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:    p_ChronoManager->StopIterativeDataUpdateStep4(th); Cout("mp_ID->GetCurrentTimeFrame(th) " << mp_ID->GetCurrentTimeFrame(th) << endl);
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  omp_set_num_threads(mp_ID->GetNbThreadsForImageComputation());
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  if (m_verbose>=2 && mp_ID->GetMPIRank()==0)
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  if (mp_ID->GetMPIRank()==0 && mp_outputIterations[a_iteration] && m_saveSensitivityHistoFlag && m2p_DataFile[0]->GetDataMode()==MODE_HISTOGRAM)
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  if (mp_ID->GetMPIRank()==0 && mp_outputIterations[a_iteration] && m_saveImageAfterSubsets)
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  if (mp_ID->GetMPIRank()==0 && mp_outputIterations[a_iteration])
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  if (!mp_ID->GetTimeStaticFlag() || !mp_ID->GetRespStaticFlag() || !mp_ID->GetCardStaticFlag())
+./GetCurrentTimeFrame(th):./src/algorithm/oIterativeAlgorithm.cc:  return (m_nbThreadsWaiting==mp_ID->GetNbThreadsForProjection());
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:    //for(int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:      for(int rimg=0; rimg<mp_ID->GetNbRespGates(); rimg++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:        for(int cimg=0; cimg<mp_ID->GetNbCardGates(); cimg++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:        for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v=v+mp_ID->GetNbVoxX())
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:                  for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v=v+mp_ID->GetNbVoxX())
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:          for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:  //for(int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:    for(int rimg=0; rimg<mp_ID->GetNbRespGates() ; rimg++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:      for(int cimg=0; cimg<mp_ID->GetNbCardGates() ; cimg++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:        for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:    for (int th=1 ; th<mp_ID->GetNbThreadsForProjection() ; th++) //TODO add 4D loops
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:      for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:    for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:    for(int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:      for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:  for (int th=1 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:    for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:  for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:  for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:    for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:  int incY = dY>0 ? mp_ID->GetNbVoxX() : -mp_ID->GetNbVoxX();
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:  int incZ = dZ>0 ? mp_ID->GetNbVoxXY() : -mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/image/vDeformation.cc:  uint32_t nb_tot_vox = (uint32_t)mp_ID->GetNbVoxXYZ();
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  mp_OriginalArray = new HPFLTNB [mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  mp_OutputArray   = new HPFLTNB [mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  FLTNB sX = mp_ID->GetVoxSizeX();
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  FLTNB sY = mp_ID->GetVoxSizeY();
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  FLTNB sZ = mp_ID->GetVoxSizeZ();
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  FLTNB dX = mp_ID->GetNbVoxX();
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  FLTNB dY = mp_ID->GetNbVoxY();
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  FLTNB dZ = mp_ID->GetNbVoxZ();
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  FLTNB dXY = mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:  for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:    uint32_t iZ = v/mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:    uint32_t iY = (v - iZ*mp_ID->GetNbVoxXY()) / mp_ID->GetNbVoxX();
+./GetCurrentTimeFrame(th):./src/image/iDeformationRigid.cc:    uint32_t iX =  v - iZ*mp_ID->GetNbVoxXY() - iY*mp_ID->GetNbVoxX();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  m4p_image = (FLTNB****)malloc(mp_ID->GetNbTimeBasisFunctions()*sizeof(FLTNB***));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m4p_image[tbf] = (FLTNB***)malloc(mp_ID->GetNbRespBasisFunctions()*sizeof(FLTNB**));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m4p_image[tbf][rbf] = (FLTNB**)malloc(mp_ID->GetNbCardBasisFunctions()*sizeof(FLTNB*));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m4p_image[tbf][rbf][cbf] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (INTNB v=0; v<mp_ID->GetNbVoxXYZ(); v++) m4p_image[tbf][rbf][cbf][v] = 0.;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++) if (m4p_image[tbf])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++) if (m4p_image[tbf][rbf])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++) if (m4p_image[tbf][rbf][cbf])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  m4p_forwardImage = (FLTNB****)malloc(mp_ID->GetNbTimeBasisFunctions()*sizeof(FLTNB***));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m4p_forwardImage[tbf] = (FLTNB***)malloc(mp_ID->GetNbRespBasisFunctions()*sizeof(FLTNB**));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m4p_forwardImage[tbf][rbf] = (FLTNB**)malloc(mp_ID->GetNbCardBasisFunctions()*sizeof(FLTNB*));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m4p_forwardImage[tbf][rbf][cbf] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (INTNB v=0; v<mp_ID->GetNbVoxXYZ(); v++) m4p_forwardImage[tbf][rbf][cbf][v] = 0.;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++) if (m4p_forwardImage[tbf])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++) if (m4p_forwardImage[tbf][rbf])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++) if (m4p_forwardImage[tbf][rbf][cbf])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m6p_backwardImage[img] = (FLTNB*****)malloc(mp_ID->GetNbThreadsForProjection()*sizeof(FLTNB****));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m6p_backwardImage[img][th] = (FLTNB****)malloc(mp_ID->GetNbTimeBasisFunctions()*sizeof(FLTNB***));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m6p_backwardImage[img][th][tbf] = (FLTNB***)malloc(mp_ID->GetNbRespBasisFunctions()*sizeof(FLTNB**));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          m6p_backwardImage[img][th][tbf][rbf] = (FLTNB**)malloc(mp_ID->GetNbCardBasisFunctions()*sizeof(FLTNB*));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            m6p_backwardImage[img][th][tbf][rbf][cbf] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++) if (m6p_backwardImage[img][th])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int tbf=0 ; tbf<mp_ID->GetNbTimeBasisFunctions() ; tbf++) if (m6p_backwardImage[img][th][tbf])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int rbf=0 ; rbf<mp_ID->GetNbRespBasisFunctions() ; rbf++) if (m6p_backwardImage[img][th][tbf][rbf])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int cbf=0 ; cbf<mp_ID->GetNbCardBasisFunctions() ; cbf++) if (m6p_backwardImage[img][th][tbf][rbf][cbf])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  m6p_backwardImage[0] = (FLTNB*****)malloc(mp_ID->GetNbThreadsForProjection()*sizeof(FLTNB****));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m6p_backwardImage[0][th] = (FLTNB****)malloc(mp_ID->GetNbTimeFrames()*sizeof(FLTNB***));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m6p_backwardImage[0][th][fr] = (FLTNB***)malloc(mp_ID->GetNb1stMotImgsForLMS(fr)*sizeof(FLTNB**));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m6p_backwardImage[0][th][fr][rg] = (FLTNB**)malloc(mp_ID->GetNb2ndMotImgsForLMS()*sizeof(FLTNB*));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          m6p_backwardImage[0][th][fr][rg][cg] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++) m6p_backwardImage[0][th][fr][rg][cg][v] = 0.;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++) if (m6p_backwardImage[0][th])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++) if (m6p_backwardImage[0][th][fr])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++) if (m6p_backwardImage[0][th][fr][rg])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++) if (m6p_backwardImage[0][th][fr][rg][cg])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m5p_sensitivity = (FLTNB*****)malloc(mp_ID->GetNbThreadsForProjection()*sizeof(FLTNB****));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m5p_sensitivity[thread_0] = (FLTNB****)malloc(mp_ID->GetNbTimeFrames()*sizeof(FLTNB***));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m5p_sensitivity[thread_0][fr] = (FLTNB***)malloc(mp_ID->GetNbRespGates()*sizeof(FLTNB**));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m5p_sensitivity[thread_0][fr][rg] = (FLTNB**)malloc(mp_ID->GetNbCardGates()*sizeof(FLTNB*));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          m5p_sensitivity[thread_0][fr][rg][cg] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m5p_sensitivity = (FLTNB*****)malloc(mp_ID->GetNbThreadsForProjection()*sizeof(FLTNB****));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m5p_sensitivity[th] = (FLTNB****)malloc(mp_ID->GetNbTimeFrames()*sizeof(FLTNB***));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m5p_sensitivity[th][fr] = (FLTNB***)malloc(mp_ID->GetNbRespGates()*sizeof(FLTNB**));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          m5p_sensitivity[th][fr][rg] = (FLTNB**)malloc(mp_ID->GetNbCardGates()*sizeof(FLTNB*));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            m5p_sensitivity[th][fr][rg][cg] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++) m5p_sensitivity[th][fr][rg][cg][v] = 0.;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++) if (m5p_sensitivity[thread_0][fr])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++) if (m5p_sensitivity[thread_0][fr][rg])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++) if (m5p_sensitivity[thread_0][fr][rg][cg])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++) if (m5p_sensitivity[th])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++) if (m5p_sensitivity[th][fr])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++) if (m5p_sensitivity[th][fr][rg])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++) if (m5p_sensitivity[th][fr][rg][cg])
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  m2p_miscellaneousImage[m_nbMiscellaneousImages-1] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  mp_visitedVoxelsImage = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++) mp_visitedVoxelsImage[v] = 0.;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m2p_multiModalImage = (FLTNB**)malloc(mp_ID->GetNbMultiModalImages()*sizeof(FLTNB*));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int nb=0; nb<mp_ID->GetNbMultiModalImages(); nb++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m2p_multiModalImage[nb] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int nb=0; nb<mp_ID->GetNbMultiModalImages(); nb++) if (m2p_multiModalImage[nb]) free(m2p_multiModalImage[nb]);
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      mp_maskImage = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  m4p_outputImage = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m4p_outputImage[fr] = new FLTNB**[mp_ID->GetNbRespGates()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m4p_outputImage[fr][rg] = new FLTNB*[mp_ID->GetNbCardGates()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        if ( mp_ID->GetTimeStaticFlag() &&
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:             mp_ID->GetRespStaticFlag() &&
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:             mp_ID->GetCardStaticFlag() )
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          m4p_outputImage[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              if ( (!mp_ID->GetTimeStaticFlag() ||
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:                    !mp_ID->GetRespStaticFlag() ||
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:                    !mp_ID->GetCardStaticFlag()) &&
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m5p_refDynBackwardImage[img] = new FLTNB***[mp_ID->GetNbTimeBasisFunctions()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m5p_refDynBackwardImage[img][tbf] = new FLTNB**[mp_ID->GetNbRespBasisFunctions()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m5p_refDynBackwardImage[img][tbf][rbf] = new FLTNB*[mp_ID->GetNbCardBasisFunctions()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          m5p_refDynBackwardImage[img][tbf][rbf][cbf] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  m4p_refDynForwardImage = new FLTNB***[mp_ID->GetNbTimeBasisFunctions()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m4p_refDynForwardImage[tbf] = new FLTNB**[mp_ID->GetNbRespBasisFunctions()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m4p_refDynForwardImage[tbf][rbf] = new FLTNB*[mp_ID->GetNbCardBasisFunctions()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m4p_refDynForwardImage[tbf][rbf][cbf] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m5p_refDynBackwardImage[img] = new FLTNB***[mp_ID->GetNbTimeBasisFunctions()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m5p_refDynBackwardImage[img][tbf] = new FLTNB**[mp_ID->GetNbRespBasisFunctions()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m5p_refDynBackwardImage[img][tbf][rbf] = new FLTNB*[mp_ID->GetNbCardBasisFunctions()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          m5p_refDynBackwardImage[img][tbf][rbf][cbf] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m4p_refDynSensitivityImage = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m4p_refDynSensitivityImage[fr] = new FLTNB**[mp_ID->GetNbRespGates()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m4p_refDynSensitivityImage[fr][rg] = new FLTNB*[mp_ID->GetNbCardGates()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          m4p_refDynSensitivityImage[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  m4p_refDynSensitivityImage = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m4p_refDynSensitivityImage[fr] = new FLTNB**[mp_ID->GetNbRespGates()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m4p_refDynSensitivityImage[fr][rg] = new FLTNB*[mp_ID->GetNbCardGates()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m4p_refDynSensitivityImage[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m4p_attenuation = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m4p_attenuation[fr] = new FLTNB**[mp_ID->GetNb1stMotImgsForLMS(fr)];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m4p_attenuation[fr][rg] = new FLTNB*[mp_ID->GetNb2ndMotImgsForLMS()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          m4p_attenuation[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    if(nb_atn_cgates == 1 && mp_ID->GetNb2ndMotImgsForLMS()>1)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for(int cg=1 ; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for(int v=0 ; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      if(nb_atn_rgates == 1 && mp_ID->GetNb1stMotImgsForLMS(fr)>1)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for(int rg=1 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for(int v=0 ; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    if(nb_atn_frames == 1 && mp_ID->GetNbTimeFrames()>1)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int fr=1 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for(int v=0 ; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    FLTNB flt_base_x = 0.5*((FLTNB)(mp_ID->GetNbVoxX()-1));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    FLTNB flt_base_y = 0.5*((FLTNB)(mp_ID->GetNbVoxY()-1));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    FLTNB squared_radius_x = 0.5 * ((FLTNB)(mp_ID->GetNbVoxX())) * mp_ID->GetVoxSizeX();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    FLTNB squared_radius_y = 0.5 * ((FLTNB)(mp_ID->GetNbVoxY())) * mp_ID->GetVoxSizeY();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (x=0; x<mp_ID->GetNbVoxX(); x++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      FLTNB squared_distance_x = (((FLTNB)x)-flt_base_x) * mp_ID->GetVoxSizeX();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int y=0; y<mp_ID->GetNbVoxY(); y++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        FLTNB squared_distance_y = (((FLTNB)y)-flt_base_y) * mp_ID->GetVoxSizeY();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int z=0; z<mp_ID->GetNbVoxZ(); z++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          INTNB index = z*mp_ID->GetNbVoxXY() + y*mp_ID->GetNbVoxX() + x;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (INTNB v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (INTNB v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          FLTNB time_basis_coef = mp_ID->GetTimeBasisCoefficient(tbf,fr);
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            FLTNB resp_basis_coef = mp_ID->GetRespBasisCoefficient(rbf,rg);
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              FLTNB card_basis_coef = mp_ID->GetCardBasisCoefficient(cbf,cg);
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  if ( !mp_ID->GetFlipOutX() &&
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:       !mp_ID->GetFlipOutY() &&
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:       !mp_ID->GetFlipOutZ() ) return 0;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    if (mp_ID->GetFlipOutX()) Cout("  --> Over X" << endl);
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    if (mp_ID->GetFlipOutY()) Cout("  --> Over Y" << endl);
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    if (mp_ID->GetFlipOutZ()) Cout("  --> Over Z" << endl);
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        if (mp_ID->GetFlipOutZ())
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (INTNB z_1=0; z_1<mp_ID->GetNbVoxZ()/2; z_1++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            INTNB z_2 = mp_ID->GetNbVoxZ() - 1 - z_1;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            INTNB base_z1 = z_1 * mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            INTNB base_z2 = z_2 * mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (INTNB y=0; y<mp_ID->GetNbVoxY(); y++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              INTNB base_y = y * mp_ID->GetNbVoxX();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (INTNB x=0; x<mp_ID->GetNbVoxX(); x++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        if (mp_ID->GetFlipOutY())
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (INTNB z=0; z<mp_ID->GetNbVoxZ(); z++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            INTNB base_z = z * mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (INTNB y_1=0; y_1<mp_ID->GetNbVoxY()/2; y_1++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              INTNB y_2 = mp_ID->GetNbVoxY() - 1 - y_1;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              INTNB base_y1 = y_1 * mp_ID->GetNbVoxX();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              INTNB base_y2 = y_2 * mp_ID->GetNbVoxX();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (INTNB x=0; x<mp_ID->GetNbVoxX(); x++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        if (mp_ID->GetFlipOutX())
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (INTNB z=0; z<mp_ID->GetNbVoxZ(); z++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            INTNB base_z = z * mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (INTNB y=0; y<mp_ID->GetNbVoxY(); y++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              INTNB base_y = y * mp_ID->GetNbVoxX();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (INTNB x_1=0; x_1<mp_ID->GetNbVoxX()/2; x_1++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:                INTNB x_2 = mp_ID->GetNbVoxX() - 1 - x_1;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  if ( mp_ID->GetFOVOutPercent()<=0. &&
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:       mp_ID->GetNbSliceOutMask()==0 ) return 0;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    if (mp_ID->GetFOVOutPercent()>0.) Cout("  --> Mask transaxial FOV outside " << mp_ID->GetFOVOutPercent() << " %" << endl);
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    if (mp_ID->GetNbSliceOutMask()>0) Cout("  --> Mask " << mp_ID->GetNbSliceOutMask() << " slices from both axial FOV limits" << endl);
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  if (mp_ID->GetFOVOutPercent()>0.)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    FLTNB flt_base_x = 0.5*((FLTNB)(mp_ID->GetNbVoxX()-1));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    FLTNB flt_base_y = 0.5*((FLTNB)(mp_ID->GetNbVoxY()-1));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    FLTNB squared_radius_x = 0.5 * ((FLTNB)(mp_ID->GetNbVoxX())) * mp_ID->GetVoxSizeX()
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:                           * mp_ID->GetFOVOutPercent() / 100.;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    FLTNB squared_radius_y = 0.5 * ((FLTNB)(mp_ID->GetNbVoxY())) * mp_ID->GetVoxSizeY()
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:                           * mp_ID->GetFOVOutPercent() / 100.;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (x=0; x<mp_ID->GetNbVoxX(); x++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      FLTNB squared_distance_x = (((FLTNB)x)-flt_base_x) * mp_ID->GetVoxSizeX();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int y=0; y<mp_ID->GetNbVoxY(); y++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        FLTNB squared_distance_y = (((FLTNB)y)-flt_base_y) * mp_ID->GetVoxSizeY();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int z=0; z<mp_ID->GetNbVoxZ(); z++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          INTNB index = z*mp_ID->GetNbVoxXY() + y*mp_ID->GetNbVoxX() + x;
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  if (mp_ID->GetNbSliceOutMask()>0)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    INTNB removed_slices = mp_ID->GetNbSliceOutMask();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            INTNB base_z_first = z*mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int i=0; i<mp_ID->GetNbVoxXY(); i++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            INTNB base_z_last = (mp_ID->GetNbVoxZ()-1-z)*mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int i=0; i<mp_ID->GetNbVoxXY(); i++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        output_file.write(reinterpret_cast<char*>(m6p_backwardImage[0][0][0][0][0]), mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  omp_set_num_threads(mp_ID->GetNbThreadsForProjection());
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  if (alternative==1 || mp_ID->GetNbThreadsForImageComputation()==1)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) 
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) 
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    if (alternative==1 || mp_ID->GetNbThreadsForImageComputation()==1)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:            for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:              for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  omp_set_num_threads(mp_ID->GetNbThreadsForImageComputation());
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          MPI_Allreduce( MPI_IN_PLACE, &m6p_backwardImage[img][0][tbf][rbf][cbf][0], mp_ID->GetNbVoxXYZ(), FLTNBMPI, MPI_SUM, MPI_COMM_WORLD );
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          MPI_Allreduce( MPI_IN_PLACE, &m5p_sensitivity[0][fr][rg][cg][0], mp_ID->GetNbVoxXYZ(), FLTNBMPI, MPI_SUM, MPI_COMM_WORLD );
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  m4p_image = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m4p_image[fr] = new FLTNB**[mp_ID->GetNb1stMotImgsForLMS(fr)];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m4p_image[fr][rg] = new FLTNB*[mp_ID->GetNb2ndMotImgsForLMS()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m4p_image[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  m4p_forwardImage = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m4p_forwardImage[fr] = new FLTNB**[mp_ID->GetNb1stMotImgsForLMS(fr)];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m4p_forwardImage[fr][rg] = new FLTNB*[mp_ID->GetNb2ndMotImgsForLMS()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m4p_forwardImage[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  m5p_sensitivity[0] = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    m5p_sensitivity[0][fr] = new FLTNB**[mp_ID->GetNb1stMotImgsForLMS(fr)];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      m5p_sensitivity[0][fr][rg] = new FLTNB*[mp_ID->GetNb2ndMotImgsForLMS()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        m5p_sensitivity[0][fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  for (int th=1 ; th<mp_ID->GetNbThreadsForProjection() ; th++) 
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  MPI_Allreduce( MPI_IN_PLACE, &m6p_backwardImage[a_imageIndex][0][a_timeIndex][a_respIndex][a_cardIndex][0], mp_ID->GetNbVoxXYZ(), FLTNBMPI, MPI_SUM, MPI_COMM_WORLD );
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  int nb_reco_card_images = ap_DeformationManager->GetNbSensImagesCardDeformation(mp_ID->GetNb2ndMotImgsForLMS());    
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  if (ap_DeformationManager->GetNbSensImagesCardDeformation(mp_ID->GetNb2ndMotImgsForLMS()) == 0) 
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    FLTNB card_normalization = mp_ID->GetNb2ndMotImgsForLMS();
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for(int fr=0 ; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int cg=1 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  if (!mp_ID->IsPMotionEnabled()  // No patient motion correction
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      && ap_DeformationManager->GetNbSensImagesRespDeformation(mp_ID->GetNb1stMotImgsForLMS(0)) == 0) 
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      FLTNB resp_normalization = mp_ID->GetNb1stMotImgsForLMS(fr);
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:          for (int rg=1 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:  if (mp_ID->IsPMotionEnabled() ) 
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:      for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:        //for (int ipm=1 ; ipm<mp_ID->GetNb1stMotImgsForLMS(fr) ; ipm++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:         for (int ipm=0 ; ipm<mp_ID->GetNb1stMotImgsForLMS(fr) ; ipm++)
+./GetCurrentTimeFrame(th):./src/image/oImageSpace.cc:           sensitivity_value_avg += m5p_sensitivity[0][fr][ipm][0][v] * mp_ID->GetListPMotionWeightInFrameForLMS(fr, ipm);
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:  mp_curPatMotIdx = new int16_t[mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:  int fr = mp_ID->GetCurrentTimeFrame(0);
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:  int rimg = mp_ID->GetCurrentRespImage(0);
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:  int cimg = mp_ID->GetCurrentCardImage(0);  
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:    idx = mp_ID->GetCurrentRespGate(0);
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:    idx = mp_ID->GetCurrentCardGate(0);
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:    idx = mp_ID->GetCurrentPMotionIndex(0);
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:      for(int f=fr+1 ; f<mp_ID->GetNbTimeFrames(); f++)
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:  for(int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:      idx = mp_ID->GetCurrentRespGate(0);
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:      idx = mp_ID->GetCurrentCardGate(0);
+./GetCurrentTimeFrame(th):./src/image/oDeformationManager.cc:      //idx = mp_ID->GetCurrentPMotionIndex(0);
+./GetCurrentTimeFrame(th):./src/image/iDeformationTemplate.cc:  * Total number of voxels         : mp_ID->GetNbVoxXYZ()
+./GetCurrentTimeFrame(th):./src/image/iDeformationTemplate.cc:  * Number of voxels in a slice    : mp_ID->GetNbVoxXY()
+./GetCurrentTimeFrame(th):./src/image/iDeformationTemplate.cc:  * Number of voxels on the X-axis : mp_ID->GetNbVoxX()
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:    uint64_t* total_events = (uint64_t*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(uint64_t));
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:    HPFLTNB* total_prompts = (HPFLTNB*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(HPFLTNB));
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:                                                           mp_ID->GetNbTimeFrames()*
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:                                                           mp_ID->GetNbRespGates()*
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:                                                           mp_ID->GetNbCardGates();
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:      uint32_t timestamp = mp_ID->GetFrameTimeStartInMs(bed,fr);
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:      uint64_t* total_events_in_frame = (uint64_t*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(uint64_t));
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:      HPFLTNB* total_prompts_in_frame = (HPFLTNB*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(HPFLTNB));
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:      for(int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:        uint64_t* total_events_in_rgate = (uint64_t*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(uint64_t));
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:        HPFLTNB* total_prompts_in_rgate = (HPFLTNB*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(HPFLTNB));
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:        for(int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:          uint64_t* total_events_in_cgate = (uint64_t*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(uint64_t));
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:          HPFLTNB* total_prompts_in_cgate = (HPFLTNB*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(HPFLTNB));
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:          if(mp_ID->GetNbTimeFrames() > 1)
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:            if(m_verbose>=0) Cout(endl << "Processing frame #" << fr+1 << " out of " << mp_ID->GetNbTimeFrames() << endl);
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:          if(mp_ID->GetNbRespGates() > 1)
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:            if(m_verbose>=0) Cout(endl << "Processing resp gate #" << rg+1 << " out of " << mp_ID->GetNbRespGates() << endl);
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:          if(mp_ID->GetNbCardGates() > 1)
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:            if(m_verbose>=0) Cout(endl << "Processing card gate #" << cg+1 << " out of " << mp_ID->GetNbCardGates() << endl);
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:                                                                                                         mp_ID->GetNbRespGates(), 
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:                                                                                                         mp_ID->GetNbCardGates(), 
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:          for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_events_in_cgate[0] += total_events_in_cgate[th];
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:          for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_prompts_in_cgate[0] += total_prompts_in_cgate[th];
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:          if(m_verbose>=2 && mp_ID->GetNbCardGates() > 1)
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:        for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_events_in_rgate[0] += total_events_in_rgate[th];
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:        for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_prompts_in_rgate[0] += total_prompts_in_rgate[th];
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:        if(m_verbose>=2 && mp_ID->GetNbRespGates() > 1)
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:      timestamp += mp_ID->GetFrameDurationInMs(bed,fr);
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:      for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_events_in_frame[0] += total_events_in_frame[th];
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:      for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_prompts_in_frame[0] += total_prompts_in_frame[th];
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:      if(m_verbose>=2 && mp_ID->GetNbTimeFrames() > 1)
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:      acquisition_duration += mp_ID->GetFrameDurationInMs(bed,fr);
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:      for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++) Cout("  --> Thread " << th << " | " << total_events[th] << " events" << endl);
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:    for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_events[0] += total_events[th];
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:    for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_prompts[0] += total_prompts[th];
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:    m2p_DataFile[bed]->SetStartTime( mp_ID->GetFrameTimeStartInSec(bed,0) );
+./GetCurrentTimeFrame(th):./src/analytic_simulator/oAnalyticProjection.cc:    m2p_DataFile[bed]->SetDuration( mp_ID->GetFrameDurationInSec(bed,0) );
+./GetCurrentTimeFrame(th):./src/scanner/iScannerCT.cc:  if (mp_ID!=NULL) nb_threads = mp_ID->GetNbThreadsMax();
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:  if (a_affectQuantificationFlag && mp_ID->SetPETIsotope(m_bedIndex, m_isotope))
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:  m2p_BufferEvent = new vEvent*[mp_ID->GetNbThreadsForProjection()];
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:    m_ignoreAttnCorrectionFlag = mp_ID->GetIgnoreAttnCorrectionFlag();
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:    m_ignoreNormCorrectionFlag = mp_ID->GetIgnoreNormCorrectionFlag();
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:    m_ignoreScatCorrectionFlag = mp_ID->GetIgnoreScatCorrectionFlag();
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:    m_ignoreRandCorrectionFlag = mp_ID->GetIgnoreRandCorrectionFlag();
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:  if(mp_ID->IsInitialized())
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:    m_startTimeInSec = mp_ID->GetFrameTimeStartInSec(0, 0);
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:    for(uint16_t fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:      m_durationInSec += mp_ID->GetFrameDurationInSec(0, fr);
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:    m2p_dataFile = new fstream*[mp_ID->GetNbThreadsForProjection()];
+./GetCurrentTimeFrame(th):./src/datafile/iDataFilePET.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:    for(int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:    for(int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:  if (a_affectQuantificationFlag && mp_ID->SetAcquisitionTime(m_bedIndex, m_startTimeInSec, m_durationInSec))
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:  if (a_affectQuantificationFlag && mp_ID->SetCalibrationFactor(m_bedIndex, m_calibrationFactor))
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:  int64_t instance_size = m_nbEvents / mp_ID->GetMPISize();
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:  if (mp_ID->GetMPIRank()!=mp_ID->GetMPISize()-1) m_mpiNbEvents = instance_size;
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:  else m_mpiNbEvents = instance_size + (m_nbEvents - instance_size*mp_ID->GetMPISize());
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:  m_mpi1stEvent = mp_ID->GetMPIRank() * instance_size;
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:  if (mp_ID->GetMPIRank()==0) *ap_indexStart = a_subsetNum;
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:    if(mp_ID->GetNbThreadsForProjection()==1  // No multithreading so no multiple tmp datafiles 
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:       && mp_ID->GetNbTimeFrames()
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:       *  mp_ID->GetNb1stMotImgsForLMS(mp_ID->GetNbTimeFrames()-1)
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:       *  mp_ID->GetNb2ndMotImgsForLMS()  == 1)
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/datafile/vDataFile.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:  m_nbTimeFrames = mp_ID->GetNbTimeFrames();
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:  mp_currentFrameIndex     = new int[mp_ID->GetNbThreadsForProjection()];
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:  mp_currentRespGateIndex  = new int[mp_ID->GetNbThreadsForProjection()];
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:  mp_currentCardGateIndex  = new int[mp_ID->GetNbThreadsForProjection()];
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:  mp_currentPMotionIndex = new int[mp_ID->GetNbThreadsForProjection()];
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:    while( mp_listPMotionTriggers[t] > mp_ID->GetFrameTimeStopInMs(0,fr) )
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:           <<" occurs after the end of the last frame (frame "<<fr<<", timestop :"<< mp_ID->GetFrameTimeStopInMs(0,fr-1) << " !" << endl);
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:    uint32_t motion_subset_start_time = mp_ID->GetFrameTimeStartInMs(0,fr);
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:      motion_subset_stop_time = (mp_listPMotionTriggers[t] < mp_ID->GetFrameTimeStopInMs(0,fr) )?
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:                                 mp_ID->GetFrameTimeStopInMs(0,fr);
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:      motion_subset_stop_time = mp_ID->GetFrameTimeStopInMs(0,fr) ;
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:        motion_subset_stop_time = (mp_listPMotionTriggers[t] < mp_ID->GetFrameTimeStopInMs(0,fr) )?
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:                                   mp_ID->GetFrameTimeStopInMs(0,fr);
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:        motion_subset_stop_time = mp_ID->GetFrameTimeStopInMs(0,fr) ;
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:      m2p_listPMotionWeightInFrame[fr][ipm] = FLTNB(motion_subset_stop_time - motion_subset_start_time ) / mp_ID->GetFrameDurationInMs(0,fr) ;
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:  for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:    if (a_currentTime<mp_ID->GetFrameTimeStartInMs(a_bed,0)) return DYNAMIC_SWITCH_CONTINUE;
+./GetCurrentTimeFrame(th):./src/datafile/oDynamicDataManager.cc:    if (a_currentTime<mp_ID->GetFrameTimeStopInMs(a_bed,fr))
+./GetCurrentTimeFrame(th):./src/datafile/iDataFileAOT.cc:  m2p_BufferEvent = new vEvent*[mp_ID->GetNbThreadsForProjection()];
+./GetCurrentTimeFrame(th):./src/datafile/iDataFileAOT.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:        for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:  if ( mp_ID->GetFOVOutPercent()<=0. &&
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:       mp_ID->GetNbSliceOutMask()==0 ) return 0;
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:    if (mp_ID->GetFOVOutPercent()>0.) Cout("  --> Mask transaxial FOV outside " << mp_ID->GetFOVOutPercent() << " %" << endl);
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:    if (mp_ID->GetNbSliceOutMask()>0) Cout("  --> Mask " << mp_ID->GetNbSliceOutMask() << " slices from both axial FOV limits" << endl);
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:  if (mp_ID->GetFOVOutPercent()>0.)
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:    FLTNB flt_base_x = 0.5*((FLTNB)(mp_ID->GetNbVoxX()-1));
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:    FLTNB flt_base_y = 0.5*((FLTNB)(mp_ID->GetNbVoxY()-1));
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:    FLTNB squared_radius_x = 0.5 * ((FLTNB)(mp_ID->GetNbVoxX())) * mp_ID->GetVoxSizeX()
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:                           * mp_ID->GetFOVOutPercent() / 100.;
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:    FLTNB squared_radius_y = 0.5 * ((FLTNB)(mp_ID->GetNbVoxY())) * mp_ID->GetVoxSizeY()
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:                           * mp_ID->GetFOVOutPercent() / 100.;
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:    for (x=0; x<mp_ID->GetNbVoxX(); x++)
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:      FLTNB squared_distance_x = (((FLTNB)x)-flt_base_x) * mp_ID->GetVoxSizeX();
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:      for (int y=0; y<mp_ID->GetNbVoxY(); y++)
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:        FLTNB squared_distance_y = (((FLTNB)y)-flt_base_y) * mp_ID->GetVoxSizeY();
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:        for (int z=0; z<mp_ID->GetNbVoxZ(); z++)
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:          INTNB index = z*mp_ID->GetNbVoxXY() + y*mp_ID->GetNbVoxX() + x;
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:  if (mp_ID->GetNbSliceOutMask()>0)
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:    INTNB removed_slices = mp_ID->GetNbSliceOutMask();
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:        INTNB base_z_first = z*mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:        for (int i=0; i<mp_ID->GetNbVoxXY(); i++)
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:        INTNB base_z_last = (mp_ID->GetNbVoxZ()-1-z)*mp_ID->GetNbVoxXY();
+./GetCurrentTimeFrame(th):./src/dynamic/vDynamicModel.cc:        for (int i=0; i<mp_ID->GetNbVoxXY(); i++)
+./GetCurrentTimeFrame(th):./src/dynamic/iDynamicModelTemplate.cc:  *  Total number of voxels         : mp_ID->GetNbVoxXYZ()
+./GetCurrentTimeFrame(th):./src/dynamic/iDynamicModelTemplate.cc:  *  Number of voxels in a slice    : mp_ID->GetNbVoxXY()
+./GetCurrentTimeFrame(th):./src/dynamic/iDynamicModelTemplate.cc:  *  Number of voxels on the X-axis : mp_ID->GetNbVoxX()
+./GetCurrentTimeFrame(th):./src/dynamic/iDynamicModelTemplate.cc:  * Total number of voxels         : mp_ID->GetNbVoxXYZ()
+./GetCurrentTimeFrame(th):./src/dynamic/iDynamicModelTemplate.cc:  * Number of voxels in a slice    : mp_ID->GetNbVoxXY()
+./GetCurrentTimeFrame(th):./src/dynamic/iDynamicModelTemplate.cc:  * Number of voxels on the X-axis : mp_ID->GetNbVoxX()
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:        for( int th=0 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++ )
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    m2p_modelTACs[b] = new HPFLTNB[mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    m2p_parametricImages[b] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    m2p_RGModelTACs[rb] = new HPFLTNB[mp_ID->GetNbRespGates()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    m2p_RGParametricImages[rb] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    m2p_CGModelTACs[cb] = new HPFLTNB[mp_ID->GetNbCardGates()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    m2p_CGParametricImages[cb] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:  mp_corrBasisCoeffs = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:  mp_corrBasisFunctions = new HPFLTNB[mp_ID->GetNbThreadsForProjection()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:                            mp_ID->GetNbTimeFrames(),
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:        for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    FLTNB *p_coeffs = new FLTNB[m_nbTimeBF * mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:                         m_nbTimeBF * mp_ID->GetNbTimeFrames(),
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    for(int c=0 ; c<m_nbTimeBF * mp_ID->GetNbTimeFrames() ; c++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:      int bf = int(c/mp_ID->GetNbTimeFrames()); // Patlak basis function index
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:      int fr = int(c%mp_ID->GetNbTimeFrames()); // Frame index
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    m2p_outputParImages[b] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:  for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    m3p_nnlsA    = new HPFLTNB** [mp_ID->GetNbThreadsForImageComputation()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    m2p_nnlsB    = new HPFLTNB*  [mp_ID->GetNbThreadsForImageComputation()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    m2p_nnlsMat  = new HPFLTNB*  [mp_ID->GetNbThreadsForImageComputation()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    for( int th=0 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++ )
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:        m3p_nnlsA[ th ][n] = new HPFLTNB[ mp_ID->GetNbTimeFrames() ];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:      m2p_nnlsB[ th ]   = new HPFLTNB[ mp_ID->GetNbTimeFrames() ];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:      m2p_nnlsMat[ th ] = new HPFLTNB[ (m_nnlsN+2) * mp_ID->GetNbTimeFrames() ];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    mp_w = new HPFLTNB[ mp_ID->GetNbTimeFrames() ];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    for(int t=0; t<mp_ID->GetNbTimeFrames(); t++) 
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:      mp_w[t] = sqrt(mp_ID->GetFrameDurationInSec(0,t)) ;  // (convert time in min);
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:        for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:        for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:        avg /= mp_ID->GetNbVoxXYZ();
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:  for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    for(int t=0; t<mp_ID->GetNbTimeFrames(); t++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:            mp_ID->GetNbTimeFrames(),
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:  for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++) 
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    xmean /= mp_ID->GetNbTimeFrames();
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    ymean /= mp_ID->GetNbTimeFrames();
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearPatlakModel.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    m2p_modelTACs[b] = new HPFLTNB[mp_ID->GetNbTimeFrames()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    m2p_parametricImages[b] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    m2p_RGModelTACs[rb] = new HPFLTNB[mp_ID->GetNbRespGates()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    m2p_RGParametricImages[rb] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    m2p_CGModelTACs[cb] = new HPFLTNB[mp_ID->GetNbCardGates()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    m2p_CGParametricImages[cb] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:  mp_corrBasisCoeffs = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:  mp_corrBasisFunctions = new HPFLTNB[mp_ID->GetNbThreadsForProjection()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                            mp_ID->GetNbTimeFrames(),
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                            mp_ID->GetNbRespGates(),
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                            mp_ID->GetNbCardGates(),
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    m2p_outputParImages[b] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:        for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:        for(int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:        for(int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:      for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:        for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          parametric_image_norm *= mp_ID->GetNbRespGates()
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                                 * mp_ID->GetNbCardGates();
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int th=0 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:              for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                    for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int th=1 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          parametric_image_norm *= mp_ID->GetNbTimeFrames()
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                                 * mp_ID->GetNbCardGates();
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int th=0 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:              for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                    for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int th=1 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          parametric_image_norm *= mp_ID->GetNbTimeFrames()
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                                 * mp_ID->GetNbRespGates();
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int th=0 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:              for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                    for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int th=1 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:              for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:              for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++) 
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:              for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:              for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++) 
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:              for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:          for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:              for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:                for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            avg /= mp_ID->GetNbVoxXYZ();
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            avg /= mp_ID->GetNbVoxXYZ();
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:            avg /= mp_ID->GetNbVoxXYZ();
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:  for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:    for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:      for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./GetCurrentTimeFrame(th):./src/dynamic/iLinearModel.cc:        for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./GetCurrentTimeFrame(th):./src/dynamic/oDynamicModelManager.cc:  if (mp_ID->GetNbTimeFrames() <= 1 &&
+./GetCurrentTimeFrame(th):./src/dynamic/oDynamicModelManager.cc:      mp_ID->GetNbRespGates() <= 1 &&
+./GetCurrentTimeFrame(th):./src/dynamic/oDynamicModelManager.cc:      mp_ID->GetNbCardGates() <= 1)
+./src/algorithm/oIterativeAlgorithm.cc:  mp_ID->ResetCurrentDynamicIndices();
+./src/algorithm/oIterativeAlgorithm.cc:  if (m_verbose>=VERBOSE_NORMAL && mp_ID->GetMPIRank()==0)
+./src/algorithm/oIterativeAlgorithm.cc:  omp_set_num_threads(mp_ID->GetNbThreadsForProjection());
+./src/algorithm/oIterativeAlgorithm.cc:  bool* p_end_loop_flags = (bool*)malloc(mp_ID->GetNbThreadsForProjection()*sizeof(bool));
+./src/algorithm/oIterativeAlgorithm.cc:  for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++) p_end_loop_flags[th] = false;
+./src/algorithm/oIterativeAlgorithm.cc:    if (m_verbose>=2 && th==0 && mp_ID->GetMPIRank()==0)
+./src/algorithm/oIterativeAlgorithm.cc:    int dynamic_switch_value = mp_ID->DynamicSwitch(index, event->GetTimeInMs(), a_bed, th);
+./src/algorithm/oIterativeAlgorithm.cc:      if (th==0 && m_verbose>=3 && mp_ID->GetMPIRank()==0)
+./src/algorithm/oIterativeAlgorithm.cc:                                                                   0, //////////////////////////////////////////////////////////// mp_ID->GetCurrentTimeFrame(th)
+./src/algorithm/oIterativeAlgorithm.cc:                                                                   mp_ID->GetCurrentRespImage(th),
+./src/algorithm/oIterativeAlgorithm.cc:                                                                   mp_ID->GetCurrentCardImage(th),
+./src/algorithm/oIterativeAlgorithm.cc:    p_ChronoManager->StopIterativeDataUpdateStep4(th); Cout("mp_ID->GetCurrentTimeFrame(th) " << mp_ID->GetCurrentTimeFrame(th) << endl);
+./src/algorithm/oIterativeAlgorithm.cc:  omp_set_num_threads(mp_ID->GetNbThreadsForImageComputation());
+./src/algorithm/oIterativeAlgorithm.cc:  if (m_verbose>=2 && mp_ID->GetMPIRank()==0)
+./src/algorithm/oIterativeAlgorithm.cc:  if (mp_ID->GetMPIRank()==0 && mp_outputIterations[a_iteration] && m_saveSensitivityHistoFlag && m2p_DataFile[0]->GetDataMode()==MODE_HISTOGRAM)
+./src/algorithm/oIterativeAlgorithm.cc:  if (mp_ID->GetMPIRank()==0 && mp_outputIterations[a_iteration] && m_saveImageAfterSubsets)
+./src/algorithm/oIterativeAlgorithm.cc:  if (mp_ID->GetMPIRank()==0 && mp_outputIterations[a_iteration])
+./src/algorithm/oIterativeAlgorithm.cc:  if (!mp_ID->GetTimeStaticFlag() || !mp_ID->GetRespStaticFlag() || !mp_ID->GetCardStaticFlag())
+./src/algorithm/oIterativeAlgorithm.cc:  return (m_nbThreadsWaiting==mp_ID->GetNbThreadsForProjection());
+./src/image/vDeformation.cc:    //for(int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/vDeformation.cc:      for(int rimg=0; rimg<mp_ID->GetNbRespGates(); rimg++)
+./src/image/vDeformation.cc:        for(int cimg=0; cimg<mp_ID->GetNbCardGates(); cimg++)
+./src/image/vDeformation.cc:        for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v=v+mp_ID->GetNbVoxX())
+./src/image/vDeformation.cc:                  for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v=v+mp_ID->GetNbVoxX())
+./src/image/vDeformation.cc:          for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/vDeformation.cc:  //for(int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/vDeformation.cc:    for(int rimg=0; rimg<mp_ID->GetNbRespGates() ; rimg++)
+./src/image/vDeformation.cc:      for(int cimg=0; cimg<mp_ID->GetNbCardGates() ; cimg++)
+./src/image/vDeformation.cc:        for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/vDeformation.cc:    for (int th=1 ; th<mp_ID->GetNbThreadsForProjection() ; th++) //TODO add 4D loops
+./src/image/vDeformation.cc:      for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/vDeformation.cc:    for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/vDeformation.cc:    for(int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/image/vDeformation.cc:      for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/vDeformation.cc:  for (int th=1 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/image/vDeformation.cc:    for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/vDeformation.cc:  for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/vDeformation.cc:  for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./src/image/vDeformation.cc:    for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/vDeformation.cc:  int incY = dY>0 ? mp_ID->GetNbVoxX() : -mp_ID->GetNbVoxX();
+./src/image/vDeformation.cc:  int incZ = dZ>0 ? mp_ID->GetNbVoxXY() : -mp_ID->GetNbVoxXY();
+./src/image/vDeformation.cc:  uint32_t nb_tot_vox = (uint32_t)mp_ID->GetNbVoxXYZ();
+./src/image/iDeformationRigid.cc:  mp_OriginalArray = new HPFLTNB [mp_ID->GetNbVoxXYZ()];
+./src/image/iDeformationRigid.cc:  mp_OutputArray   = new HPFLTNB [mp_ID->GetNbVoxXYZ()];
+./src/image/iDeformationRigid.cc:  for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/iDeformationRigid.cc:  for(int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/iDeformationRigid.cc:  FLTNB sX = mp_ID->GetVoxSizeX();
+./src/image/iDeformationRigid.cc:  FLTNB sY = mp_ID->GetVoxSizeY();
+./src/image/iDeformationRigid.cc:  FLTNB sZ = mp_ID->GetVoxSizeZ();
+./src/image/iDeformationRigid.cc:  FLTNB dX = mp_ID->GetNbVoxX();
+./src/image/iDeformationRigid.cc:  FLTNB dY = mp_ID->GetNbVoxY();
+./src/image/iDeformationRigid.cc:  FLTNB dZ = mp_ID->GetNbVoxZ();
+./src/image/iDeformationRigid.cc:  FLTNB dXY = mp_ID->GetNbVoxXY();
+./src/image/iDeformationRigid.cc:  for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/iDeformationRigid.cc:    uint32_t iZ = v/mp_ID->GetNbVoxXY();
+./src/image/iDeformationRigid.cc:    uint32_t iY = (v - iZ*mp_ID->GetNbVoxXY()) / mp_ID->GetNbVoxX();
+./src/image/iDeformationRigid.cc:    uint32_t iX =  v - iZ*mp_ID->GetNbVoxXY() - iY*mp_ID->GetNbVoxX();
+./src/image/oImageSpace.cc:  m4p_image = (FLTNB****)malloc(mp_ID->GetNbTimeBasisFunctions()*sizeof(FLTNB***));
+./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:    m4p_image[tbf] = (FLTNB***)malloc(mp_ID->GetNbRespBasisFunctions()*sizeof(FLTNB**));
+./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:      m4p_image[tbf][rbf] = (FLTNB**)malloc(mp_ID->GetNbCardBasisFunctions()*sizeof(FLTNB*));
+./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:        m4p_image[tbf][rbf][cbf] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:        for (INTNB v=0; v<mp_ID->GetNbVoxXYZ(); v++) m4p_image[tbf][rbf][cbf][v] = 0.;
+./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++) if (m4p_image[tbf])
+./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++) if (m4p_image[tbf][rbf])
+./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++) if (m4p_image[tbf][rbf][cbf])
+./src/image/oImageSpace.cc:  m4p_forwardImage = (FLTNB****)malloc(mp_ID->GetNbTimeBasisFunctions()*sizeof(FLTNB***));
+./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:    m4p_forwardImage[tbf] = (FLTNB***)malloc(mp_ID->GetNbRespBasisFunctions()*sizeof(FLTNB**));
+./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:      m4p_forwardImage[tbf][rbf] = (FLTNB**)malloc(mp_ID->GetNbCardBasisFunctions()*sizeof(FLTNB*));
+./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:        m4p_forwardImage[tbf][rbf][cbf] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:        for (INTNB v=0; v<mp_ID->GetNbVoxXYZ(); v++) m4p_forwardImage[tbf][rbf][cbf][v] = 0.;
+./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++) if (m4p_forwardImage[tbf])
+./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++) if (m4p_forwardImage[tbf][rbf])
+./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++) if (m4p_forwardImage[tbf][rbf][cbf])
+./src/image/oImageSpace.cc:    m6p_backwardImage[img] = (FLTNB*****)malloc(mp_ID->GetNbThreadsForProjection()*sizeof(FLTNB****));
+./src/image/oImageSpace.cc:    for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./src/image/oImageSpace.cc:      m6p_backwardImage[img][th] = (FLTNB****)malloc(mp_ID->GetNbTimeBasisFunctions()*sizeof(FLTNB***));
+./src/image/oImageSpace.cc:      for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:        m6p_backwardImage[img][th][tbf] = (FLTNB***)malloc(mp_ID->GetNbRespBasisFunctions()*sizeof(FLTNB**));
+./src/image/oImageSpace.cc:        for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:          m6p_backwardImage[img][th][tbf][rbf] = (FLTNB**)malloc(mp_ID->GetNbCardBasisFunctions()*sizeof(FLTNB*));
+./src/image/oImageSpace.cc:          for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:            m6p_backwardImage[img][th][tbf][rbf][cbf] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:      for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++) if (m6p_backwardImage[img][th])
+./src/image/oImageSpace.cc:        for (int tbf=0 ; tbf<mp_ID->GetNbTimeBasisFunctions() ; tbf++) if (m6p_backwardImage[img][th][tbf])
+./src/image/oImageSpace.cc:          for (int rbf=0 ; rbf<mp_ID->GetNbRespBasisFunctions() ; rbf++) if (m6p_backwardImage[img][th][tbf][rbf])
+./src/image/oImageSpace.cc:            for (int cbf=0 ; cbf<mp_ID->GetNbCardBasisFunctions() ; cbf++) if (m6p_backwardImage[img][th][tbf][rbf][cbf])
+./src/image/oImageSpace.cc:  m6p_backwardImage[0] = (FLTNB*****)malloc(mp_ID->GetNbThreadsForProjection()*sizeof(FLTNB****));
+./src/image/oImageSpace.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/image/oImageSpace.cc:    m6p_backwardImage[0][th] = (FLTNB****)malloc(mp_ID->GetNbTimeFrames()*sizeof(FLTNB***));
+./src/image/oImageSpace.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      m6p_backwardImage[0][th][fr] = (FLTNB***)malloc(mp_ID->GetNb1stMotImgsForLMS(fr)*sizeof(FLTNB**));
+./src/image/oImageSpace.cc:      for (int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:        m6p_backwardImage[0][th][fr][rg] = (FLTNB**)malloc(mp_ID->GetNb2ndMotImgsForLMS()*sizeof(FLTNB*));
+./src/image/oImageSpace.cc:        for (int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:          m6p_backwardImage[0][th][fr][rg][cg] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++) m6p_backwardImage[0][th][fr][rg][cg][v] = 0.;
+./src/image/oImageSpace.cc:      for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++) if (m6p_backwardImage[0][th])
+./src/image/oImageSpace.cc:        for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++) if (m6p_backwardImage[0][th][fr])
+./src/image/oImageSpace.cc:          for (int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++) if (m6p_backwardImage[0][th][fr][rg])
+./src/image/oImageSpace.cc:            for (int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++) if (m6p_backwardImage[0][th][fr][rg][cg])
+./src/image/oImageSpace.cc:    m5p_sensitivity = (FLTNB*****)malloc(mp_ID->GetNbThreadsForProjection()*sizeof(FLTNB****));
+./src/image/oImageSpace.cc:    m5p_sensitivity[thread_0] = (FLTNB****)malloc(mp_ID->GetNbTimeFrames()*sizeof(FLTNB***));
+./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:      m5p_sensitivity[thread_0][fr] = (FLTNB***)malloc(mp_ID->GetNbRespGates()*sizeof(FLTNB**));
+./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:        m5p_sensitivity[thread_0][fr][rg] = (FLTNB**)malloc(mp_ID->GetNbCardGates()*sizeof(FLTNB*));
+./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:          m5p_sensitivity[thread_0][fr][rg][cg] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:    for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++)
+./src/image/oImageSpace.cc:    m5p_sensitivity = (FLTNB*****)malloc(mp_ID->GetNbThreadsForProjection()*sizeof(FLTNB****));
+./src/image/oImageSpace.cc:    for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./src/image/oImageSpace.cc:      m5p_sensitivity[th] = (FLTNB****)malloc(mp_ID->GetNbTimeFrames()*sizeof(FLTNB***));
+./src/image/oImageSpace.cc:      for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:        m5p_sensitivity[th][fr] = (FLTNB***)malloc(mp_ID->GetNbRespGates()*sizeof(FLTNB**));
+./src/image/oImageSpace.cc:        for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:          m5p_sensitivity[th][fr][rg] = (FLTNB**)malloc(mp_ID->GetNbCardGates()*sizeof(FLTNB*));
+./src/image/oImageSpace.cc:          for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:            m5p_sensitivity[th][fr][rg][cg] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:            for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++) m5p_sensitivity[th][fr][rg][cg][v] = 0.;
+./src/image/oImageSpace.cc:        for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++) if (m5p_sensitivity[thread_0][fr])
+./src/image/oImageSpace.cc:          for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++) if (m5p_sensitivity[thread_0][fr][rg])
+./src/image/oImageSpace.cc:            for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++) if (m5p_sensitivity[thread_0][fr][rg][cg])
+./src/image/oImageSpace.cc:      for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++) if (m5p_sensitivity[th])
+./src/image/oImageSpace.cc:        for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++) if (m5p_sensitivity[th][fr])
+./src/image/oImageSpace.cc:          for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++) if (m5p_sensitivity[th][fr][rg])
+./src/image/oImageSpace.cc:            for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++) if (m5p_sensitivity[th][fr][rg][cg])
+./src/image/oImageSpace.cc:  m2p_miscellaneousImage[m_nbMiscellaneousImages-1] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:  mp_visitedVoxelsImage = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:  for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++) mp_visitedVoxelsImage[v] = 0.;
+./src/image/oImageSpace.cc:      m2p_multiModalImage = (FLTNB**)malloc(mp_ID->GetNbMultiModalImages()*sizeof(FLTNB*));
+./src/image/oImageSpace.cc:      for (int nb=0; nb<mp_ID->GetNbMultiModalImages(); nb++)
+./src/image/oImageSpace.cc:        m2p_multiModalImage[nb] = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:    for (int nb=0; nb<mp_ID->GetNbMultiModalImages(); nb++) if (m2p_multiModalImage[nb]) free(m2p_multiModalImage[nb]);
+./src/image/oImageSpace.cc:      mp_maskImage = (FLTNB*)malloc(mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:  m4p_outputImage = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:    m4p_outputImage[fr] = new FLTNB**[mp_ID->GetNbRespGates()];
+./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:      m4p_outputImage[fr][rg] = new FLTNB*[mp_ID->GetNbCardGates()];
+./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:        if ( mp_ID->GetTimeStaticFlag() &&
+./src/image/oImageSpace.cc:             mp_ID->GetRespStaticFlag() &&
+./src/image/oImageSpace.cc:             mp_ID->GetCardStaticFlag() )
+./src/image/oImageSpace.cc:          m4p_outputImage[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:        for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:            for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:              if ( (!mp_ID->GetTimeStaticFlag() ||
+./src/image/oImageSpace.cc:                    !mp_ID->GetRespStaticFlag() ||
+./src/image/oImageSpace.cc:                    !mp_ID->GetCardStaticFlag()) &&
+./src/image/oImageSpace.cc:    m5p_refDynBackwardImage[img] = new FLTNB***[mp_ID->GetNbTimeBasisFunctions()];
+./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:      m5p_refDynBackwardImage[img][tbf] = new FLTNB**[mp_ID->GetNbRespBasisFunctions()];
+./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:        m5p_refDynBackwardImage[img][tbf][rbf] = new FLTNB*[mp_ID->GetNbCardBasisFunctions()];
+./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:          m5p_refDynBackwardImage[img][tbf][rbf][cbf] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/image/oImageSpace.cc:  m4p_refDynForwardImage = new FLTNB***[mp_ID->GetNbTimeBasisFunctions()];
+./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:    m4p_refDynForwardImage[tbf] = new FLTNB**[mp_ID->GetNbRespBasisFunctions()];
+./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:      m4p_refDynForwardImage[tbf][rbf] = new FLTNB*[mp_ID->GetNbCardBasisFunctions()];
+./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:        m4p_refDynForwardImage[tbf][rbf][cbf] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/image/oImageSpace.cc:    m5p_refDynBackwardImage[img] = new FLTNB***[mp_ID->GetNbTimeBasisFunctions()];
+./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:      m5p_refDynBackwardImage[img][tbf] = new FLTNB**[mp_ID->GetNbRespBasisFunctions()];
+./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:        m5p_refDynBackwardImage[img][tbf][rbf] = new FLTNB*[mp_ID->GetNbCardBasisFunctions()];
+./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:          m5p_refDynBackwardImage[img][tbf][rbf][cbf] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/image/oImageSpace.cc:    m4p_refDynSensitivityImage = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      m4p_refDynSensitivityImage[fr] = new FLTNB**[mp_ID->GetNbRespGates()];
+./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:        m4p_refDynSensitivityImage[fr][rg] = new FLTNB*[mp_ID->GetNbCardGates()];
+./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:          m4p_refDynSensitivityImage[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:  m4p_refDynSensitivityImage = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:    m4p_refDynSensitivityImage[fr] = new FLTNB**[mp_ID->GetNbRespGates()];
+./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:      m4p_refDynSensitivityImage[fr][rg] = new FLTNB*[mp_ID->GetNbCardGates()];
+./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:        m4p_refDynSensitivityImage[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/image/oImageSpace.cc:  for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./src/image/oImageSpace.cc:    m4p_attenuation = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      m4p_attenuation[fr] = new FLTNB**[mp_ID->GetNb1stMotImgsForLMS(fr)];
+./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./src/image/oImageSpace.cc:        m4p_attenuation[fr][rg] = new FLTNB*[mp_ID->GetNb2ndMotImgsForLMS()];
+./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./src/image/oImageSpace.cc:          m4p_attenuation[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/image/oImageSpace.cc:    if(nb_atn_cgates == 1 && mp_ID->GetNb2ndMotImgsForLMS()>1)
+./src/image/oImageSpace.cc:      for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:        for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./src/image/oImageSpace.cc:          for(int cg=1 ; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./src/image/oImageSpace.cc:            for(int v=0 ; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      if(nb_atn_rgates == 1 && mp_ID->GetNb1stMotImgsForLMS(fr)>1)
+./src/image/oImageSpace.cc:        for(int rg=1 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./src/image/oImageSpace.cc:          for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./src/image/oImageSpace.cc:            for(int v=0 ; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    if(nb_atn_frames == 1 && mp_ID->GetNbTimeFrames()>1)
+./src/image/oImageSpace.cc:      for(int fr=1 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:        for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./src/image/oImageSpace.cc:          for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./src/image/oImageSpace.cc:            for(int v=0 ; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    FLTNB flt_base_x = 0.5*((FLTNB)(mp_ID->GetNbVoxX()-1));
+./src/image/oImageSpace.cc:    FLTNB flt_base_y = 0.5*((FLTNB)(mp_ID->GetNbVoxY()-1));
+./src/image/oImageSpace.cc:    FLTNB squared_radius_x = 0.5 * ((FLTNB)(mp_ID->GetNbVoxX())) * mp_ID->GetVoxSizeX();
+./src/image/oImageSpace.cc:    FLTNB squared_radius_y = 0.5 * ((FLTNB)(mp_ID->GetNbVoxY())) * mp_ID->GetVoxSizeY();
+./src/image/oImageSpace.cc:    for (x=0; x<mp_ID->GetNbVoxX(); x++)
+./src/image/oImageSpace.cc:      FLTNB squared_distance_x = (((FLTNB)x)-flt_base_x) * mp_ID->GetVoxSizeX();
+./src/image/oImageSpace.cc:      for (int y=0; y<mp_ID->GetNbVoxY(); y++)
+./src/image/oImageSpace.cc:        FLTNB squared_distance_y = (((FLTNB)y)-flt_base_y) * mp_ID->GetVoxSizeY();
+./src/image/oImageSpace.cc:        for (int z=0; z<mp_ID->GetNbVoxZ(); z++)
+./src/image/oImageSpace.cc:          INTNB index = z*mp_ID->GetNbVoxXY() + y*mp_ID->GetNbVoxX() + x;
+./src/image/oImageSpace.cc:          for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:            for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:              for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:    for (th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./src/image/oImageSpace.cc:      for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:        for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:          for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:            for (INTNB v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    for (th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./src/image/oImageSpace.cc:      for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:        for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:          for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:            for (INTNB v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./src/image/oImageSpace.cc:      for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:        for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:          for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:            for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:          for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:          for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:  for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:        for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:        for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:          FLTNB time_basis_coef = mp_ID->GetTimeBasisCoefficient(tbf,fr);
+./src/image/oImageSpace.cc:          for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:            FLTNB resp_basis_coef = mp_ID->GetRespBasisCoefficient(rbf,rg);
+./src/image/oImageSpace.cc:            for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:              FLTNB card_basis_coef = mp_ID->GetCardBasisCoefficient(cbf,cg);
+./src/image/oImageSpace.cc:              for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:  if ( !mp_ID->GetFlipOutX() &&
+./src/image/oImageSpace.cc:       !mp_ID->GetFlipOutY() &&
+./src/image/oImageSpace.cc:       !mp_ID->GetFlipOutZ() ) return 0;
+./src/image/oImageSpace.cc:    if (mp_ID->GetFlipOutX()) Cout("  --> Over X" << endl);
+./src/image/oImageSpace.cc:    if (mp_ID->GetFlipOutY()) Cout("  --> Over Y" << endl);
+./src/image/oImageSpace.cc:    if (mp_ID->GetFlipOutZ()) Cout("  --> Over Z" << endl);
+./src/image/oImageSpace.cc:  for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:        if (mp_ID->GetFlipOutZ())
+./src/image/oImageSpace.cc:          for (INTNB z_1=0; z_1<mp_ID->GetNbVoxZ()/2; z_1++)
+./src/image/oImageSpace.cc:            INTNB z_2 = mp_ID->GetNbVoxZ() - 1 - z_1;
+./src/image/oImageSpace.cc:            INTNB base_z1 = z_1 * mp_ID->GetNbVoxXY();
+./src/image/oImageSpace.cc:            INTNB base_z2 = z_2 * mp_ID->GetNbVoxXY();
+./src/image/oImageSpace.cc:            for (INTNB y=0; y<mp_ID->GetNbVoxY(); y++)
+./src/image/oImageSpace.cc:              INTNB base_y = y * mp_ID->GetNbVoxX();
+./src/image/oImageSpace.cc:              for (INTNB x=0; x<mp_ID->GetNbVoxX(); x++)
+./src/image/oImageSpace.cc:        if (mp_ID->GetFlipOutY())
+./src/image/oImageSpace.cc:          for (INTNB z=0; z<mp_ID->GetNbVoxZ(); z++)
+./src/image/oImageSpace.cc:            INTNB base_z = z * mp_ID->GetNbVoxXY();
+./src/image/oImageSpace.cc:            for (INTNB y_1=0; y_1<mp_ID->GetNbVoxY()/2; y_1++)
+./src/image/oImageSpace.cc:              INTNB y_2 = mp_ID->GetNbVoxY() - 1 - y_1;
+./src/image/oImageSpace.cc:              INTNB base_y1 = y_1 * mp_ID->GetNbVoxX();
+./src/image/oImageSpace.cc:              INTNB base_y2 = y_2 * mp_ID->GetNbVoxX();
+./src/image/oImageSpace.cc:              for (INTNB x=0; x<mp_ID->GetNbVoxX(); x++)
+./src/image/oImageSpace.cc:        if (mp_ID->GetFlipOutX())
+./src/image/oImageSpace.cc:          for (INTNB z=0; z<mp_ID->GetNbVoxZ(); z++)
+./src/image/oImageSpace.cc:            INTNB base_z = z * mp_ID->GetNbVoxXY();
+./src/image/oImageSpace.cc:            for (INTNB y=0; y<mp_ID->GetNbVoxY(); y++)
+./src/image/oImageSpace.cc:              INTNB base_y = y * mp_ID->GetNbVoxX();
+./src/image/oImageSpace.cc:              for (INTNB x_1=0; x_1<mp_ID->GetNbVoxX()/2; x_1++)
+./src/image/oImageSpace.cc:                INTNB x_2 = mp_ID->GetNbVoxX() - 1 - x_1;
+./src/image/oImageSpace.cc:  if ( mp_ID->GetFOVOutPercent()<=0. &&
+./src/image/oImageSpace.cc:       mp_ID->GetNbSliceOutMask()==0 ) return 0;
+./src/image/oImageSpace.cc:    if (mp_ID->GetFOVOutPercent()>0.) Cout("  --> Mask transaxial FOV outside " << mp_ID->GetFOVOutPercent() << " %" << endl);
+./src/image/oImageSpace.cc:    if (mp_ID->GetNbSliceOutMask()>0) Cout("  --> Mask " << mp_ID->GetNbSliceOutMask() << " slices from both axial FOV limits" << endl);
+./src/image/oImageSpace.cc:  if (mp_ID->GetFOVOutPercent()>0.)
+./src/image/oImageSpace.cc:    FLTNB flt_base_x = 0.5*((FLTNB)(mp_ID->GetNbVoxX()-1));
+./src/image/oImageSpace.cc:    FLTNB flt_base_y = 0.5*((FLTNB)(mp_ID->GetNbVoxY()-1));
+./src/image/oImageSpace.cc:    FLTNB squared_radius_x = 0.5 * ((FLTNB)(mp_ID->GetNbVoxX())) * mp_ID->GetVoxSizeX()
+./src/image/oImageSpace.cc:                           * mp_ID->GetFOVOutPercent() / 100.;
+./src/image/oImageSpace.cc:    FLTNB squared_radius_y = 0.5 * ((FLTNB)(mp_ID->GetNbVoxY())) * mp_ID->GetVoxSizeY()
+./src/image/oImageSpace.cc:                           * mp_ID->GetFOVOutPercent() / 100.;
+./src/image/oImageSpace.cc:    for (x=0; x<mp_ID->GetNbVoxX(); x++)
+./src/image/oImageSpace.cc:      FLTNB squared_distance_x = (((FLTNB)x)-flt_base_x) * mp_ID->GetVoxSizeX();
+./src/image/oImageSpace.cc:      for (int y=0; y<mp_ID->GetNbVoxY(); y++)
+./src/image/oImageSpace.cc:        FLTNB squared_distance_y = (((FLTNB)y)-flt_base_y) * mp_ID->GetVoxSizeY();
+./src/image/oImageSpace.cc:        for (int z=0; z<mp_ID->GetNbVoxZ(); z++)
+./src/image/oImageSpace.cc:          INTNB index = z*mp_ID->GetNbVoxXY() + y*mp_ID->GetNbVoxX() + x;
+./src/image/oImageSpace.cc:          for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:            for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:              for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:          for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:            for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:              for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:  if (mp_ID->GetNbSliceOutMask()>0)
+./src/image/oImageSpace.cc:    INTNB removed_slices = mp_ID->GetNbSliceOutMask();
+./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:            INTNB base_z_first = z*mp_ID->GetNbVoxXY();
+./src/image/oImageSpace.cc:            for (int i=0; i<mp_ID->GetNbVoxXY(); i++)
+./src/image/oImageSpace.cc:            INTNB base_z_last = (mp_ID->GetNbVoxZ()-1-z)*mp_ID->GetNbVoxXY();
+./src/image/oImageSpace.cc:            for (int i=0; i<mp_ID->GetNbVoxXY(); i++)
+./src/image/oImageSpace.cc:  for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:  for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:  for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:        output_file.write(reinterpret_cast<char*>(m6p_backwardImage[0][0][0][0][0]), mp_ID->GetNbVoxXYZ()*sizeof(FLTNB));
+./src/image/oImageSpace.cc:  for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:    for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:      for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:        for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:  omp_set_num_threads(mp_ID->GetNbThreadsForProjection());
+./src/image/oImageSpace.cc:  if (alternative==1 || mp_ID->GetNbThreadsForImageComputation()==1)
+./src/image/oImageSpace.cc:      for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) 
+./src/image/oImageSpace.cc:        for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:          for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:            for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:              for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:    for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:        for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) 
+./src/image/oImageSpace.cc:          for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:            for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:              for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:    if (alternative==1 || mp_ID->GetNbThreadsForImageComputation()==1)
+./src/image/oImageSpace.cc:      for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++)
+./src/image/oImageSpace.cc:        for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:          for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:            for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:              for (int v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:      for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:        for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++)
+./src/image/oImageSpace.cc:          for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:            for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:              for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:  omp_set_num_threads(mp_ID->GetNbThreadsForImageComputation());
+./src/image/oImageSpace.cc:    for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:      for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:        for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:          MPI_Allreduce( MPI_IN_PLACE, &m6p_backwardImage[img][0][tbf][rbf][cbf][0], mp_ID->GetNbVoxXYZ(), FLTNBMPI, MPI_SUM, MPI_COMM_WORLD );
+./src/image/oImageSpace.cc:    for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:      for (int rg=0; rg<mp_ID->GetNbRespGates(); rg++)
+./src/image/oImageSpace.cc:        for (int cg=0; cg<mp_ID->GetNbCardGates(); cg++)
+./src/image/oImageSpace.cc:          MPI_Allreduce( MPI_IN_PLACE, &m5p_sensitivity[0][fr][rg][cg][0], mp_ID->GetNbVoxXYZ(), FLTNBMPI, MPI_SUM, MPI_COMM_WORLD );
+./src/image/oImageSpace.cc:  for (v=0; v<mp_ID->GetNbVoxXYZ(); v++)
+./src/image/oImageSpace.cc:      for (int tbf=0; tbf<mp_ID->GetNbTimeBasisFunctions(); tbf++)
+./src/image/oImageSpace.cc:        for (int rbf=0; rbf<mp_ID->GetNbRespBasisFunctions(); rbf++)
+./src/image/oImageSpace.cc:          for (int cbf=0; cbf<mp_ID->GetNbCardBasisFunctions(); cbf++)
+./src/image/oImageSpace.cc:  m4p_image = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:    m4p_image[fr] = new FLTNB**[mp_ID->GetNb1stMotImgsForLMS(fr)];
+./src/image/oImageSpace.cc:    for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:      m4p_image[fr][rg] = new FLTNB*[mp_ID->GetNb2ndMotImgsForLMS()];
+./src/image/oImageSpace.cc:      for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:        m4p_image[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:    for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:      for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:  m4p_forwardImage = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:    m4p_forwardImage[fr] = new FLTNB**[mp_ID->GetNb1stMotImgsForLMS(fr)];
+./src/image/oImageSpace.cc:    for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:      m4p_forwardImage[fr][rg] = new FLTNB*[mp_ID->GetNb2ndMotImgsForLMS()];
+./src/image/oImageSpace.cc:      for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:        m4p_forwardImage[fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/image/oImageSpace.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:    for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:      for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:  m5p_sensitivity[0] = new FLTNB***[mp_ID->GetNbTimeFrames()];
+./src/image/oImageSpace.cc:  for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:    m5p_sensitivity[0][fr] = new FLTNB**[mp_ID->GetNb1stMotImgsForLMS(fr)];
+./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./src/image/oImageSpace.cc:      m5p_sensitivity[0][fr][rg] = new FLTNB*[mp_ID->GetNb2ndMotImgsForLMS()];
+./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./src/image/oImageSpace.cc:        m5p_sensitivity[0][fr][rg][cg] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/image/oImageSpace.cc:  for (int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:    for (int rg=0; rg<mp_ID->GetNb1stMotImgsForLMS(fr); rg++)
+./src/image/oImageSpace.cc:      for (int cg=0; cg<mp_ID->GetNb2ndMotImgsForLMS(); cg++)
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:      for(int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:        for(int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:  for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:    for (int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:      for (int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:        for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:  for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oImageSpace.cc:    for (int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:      for (int cg=0 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:        for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:  for (int th=1 ; th<mp_ID->GetNbThreadsForProjection() ; th++) 
+./src/image/oImageSpace.cc:    for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:  MPI_Allreduce( MPI_IN_PLACE, &m6p_backwardImage[a_imageIndex][0][a_timeIndex][a_respIndex][a_cardIndex][0], mp_ID->GetNbVoxXYZ(), FLTNBMPI, MPI_SUM, MPI_COMM_WORLD );
+./src/image/oImageSpace.cc:  int nb_reco_card_images = ap_DeformationManager->GetNbSensImagesCardDeformation(mp_ID->GetNb2ndMotImgsForLMS());    
+./src/image/oImageSpace.cc:  if (ap_DeformationManager->GetNbSensImagesCardDeformation(mp_ID->GetNb2ndMotImgsForLMS()) == 0) 
+./src/image/oImageSpace.cc:    FLTNB card_normalization = mp_ID->GetNb2ndMotImgsForLMS();
+./src/image/oImageSpace.cc:    for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:      for(int fr=0 ; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:        for (int rg=0 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:          for (int cg=1 ; cg<mp_ID->GetNb2ndMotImgsForLMS() ; cg++)
+./src/image/oImageSpace.cc:  if (!mp_ID->IsPMotionEnabled()  // No patient motion correction
+./src/image/oImageSpace.cc:      && ap_DeformationManager->GetNbSensImagesRespDeformation(mp_ID->GetNb1stMotImgsForLMS(0)) == 0) 
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:      FLTNB resp_normalization = mp_ID->GetNb1stMotImgsForLMS(fr);
+./src/image/oImageSpace.cc:        for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:          for (int rg=1 ; rg<mp_ID->GetNb1stMotImgsForLMS(fr) ; rg++)
+./src/image/oImageSpace.cc:  if (mp_ID->IsPMotionEnabled() ) 
+./src/image/oImageSpace.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oImageSpace.cc:      for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/image/oImageSpace.cc:        //for (int ipm=1 ; ipm<mp_ID->GetNb1stMotImgsForLMS(fr) ; ipm++)
+./src/image/oImageSpace.cc:         for (int ipm=0 ; ipm<mp_ID->GetNb1stMotImgsForLMS(fr) ; ipm++)
+./src/image/oImageSpace.cc:           sensitivity_value_avg += m5p_sensitivity[0][fr][ipm][0][v] * mp_ID->GetListPMotionWeightInFrameForLMS(fr, ipm);
+./src/image/oDeformationManager.cc:  mp_curPatMotIdx = new int16_t[mp_ID->GetNbTimeFrames()];
+./src/image/oDeformationManager.cc:  for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/image/oDeformationManager.cc:  int fr = mp_ID->GetCurrentTimeFrame(0);
+./src/image/oDeformationManager.cc:  int rimg = mp_ID->GetCurrentRespImage(0);
+./src/image/oDeformationManager.cc:  int cimg = mp_ID->GetCurrentCardImage(0);  
+./src/image/oDeformationManager.cc:    idx = mp_ID->GetCurrentRespGate(0);
+./src/image/oDeformationManager.cc:    idx = mp_ID->GetCurrentCardGate(0);
+./src/image/oDeformationManager.cc:    idx = mp_ID->GetCurrentPMotionIndex(0);
+./src/image/oDeformationManager.cc:      for(int f=fr+1 ; f<mp_ID->GetNbTimeFrames(); f++)
+./src/image/oDeformationManager.cc:  for(int fr=0; fr<mp_ID->GetNbTimeFrames(); fr++)
+./src/image/oDeformationManager.cc:      idx = mp_ID->GetCurrentRespGate(0);
+./src/image/oDeformationManager.cc:      idx = mp_ID->GetCurrentCardGate(0);
+./src/image/oDeformationManager.cc:      //idx = mp_ID->GetCurrentPMotionIndex(0);
+./src/image/iDeformationTemplate.cc:  * Total number of voxels         : mp_ID->GetNbVoxXYZ()
+./src/image/iDeformationTemplate.cc:  * Number of voxels in a slice    : mp_ID->GetNbVoxXY()
+./src/image/iDeformationTemplate.cc:  * Number of voxels on the X-axis : mp_ID->GetNbVoxX()
+./src/analytic_simulator/oAnalyticProjection.cc:    uint64_t* total_events = (uint64_t*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(uint64_t));
+./src/analytic_simulator/oAnalyticProjection.cc:    HPFLTNB* total_prompts = (HPFLTNB*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(HPFLTNB));
+./src/analytic_simulator/oAnalyticProjection.cc:                                                           mp_ID->GetNbTimeFrames()*
+./src/analytic_simulator/oAnalyticProjection.cc:                                                           mp_ID->GetNbRespGates()*
+./src/analytic_simulator/oAnalyticProjection.cc:                                                           mp_ID->GetNbCardGates();
+./src/analytic_simulator/oAnalyticProjection.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/analytic_simulator/oAnalyticProjection.cc:      uint32_t timestamp = mp_ID->GetFrameTimeStartInMs(bed,fr);
+./src/analytic_simulator/oAnalyticProjection.cc:      uint64_t* total_events_in_frame = (uint64_t*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(uint64_t));
+./src/analytic_simulator/oAnalyticProjection.cc:      HPFLTNB* total_prompts_in_frame = (HPFLTNB*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(HPFLTNB));
+./src/analytic_simulator/oAnalyticProjection.cc:      for(int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/analytic_simulator/oAnalyticProjection.cc:        uint64_t* total_events_in_rgate = (uint64_t*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(uint64_t));
+./src/analytic_simulator/oAnalyticProjection.cc:        HPFLTNB* total_prompts_in_rgate = (HPFLTNB*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(HPFLTNB));
+./src/analytic_simulator/oAnalyticProjection.cc:        for(int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/analytic_simulator/oAnalyticProjection.cc:          uint64_t* total_events_in_cgate = (uint64_t*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(uint64_t));
+./src/analytic_simulator/oAnalyticProjection.cc:          HPFLTNB* total_prompts_in_cgate = (HPFLTNB*)calloc(mp_ID->GetNbThreadsForProjection(),sizeof(HPFLTNB));
+./src/analytic_simulator/oAnalyticProjection.cc:          if(mp_ID->GetNbTimeFrames() > 1)
+./src/analytic_simulator/oAnalyticProjection.cc:            if(m_verbose>=0) Cout(endl << "Processing frame #" << fr+1 << " out of " << mp_ID->GetNbTimeFrames() << endl);
+./src/analytic_simulator/oAnalyticProjection.cc:          if(mp_ID->GetNbRespGates() > 1)
+./src/analytic_simulator/oAnalyticProjection.cc:            if(m_verbose>=0) Cout(endl << "Processing resp gate #" << rg+1 << " out of " << mp_ID->GetNbRespGates() << endl);
+./src/analytic_simulator/oAnalyticProjection.cc:          if(mp_ID->GetNbCardGates() > 1)
+./src/analytic_simulator/oAnalyticProjection.cc:            if(m_verbose>=0) Cout(endl << "Processing card gate #" << cg+1 << " out of " << mp_ID->GetNbCardGates() << endl);
+./src/analytic_simulator/oAnalyticProjection.cc:                                                                                                         mp_ID->GetNbRespGates(), 
+./src/analytic_simulator/oAnalyticProjection.cc:                                                                                                         mp_ID->GetNbCardGates(), 
+./src/analytic_simulator/oAnalyticProjection.cc:          for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_events_in_cgate[0] += total_events_in_cgate[th];
+./src/analytic_simulator/oAnalyticProjection.cc:          for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_prompts_in_cgate[0] += total_prompts_in_cgate[th];
+./src/analytic_simulator/oAnalyticProjection.cc:          if(m_verbose>=2 && mp_ID->GetNbCardGates() > 1)
+./src/analytic_simulator/oAnalyticProjection.cc:        for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_events_in_rgate[0] += total_events_in_rgate[th];
+./src/analytic_simulator/oAnalyticProjection.cc:        for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_prompts_in_rgate[0] += total_prompts_in_rgate[th];
+./src/analytic_simulator/oAnalyticProjection.cc:        if(m_verbose>=2 && mp_ID->GetNbRespGates() > 1)
+./src/analytic_simulator/oAnalyticProjection.cc:      timestamp += mp_ID->GetFrameDurationInMs(bed,fr);
+./src/analytic_simulator/oAnalyticProjection.cc:      for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_events_in_frame[0] += total_events_in_frame[th];
+./src/analytic_simulator/oAnalyticProjection.cc:      for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_prompts_in_frame[0] += total_prompts_in_frame[th];
+./src/analytic_simulator/oAnalyticProjection.cc:      if(m_verbose>=2 && mp_ID->GetNbTimeFrames() > 1)
+./src/analytic_simulator/oAnalyticProjection.cc:    for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/analytic_simulator/oAnalyticProjection.cc:      acquisition_duration += mp_ID->GetFrameDurationInMs(bed,fr);
+./src/analytic_simulator/oAnalyticProjection.cc:      for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++) Cout("  --> Thread " << th << " | " << total_events[th] << " events" << endl);
+./src/analytic_simulator/oAnalyticProjection.cc:    for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_events[0] += total_events[th];
+./src/analytic_simulator/oAnalyticProjection.cc:    for (int th=1; th<mp_ID->GetNbThreadsForProjection(); th++) total_prompts[0] += total_prompts[th];
+./src/analytic_simulator/oAnalyticProjection.cc:    m2p_DataFile[bed]->SetStartTime( mp_ID->GetFrameTimeStartInSec(bed,0) );
+./src/analytic_simulator/oAnalyticProjection.cc:    m2p_DataFile[bed]->SetDuration( mp_ID->GetFrameDurationInSec(bed,0) );
+./src/scanner/iScannerCT.cc:  if (mp_ID!=NULL) nb_threads = mp_ID->GetNbThreadsMax();
+./src/datafile/iDataFilePET.cc:  if (a_affectQuantificationFlag && mp_ID->SetPETIsotope(m_bedIndex, m_isotope))
+./src/datafile/iDataFilePET.cc:  m2p_BufferEvent = new vEvent*[mp_ID->GetNbThreadsForProjection()];
+./src/datafile/iDataFilePET.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/datafile/iDataFilePET.cc:    m_ignoreAttnCorrectionFlag = mp_ID->GetIgnoreAttnCorrectionFlag();
+./src/datafile/iDataFilePET.cc:    m_ignoreNormCorrectionFlag = mp_ID->GetIgnoreNormCorrectionFlag();
+./src/datafile/iDataFilePET.cc:    m_ignoreScatCorrectionFlag = mp_ID->GetIgnoreScatCorrectionFlag();
+./src/datafile/iDataFilePET.cc:    m_ignoreRandCorrectionFlag = mp_ID->GetIgnoreRandCorrectionFlag();
+./src/datafile/iDataFilePET.cc:  if(mp_ID->IsInitialized())
+./src/datafile/iDataFilePET.cc:    m_startTimeInSec = mp_ID->GetFrameTimeStartInSec(0, 0);
+./src/datafile/iDataFilePET.cc:    for(uint16_t fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/datafile/iDataFilePET.cc:      m_durationInSec += mp_ID->GetFrameDurationInSec(0, fr);
+./src/datafile/iDataFilePET.cc:    m2p_dataFile = new fstream*[mp_ID->GetNbThreadsForProjection()];
+./src/datafile/iDataFilePET.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/datafile/vDataFile.cc:    for(int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/datafile/vDataFile.cc:    for(int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/datafile/vDataFile.cc:  if (a_affectQuantificationFlag && mp_ID->SetAcquisitionTime(m_bedIndex, m_startTimeInSec, m_durationInSec))
+./src/datafile/vDataFile.cc:  if (a_affectQuantificationFlag && mp_ID->SetCalibrationFactor(m_bedIndex, m_calibrationFactor))
+./src/datafile/vDataFile.cc:  int64_t instance_size = m_nbEvents / mp_ID->GetMPISize();
+./src/datafile/vDataFile.cc:  if (mp_ID->GetMPIRank()!=mp_ID->GetMPISize()-1) m_mpiNbEvents = instance_size;
+./src/datafile/vDataFile.cc:  else m_mpiNbEvents = instance_size + (m_nbEvents - instance_size*mp_ID->GetMPISize());
+./src/datafile/vDataFile.cc:  m_mpi1stEvent = mp_ID->GetMPIRank() * instance_size;
+./src/datafile/vDataFile.cc:  if (mp_ID->GetMPIRank()==0) *ap_indexStart = a_subsetNum;
+./src/datafile/vDataFile.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/datafile/vDataFile.cc:    if(mp_ID->GetNbThreadsForProjection()==1  // No multithreading so no multiple tmp datafiles 
+./src/datafile/vDataFile.cc:       && mp_ID->GetNbTimeFrames()
+./src/datafile/vDataFile.cc:       *  mp_ID->GetNb1stMotImgsForLMS(mp_ID->GetNbTimeFrames()-1)
+./src/datafile/vDataFile.cc:       *  mp_ID->GetNb2ndMotImgsForLMS()  == 1)
+./src/datafile/vDataFile.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/datafile/vDataFile.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/datafile/oDynamicDataManager.cc:  m_nbTimeFrames = mp_ID->GetNbTimeFrames();
+./src/datafile/oDynamicDataManager.cc:  mp_currentFrameIndex     = new int[mp_ID->GetNbThreadsForProjection()];
+./src/datafile/oDynamicDataManager.cc:  mp_currentRespGateIndex  = new int[mp_ID->GetNbThreadsForProjection()];
+./src/datafile/oDynamicDataManager.cc:  mp_currentCardGateIndex  = new int[mp_ID->GetNbThreadsForProjection()];
+./src/datafile/oDynamicDataManager.cc:  mp_currentPMotionIndex = new int[mp_ID->GetNbThreadsForProjection()];
+./src/datafile/oDynamicDataManager.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/datafile/oDynamicDataManager.cc:    while( mp_listPMotionTriggers[t] > mp_ID->GetFrameTimeStopInMs(0,fr) )
+./src/datafile/oDynamicDataManager.cc:           <<" occurs after the end of the last frame (frame "<<fr<<", timestop :"<< mp_ID->GetFrameTimeStopInMs(0,fr-1) << " !" << endl);
+./src/datafile/oDynamicDataManager.cc:    uint32_t motion_subset_start_time = mp_ID->GetFrameTimeStartInMs(0,fr);
+./src/datafile/oDynamicDataManager.cc:      motion_subset_stop_time = (mp_listPMotionTriggers[t] < mp_ID->GetFrameTimeStopInMs(0,fr) )?
+./src/datafile/oDynamicDataManager.cc:                                 mp_ID->GetFrameTimeStopInMs(0,fr);
+./src/datafile/oDynamicDataManager.cc:      motion_subset_stop_time = mp_ID->GetFrameTimeStopInMs(0,fr) ;
+./src/datafile/oDynamicDataManager.cc:        motion_subset_stop_time = (mp_listPMotionTriggers[t] < mp_ID->GetFrameTimeStopInMs(0,fr) )?
+./src/datafile/oDynamicDataManager.cc:                                   mp_ID->GetFrameTimeStopInMs(0,fr);
+./src/datafile/oDynamicDataManager.cc:        motion_subset_stop_time = mp_ID->GetFrameTimeStopInMs(0,fr) ;
+./src/datafile/oDynamicDataManager.cc:      m2p_listPMotionWeightInFrame[fr][ipm] = FLTNB(motion_subset_stop_time - motion_subset_start_time ) / mp_ID->GetFrameDurationInMs(0,fr) ;
+./src/datafile/oDynamicDataManager.cc:  for (int th=0; th<mp_ID->GetNbThreadsForProjection(); th++)
+./src/datafile/oDynamicDataManager.cc:    if (a_currentTime<mp_ID->GetFrameTimeStartInMs(a_bed,0)) return DYNAMIC_SWITCH_CONTINUE;
+./src/datafile/oDynamicDataManager.cc:    if (a_currentTime<mp_ID->GetFrameTimeStopInMs(a_bed,fr))
+./src/datafile/iDataFileAOT.cc:  m2p_BufferEvent = new vEvent*[mp_ID->GetNbThreadsForProjection()];
+./src/datafile/iDataFileAOT.cc:  for (int th=0 ; th<mp_ID->GetNbThreadsForProjection() ; th++)
+./src/dynamic/vDynamicModel.cc:        for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/vDynamicModel.cc:  if ( mp_ID->GetFOVOutPercent()<=0. &&
+./src/dynamic/vDynamicModel.cc:       mp_ID->GetNbSliceOutMask()==0 ) return 0;
+./src/dynamic/vDynamicModel.cc:    if (mp_ID->GetFOVOutPercent()>0.) Cout("  --> Mask transaxial FOV outside " << mp_ID->GetFOVOutPercent() << " %" << endl);
+./src/dynamic/vDynamicModel.cc:    if (mp_ID->GetNbSliceOutMask()>0) Cout("  --> Mask " << mp_ID->GetNbSliceOutMask() << " slices from both axial FOV limits" << endl);
+./src/dynamic/vDynamicModel.cc:  if (mp_ID->GetFOVOutPercent()>0.)
+./src/dynamic/vDynamicModel.cc:    FLTNB flt_base_x = 0.5*((FLTNB)(mp_ID->GetNbVoxX()-1));
+./src/dynamic/vDynamicModel.cc:    FLTNB flt_base_y = 0.5*((FLTNB)(mp_ID->GetNbVoxY()-1));
+./src/dynamic/vDynamicModel.cc:    FLTNB squared_radius_x = 0.5 * ((FLTNB)(mp_ID->GetNbVoxX())) * mp_ID->GetVoxSizeX()
+./src/dynamic/vDynamicModel.cc:                           * mp_ID->GetFOVOutPercent() / 100.;
+./src/dynamic/vDynamicModel.cc:    FLTNB squared_radius_y = 0.5 * ((FLTNB)(mp_ID->GetNbVoxY())) * mp_ID->GetVoxSizeY()
+./src/dynamic/vDynamicModel.cc:                           * mp_ID->GetFOVOutPercent() / 100.;
+./src/dynamic/vDynamicModel.cc:    for (x=0; x<mp_ID->GetNbVoxX(); x++)
+./src/dynamic/vDynamicModel.cc:      FLTNB squared_distance_x = (((FLTNB)x)-flt_base_x) * mp_ID->GetVoxSizeX();
+./src/dynamic/vDynamicModel.cc:      for (int y=0; y<mp_ID->GetNbVoxY(); y++)
+./src/dynamic/vDynamicModel.cc:        FLTNB squared_distance_y = (((FLTNB)y)-flt_base_y) * mp_ID->GetVoxSizeY();
+./src/dynamic/vDynamicModel.cc:        for (int z=0; z<mp_ID->GetNbVoxZ(); z++)
+./src/dynamic/vDynamicModel.cc:          INTNB index = z*mp_ID->GetNbVoxXY() + y*mp_ID->GetNbVoxX() + x;
+./src/dynamic/vDynamicModel.cc:  if (mp_ID->GetNbSliceOutMask()>0)
+./src/dynamic/vDynamicModel.cc:    INTNB removed_slices = mp_ID->GetNbSliceOutMask();
+./src/dynamic/vDynamicModel.cc:        INTNB base_z_first = z*mp_ID->GetNbVoxXY();
+./src/dynamic/vDynamicModel.cc:        for (int i=0; i<mp_ID->GetNbVoxXY(); i++)
+./src/dynamic/vDynamicModel.cc:        INTNB base_z_last = (mp_ID->GetNbVoxZ()-1-z)*mp_ID->GetNbVoxXY();
+./src/dynamic/vDynamicModel.cc:        for (int i=0; i<mp_ID->GetNbVoxXY(); i++)
+./src/dynamic/iDynamicModelTemplate.cc:  *  Total number of voxels         : mp_ID->GetNbVoxXYZ()
+./src/dynamic/iDynamicModelTemplate.cc:  *  Number of voxels in a slice    : mp_ID->GetNbVoxXY()
+./src/dynamic/iDynamicModelTemplate.cc:  *  Number of voxels on the X-axis : mp_ID->GetNbVoxX()
+./src/dynamic/iDynamicModelTemplate.cc:  * Total number of voxels         : mp_ID->GetNbVoxXYZ()
+./src/dynamic/iDynamicModelTemplate.cc:  * Number of voxels in a slice    : mp_ID->GetNbVoxXY()
+./src/dynamic/iDynamicModelTemplate.cc:  * Number of voxels on the X-axis : mp_ID->GetNbVoxX()
+./src/dynamic/iLinearPatlakModel.cc:        for( int th=0 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++ )
+./src/dynamic/iLinearPatlakModel.cc:    m2p_modelTACs[b] = new HPFLTNB[mp_ID->GetNbTimeFrames()];
+./src/dynamic/iLinearPatlakModel.cc:    m2p_parametricImages[b] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/dynamic/iLinearPatlakModel.cc:    m2p_RGModelTACs[rb] = new HPFLTNB[mp_ID->GetNbRespGates()];
+./src/dynamic/iLinearPatlakModel.cc:    m2p_RGParametricImages[rb] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/dynamic/iLinearPatlakModel.cc:    m2p_CGModelTACs[cb] = new HPFLTNB[mp_ID->GetNbCardGates()];
+./src/dynamic/iLinearPatlakModel.cc:    m2p_CGParametricImages[cb] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/dynamic/iLinearPatlakModel.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearPatlakModel.cc:    for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearPatlakModel.cc:    for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearPatlakModel.cc:  mp_corrBasisCoeffs = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/dynamic/iLinearPatlakModel.cc:  mp_corrBasisFunctions = new HPFLTNB[mp_ID->GetNbThreadsForProjection()];
+./src/dynamic/iLinearPatlakModel.cc:                            mp_ID->GetNbTimeFrames(),
+./src/dynamic/iLinearPatlakModel.cc:        for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearPatlakModel.cc:    FLTNB *p_coeffs = new FLTNB[m_nbTimeBF * mp_ID->GetNbTimeFrames()];
+./src/dynamic/iLinearPatlakModel.cc:                         m_nbTimeBF * mp_ID->GetNbTimeFrames(),
+./src/dynamic/iLinearPatlakModel.cc:    for(int c=0 ; c<m_nbTimeBF * mp_ID->GetNbTimeFrames() ; c++)
+./src/dynamic/iLinearPatlakModel.cc:      int bf = int(c/mp_ID->GetNbTimeFrames()); // Patlak basis function index
+./src/dynamic/iLinearPatlakModel.cc:      int fr = int(c%mp_ID->GetNbTimeFrames()); // Frame index
+./src/dynamic/iLinearPatlakModel.cc:    for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearPatlakModel.cc:    m2p_outputParImages[b] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/dynamic/iLinearPatlakModel.cc:  for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearPatlakModel.cc:    m3p_nnlsA    = new HPFLTNB** [mp_ID->GetNbThreadsForImageComputation()];
+./src/dynamic/iLinearPatlakModel.cc:    m2p_nnlsB    = new HPFLTNB*  [mp_ID->GetNbThreadsForImageComputation()];
+./src/dynamic/iLinearPatlakModel.cc:    m2p_nnlsMat  = new HPFLTNB*  [mp_ID->GetNbThreadsForImageComputation()];
+./src/dynamic/iLinearPatlakModel.cc:    for( int th=0 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++ )
+./src/dynamic/iLinearPatlakModel.cc:        m3p_nnlsA[ th ][n] = new HPFLTNB[ mp_ID->GetNbTimeFrames() ];
+./src/dynamic/iLinearPatlakModel.cc:      m2p_nnlsB[ th ]   = new HPFLTNB[ mp_ID->GetNbTimeFrames() ];
+./src/dynamic/iLinearPatlakModel.cc:      m2p_nnlsMat[ th ] = new HPFLTNB[ (m_nnlsN+2) * mp_ID->GetNbTimeFrames() ];
+./src/dynamic/iLinearPatlakModel.cc:    mp_w = new HPFLTNB[ mp_ID->GetNbTimeFrames() ];
+./src/dynamic/iLinearPatlakModel.cc:    for(int t=0; t<mp_ID->GetNbTimeFrames(); t++) 
+./src/dynamic/iLinearPatlakModel.cc:      mp_w[t] = sqrt(mp_ID->GetFrameDurationInSec(0,t)) ;  // (convert time in min);
+./src/dynamic/iLinearPatlakModel.cc:        for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearPatlakModel.cc:        for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearPatlakModel.cc:        avg /= mp_ID->GetNbVoxXYZ();
+./src/dynamic/iLinearPatlakModel.cc:  for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearPatlakModel.cc:    for(int t=0; t<mp_ID->GetNbTimeFrames(); t++)
+./src/dynamic/iLinearPatlakModel.cc:            mp_ID->GetNbTimeFrames(),
+./src/dynamic/iLinearPatlakModel.cc:  for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearPatlakModel.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++) 
+./src/dynamic/iLinearPatlakModel.cc:    xmean /= mp_ID->GetNbTimeFrames();
+./src/dynamic/iLinearPatlakModel.cc:    ymean /= mp_ID->GetNbTimeFrames();
+./src/dynamic/iLinearPatlakModel.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:    m2p_modelTACs[b] = new HPFLTNB[mp_ID->GetNbTimeFrames()];
+./src/dynamic/iLinearModel.cc:    m2p_parametricImages[b] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/dynamic/iLinearModel.cc:    m2p_RGModelTACs[rb] = new HPFLTNB[mp_ID->GetNbRespGates()];
+./src/dynamic/iLinearModel.cc:    m2p_RGParametricImages[rb] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/dynamic/iLinearModel.cc:    m2p_CGModelTACs[cb] = new HPFLTNB[mp_ID->GetNbCardGates()];
+./src/dynamic/iLinearModel.cc:    m2p_CGParametricImages[cb] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/dynamic/iLinearModel.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:    for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:    for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:  mp_corrBasisCoeffs = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/dynamic/iLinearModel.cc:  mp_corrBasisFunctions = new HPFLTNB[mp_ID->GetNbThreadsForProjection()];
+./src/dynamic/iLinearModel.cc:                            mp_ID->GetNbTimeFrames(),
+./src/dynamic/iLinearModel.cc:                            mp_ID->GetNbRespGates(),
+./src/dynamic/iLinearModel.cc:                            mp_ID->GetNbCardGates(),
+./src/dynamic/iLinearModel.cc:          for(int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:          for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:          for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:    m2p_outputParImages[b] = new FLTNB[mp_ID->GetNbVoxXYZ()];
+./src/dynamic/iLinearModel.cc:        for(int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:        for(int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:        for(int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:    for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:      for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:        for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:          for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:                for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:          parametric_image_norm *= mp_ID->GetNbRespGates()
+./src/dynamic/iLinearModel.cc:                                 * mp_ID->GetNbCardGates();
+./src/dynamic/iLinearModel.cc:          for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:            for (int th=0 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./src/dynamic/iLinearModel.cc:            for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:              for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:                    for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:            for (int th=1 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./src/dynamic/iLinearModel.cc:                for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:          parametric_image_norm *= mp_ID->GetNbTimeFrames()
+./src/dynamic/iLinearModel.cc:                                 * mp_ID->GetNbCardGates();
+./src/dynamic/iLinearModel.cc:          for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:            for (int th=0 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./src/dynamic/iLinearModel.cc:            for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:              for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:                    for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:            for (int th=1 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./src/dynamic/iLinearModel.cc:                for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:          parametric_image_norm *= mp_ID->GetNbTimeFrames()
+./src/dynamic/iLinearModel.cc:                                 * mp_ID->GetNbRespGates();
+./src/dynamic/iLinearModel.cc:          for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:            for (int th=0 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./src/dynamic/iLinearModel.cc:            for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:              for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:                    for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:            for (int th=1 ; th<mp_ID->GetNbThreadsForImageComputation() ; th++)
+./src/dynamic/iLinearModel.cc:          for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:          for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:          for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:          for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:          for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:            for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:              for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:          for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:            for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:              for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:                for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:          for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:          for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:            for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++) 
+./src/dynamic/iLinearModel.cc:              for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:          for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:            for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:              for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:                for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:          for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:          for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:            for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++) 
+./src/dynamic/iLinearModel.cc:              for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:          for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:            for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:              for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:                for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:            for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:            avg /= mp_ID->GetNbVoxXYZ();
+./src/dynamic/iLinearModel.cc:            for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:            avg /= mp_ID->GetNbVoxXYZ();
+./src/dynamic/iLinearModel.cc:            for (int v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/iLinearModel.cc:            avg /= mp_ID->GetNbVoxXYZ();
+./src/dynamic/iLinearModel.cc:  for (int fr=0 ; fr<mp_ID->GetNbTimeFrames() ; fr++)
+./src/dynamic/iLinearModel.cc:    for (int rg=0 ; rg<mp_ID->GetNbRespGates() ; rg++)
+./src/dynamic/iLinearModel.cc:      for (int cg=0 ; cg<mp_ID->GetNbCardGates() ; cg++)
+./src/dynamic/iLinearModel.cc:        for (v=0 ; v<mp_ID->GetNbVoxXYZ() ; v++)
+./src/dynamic/oDynamicModelManager.cc:  if (mp_ID->GetNbTimeFrames() <= 1 &&
+./src/dynamic/oDynamicModelManager.cc:      mp_ID->GetNbRespGates() <= 1 &&
+./src/dynamic/oDynamicModelManager.cc:      mp_ID->GetNbCardGates() <= 1)

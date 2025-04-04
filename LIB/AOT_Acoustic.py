@@ -7,8 +7,12 @@ import os
 from kwave.kgrid import kWaveGrid
 from kwave.kmedium import kWaveMedium
 from kwave.ksource import kSource
-from kwave.ktransducer import kWaveTransducerSimple, NotATransducer
 from kwave.ksensor import kSensor
+from kwave.kspaceFirstOrder3D import kspaceFirstOrder3D
+from kwave.kspaceFirstOrder2D import kspaceFirstOrder2D
+from kwave.utils.signals import tone_burst
+from kwave.options.simulation_options import SimulationOptions
+from kwave.options.simulation_execution_options import SimulationExecutionOptions
 
 def load_fieldHYDRO_XZ(file_path_h5, param_path_mat):    
 

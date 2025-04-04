@@ -1,0 +1,249 @@
+  
+\documentclass[a4paper, 11pt]{article}
+
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{subscript}
+% Use symbols like degrees
+\usepackage{gensymb}
+% In case we need to rotate a table
+\usepackage{rotating}
+% To insert code samples
+\usepackage{listings}
+\usepackage{tabularx}
+
+% Change margins because article class is too small
+\addtolength{\oddsidemargin}{-2cm}
+\addtolength{\evensidemargin}{12cm}
+\addtolength{\textwidth}{4cm}
+\addtolength{\topmargin}{-3cm}
+\addtolength{\textheight}{5cm}
+
+% define some colors here if needed
+\definecolor{_green}{rgb}{0,0.6,0}
+\definecolor{_gray}{rgb}{0.5,0.5,0.5}
+\definecolor{_mauve}{rgb}{0.58,0,0.82}
+\definecolor{_lyellow}{rgb}{0.1,0.1,0.1}
+
+
+\lstset{
+  %rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
+  tabsize=2,
+  title=\lstname                    % show the filename of files included with \lstinputlisting; also try caption instead of title
+  backgroundcolor=\color{white},  % choose the background color;
+  language=C++,                     % the language of the code
+  basicstyle=\ttfamily\small,       % the size of the fonts that are used for the code 
+  aboveskip={1.0\baselineskip},
+  belowskip={1.0\baselineskip},
+  columns=fixed,
+  extendedchars=true,               % lets you use non-ASCII characters; for 8-bits encodings only, does not work with UTF-8
+  breaklines=true,                  % sets automatic line breaking
+  tabsize=4,                        % sets default tabsize to X spaces
+  prebreak=\raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+  frame=lines,                      % adds a frame around the code (eg. single)
+  showtabs=false,                   % show tabs within strings adding particular underscores
+  showspaces=false,                 % show spaces everywhere adding particular underscores; it overrides 'showstringspaces'
+  showstringspaces=false,           % underline spaces within strings only
+  keywordstyle=\color{_mauve},      % keyword style
+  commentstyle=\color{_green},      % comment style
+  stringstyle=\color{_gray},        % string literal style
+  deletekeywords={...},             % if you want to delete keywords from the given language
+  otherkeywords={*,...},            % if you want to add more keywords to the set
+  numbers=left,                     % where to put the line-numbers;
+  keepspaces=true,                  % keeps spaces in text, useful for keeping indentation of code (possibly needs columns=flexible)
+  numberstyle=\footnotesize\color{_gray},% the style that is used for the line-numbers 
+  stepnumber=1,                     % the step between two line-numbers.
+  numbersep=5pt,                    % how far the line-numbers are from the code
+  captionpos=t,                     % sets the caption-position bottom(b), top(t)
+  escapeinside={\%*}{*)}            % if you want to add LaTeX within your code
+}
+
+
+\begin{document}
+\title{Time-of-flight and its implementation in CASToR}
+\maketitle
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Index}
+
+\noindent
+\begin{tabularx}{\linewidth}{p{3cm}X}
+TOF & time-of-flight \\
+LOR & line-of-response \\
+i & LOR or detector pair index \\
+j & voxel index \\
+$A_{ij}$ & element of the system matrix for voxel j and LOR i \\
+$n_{ij}$ & number of counts emitted from voxel j and detected in LOR i \\
+$y_i$ & number of counts detected in LOR i \\
+$\boldsymbol n_j$ & sum of $n_{ij}$ over $i$ \\
+$N_j$ & number of voxels \\
+$N_i$ & number of detector pairs or LORs \\
+$sens_j$ & voxel sensitivity $=\sum_iA_{ij}$ \\
+$r_i$ & random count rate for LOR i \\
+$s_i$ & scattered count rate for LOR i \\
+$t_b$ & TOF bin index\\
+$\Delta t$ & TOF measurement (difference between arrival times of coincident photons)\\
+$t_l$ & TOF measurement $\Delta t$ converted into delta length along the LOR (shift from the LOR center)\\
+$c$ & speed of light\\
+\end{tabularx}
+
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Definition}
+
+TOF measurement of the difference of arrival times of coincident photons, for detection units $c_1$ and $c_2$, and arrival times $t_1$ and $t_2$, where $\Delta t$ is positive for events closer to $c_2$, is
+
+\begin{equation}
+\Delta t = t_1-t_2
+\end{equation}
+
+
+This $\Delta t$ can be converted into its spatial equivalent, $t_l$, which represents the shift along the LOR with respect to the LOR center:
+
+\begin{equation}
+t_l = \frac{\Delta t * c}{2}
+\end{equation}
+
+The spatial TOF uncertainty function is modeled as a Gaussian function of length $l$ along the LOR, normalized so that its integral equals 1. The parameters of the Gaussian are its (spatial) standard deviation $\sigma$ and its center $t_l$. In CASToR, this spatial standard deviation is obtained from the FWHM parameter given in units of time.
+
+\begin{equation}
+\frac{1}{\sigma\sqrt{2\pi}}\exp^{-\frac{1}{2}(\frac{l-t_l}{\sigma})^2}
+\end{equation}
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{MLEM reconstruction for sinogram data with binned TOF information}
+
+Starting assumptions
+
+\begin{equation}
+y_{it_b} = \sum_j{A_{ijt_b}\lambda_j+r_{it_b}+s_{it_b}}
+\end{equation}
+
+\begin{equation}
+\sum_{t_b}{y_{it_b} = y_i}
+\end{equation}
+
+Consequences
+
+\begin{align}
+\label{TOF_noTOF}
+\sum_{t_b}{A_{ijt_b}=A_{ij}}\\
+\label{TOF_noTOF_random}
+\sum_{t_b}{r_{it_b}=r_i}\\
+\label{TOF_noTOF_scatter}
+\sum_{t_b}{s_{it_b}=s_i}
+\end{align}
+
+Equation
+
+\begin{equation}
+update = \sum_{i}\sum_{t_b}{A_{ijt_b}*\frac{y_{it_b}}{\sum_j{A_{ijt_b}\lambda_j+r_{it_b}+s_{it_b}}}}
+\end{equation}
+
+\subsection{System matrix}
+
+The difference between the computation of $A_{ij}$ and $A_{ijt_b}$ is in the component that stands for the length of the LOR through a voxel: the integration along LOR $i$ over voxel $j$ is replaced by the integration along LOR $i$ over voxel $j$ weighted by the TOF uncertainty Gaussian function, plus an additional integration over the TOF bin. $y_{it_b}$ is the sum of all detected counts whose TOF measurement is inside the range of the TOF bin $t_b$.
+
+\begin{equation}
+A_{ijt_b}=\int_{-l_{bin}/2}^{l_{bin}/2}{A_{ij}(t_l)dt_l}=\int_{-l_{bin}/2}^{l_{bin}/2}\int_{l_{vox}}{Gaussian_{\sigma,t_l}(l)dldt_l}
+\end{equation}
+
+As this is a bit complicated to implement and computation costly, $A_{ijt_b}$ are implemented by omitting the integration over the TOF bin, and by normalizing the computed coefficients to ensure that eq.\ref{TOF_noTOF} is satisfied. If the exact formula were used, there would be no need for normalization. This somewhat implies that the convolution with the TOF bin width can be approximated by a single multiplicative factor for all TOF coefficients for a single voxel.
+
+The integration of the Gaussian over the LOR portion can be performed with 2 calls to erf, or it can be approximated with the value of the Gaussian at the voxel center multiplied by the length of the LOR portion over the voxel. The first implementation is more accurate but approximately 2 times slower compared to the second one. Therefore, in CASToR, the first implementation was chosen when it was convenient to chain calls to erf and reuse results from previous calls, often for list-mode TOF projection, and the second one was chosen otherwise, often for TOF bin projection. The TOF implementation depends also on projector type and implementation.
+
+$A_{ijt_b}$ are not null for $t_b$ outside the LOR because of the imprecision of the system TOF measurement (there is a non null probability that an emitted count is detected by the scanner as having a TOF measurement beyond LOR end points).
+
+Truncation of the Gaussian is implemented and can be modified by specifying the number of standard deviations to take into account, the default value being set to $3\sigma$.
+
+\subsection{Random and scatter counts}
+Random and scatter estimations follow the same integration over the TOF bin:
+
+\begin{align}
+r_{it_b}=\int_{-l_{bin}/2}^{l_{bin}/2}{r_{i}(t_l)dt_l} \\
+s_{it_b}=\int_{-l_{bin}/2}^{l_{bin}/2}{s_{i}(t_l)dt_l} 
+\end{align}
+
+As random coincidences rate is estimated in practice for the whole LOR, and therefore the whole TOF $\Delta t$ range, the random rate per TOF bin can be obtained by artificially dividing the total random rate by the total number of TOF bins, so that eq.\ref{TOF_noTOF_random} is satisfied. The number of TOF bins should span the system coincidence detection time window.
+
+Random count rate is estimated as the product of detectors single rates and the system coincidence detection time window, and does not depend on TOF nor on LOR length. Random coincidences can be associated with any $\Delta t$ that the scanner can measure and provide, inside or outside the LOR.
+
+Sinogram scatter rate may be estimated from list-mode estimation by convolving it with the TOF bin function, or directly in sinogram TOF bin format, which includes convolution with TOF uncertainty.
+
+\subsection{CASToR datafile}
+
+When writing the CASToR datafile, the random rate estimation should be $r_i$, for the whole LOR, and the scatter estimation should be $s_{it_b}$.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{MLEM reconstruction of list-mode data with continuous TOF information}
+
+Starting assumptions
+
+\begin{equation}
+y_{i}(t_l) = \sum_j{A_{ij}(t_l)\lambda_j+r_{i}(t_l)+s_{i}(t_l)}
+\end{equation}
+
+\begin{equation}
+\int_{t_{l_{min}}}^{t_{l_{max}}}{y_{i}(t_l)dt_l = y_i}
+\end{equation}
+
+Consequences
+
+\begin{align}
+\label{TOF_noTOF_list}
+\int_{t_{l_{min}}}^{t_{l_{max}}}{A_{ij}(t_l)dt_l=A_{ij}}\\
+\label{TOF_noTOF_random_list}
+\int_{t_{l_{min}}}^{t_{l_{max}}}{r_{i}(t_l)dt_l=r_i}\\
+\label{TOF_noTOF_scatter_list}
+\int_{t_{l_{min}}}^{t_{l_{max}}}{s_{i}(t_l)dt_l=s_i}
+\end{align}
+
+Equation
+
+\begin{equation}
+update = \sum_{coinc}{A_{ij}(t_l)*\frac{1}{\sum_j{A_{ij}(t_l)\lambda_j+r_{i}(t_l)+s_{i}(t_l)}}}
+\end{equation}
+
+\subsection{System matrix}
+
+The difference between the computation of $A_{ij}$ and $A_{ijt_b}$ is in the component that stands for the length of the LOR through a voxel: the integration along LOR $i$ over voxel $j$ is replaced by the integration along LOR $i$ over voxel $j$ weighted by the TOF uncertainty Gaussian function.
+
+\begin{equation}
+A_{ij}(t_l)=\int_{l_{vox}}{Gaussian_{\sigma,t_l}(l)dl}
+\end{equation}
+
+The integration of the Gaussian over the LOR portion can be performed with 2 calls to erf, or it can be approximated with the value of the Gaussian at the voxel center multiplied by the length of the LOR portion over the voxel. The first implementation is more accurate but approximately 2 times slower compared to the second one. Therefore, in CASToR, the first implementation was chosen when it was convenient to chain calls to erf and reuse results from previous calls, often for list-mode TOF projection, and the second one was chosen otherwise, often for TOF bin projection. The TOF implementation depends also on projector type and implementation.
+
+$A_{ij}(t_l)$ are not null for $t_l$ outside the LOR because of the imprecision of the system TOF measurement (there is a non null probability that an emitted count is detected by the scanner as having a TOF measurement beyond LOR end points). 
+
+Truncation of the Gaussian is implemented and can be modified by specifying the number of standard deviations to take into account, the default value being set to $3\sigma$.
+
+The integration of normalized Gaussians over continuous whole $t_l$ range should be equal to 1, so the equation eq.\ref{TOF_noTOF_list} should be satisfied.
+
+\subsection{Random and scatter counts}
+
+As random coincidences rate is estimated in practice for the whole LOR, and therefore the whole TOF $\Delta t$ range, the random rate for list-mode can be obtained by artificially dividing the total random rate by the total range of the spatial equivalent of TOF measurements, $t_{l_{max}}-t_{l_{min}}$, so that eq.\ref{TOF_noTOF_random_list} is satisfied. The range of TOF values should be equivalent to the system coincidence detection time window.
+
+\begin{align}
+r_{i}(t_l)=\frac{r_i}{t_{l_{max}}-t_{l_{min}}}
+\end{align}
+
+Random count rate is estimated as the product of detectors single rates and of the system coincidence detection time window, and does not depend on TOF nor on LOR length. Random coincidences can be associated with any $\Delta t$ that the scanner can measure and provide, inside or outside the LOR.
+
+Scatter can be estimated directly for the list-mode, or if only sinogram scatter estimation is available, one can assume that the scatter is approximately constant over a TOF bin, and obtain the list-mode scatter by dividing the TOF bin scatter by the spatial width of the TOF bin.
+
+List-mode reconstruction may also be implemented with a sinogram reconstruction that uses very small TOF bins.
+
+\subsection{CASToR datafile}
+
+When writing the CASToR datafile, the random rate estimation should be $r_i$, for the whole LOR, and the scatter estimation should be $s_i(t_l)$.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Sensitivity}
+
+As the sensitivity of a voxel is the sum of this voxel system matrix projection elements over all LORs and over all TOF bins, and as eq.\ref{TOF_noTOF} is satisfied, the sensitivity should be the same for TOF and non TOF data, for sinogram or list-mode data. 
+
+
+\end{document}

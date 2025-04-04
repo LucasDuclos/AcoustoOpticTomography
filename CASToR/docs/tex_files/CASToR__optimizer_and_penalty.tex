@@ -1,0 +1,310 @@
+\documentclass[a4paper, 11pt]{article}
+
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{subscript}
+% Use symbols like degrees
+\usepackage{gensymb}
+% In case we need to rotate a table
+\usepackage{rotating}
+% To insert code samples
+\usepackage{listings}
+
+% Change margins because article class is too small
+\addtolength{\oddsidemargin}{-2cm}
+\addtolength{\evensidemargin}{12cm}
+\addtolength{\textwidth}{4cm}
+\addtolength{\topmargin}{-3cm}
+\addtolength{\textheight}{5cm}
+
+% define some colors here if needed
+\definecolor{_green}{rgb}{0,0.6,0}
+\definecolor{_gray}{rgb}{0.5,0.5,0.5}
+\definecolor{_mauve}{rgb}{0.58,0,0.82}
+\definecolor{_lyellow}{rgb}{0.1,0.1,0.1}
+
+% code listing settings
+\lstset{
+  %rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
+  tabsize=2,	                   
+  title=\lstname                    % show the filename of files included with \lstinputlisting; also try caption instead of title
+  backgroundcolor=\color{white},  % choose the background color;
+  language=C++,                     % the language of the code
+  basicstyle=\ttfamily\small,       % the size of the fonts that are used for the code 
+  aboveskip={1.0\baselineskip},
+  belowskip={1.0\baselineskip},
+  columns=fixed,
+  extendedchars=true,               % lets you use non-ASCII characters; for 8-bits encodings only, does not work with UTF-8
+  breaklines=true,                  % sets automatic line breaking
+  tabsize=4,                        % sets default tabsize to X spaces
+  prebreak=\raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+  frame=lines,                      % adds a frame around the code (eg. single)
+  showtabs=false,                   % show tabs within strings adding particular underscores
+  showspaces=false,                 % show spaces everywhere adding particular underscores; it overrides 'showstringspaces'
+  showstringspaces=false,           % underline spaces within strings only
+  keywordstyle=\color{_mauve},      % keyword style
+  commentstyle=\color{_green},      % comment style
+  stringstyle=\color{_gray},        % string literal style
+  deletekeywords={...},             % if you want to delete keywords from the given language
+  otherkeywords={*,...},            % if you want to add more keywords to the set
+  numbers=left,                     % where to put the line-numbers;
+  keepspaces=true,                  % keeps spaces in text, useful for keeping indentation of code (possibly needs columns=flexible)
+  numberstyle=\footnotesize\color{_gray},% the style that is used for the line-numbers 
+  stepnumber=1,                     % the step between two line-numbers.
+  numbersep=5pt,                    % how far the line-numbers are from the code
+  captionpos=t,                     % sets the caption-position bottom(b), top(t)
+  escapeinside={\%*}{*)}            % if you want to add LaTeX within your code
+}
+
+
+\begin{document}
+\title{Optimizers and penalties in CASToR}
+\maketitle
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section*{Foreword}
+
+CASToR is designed to be flexible, but also as generic as possible.
+Any new implementation should be thought to be usable in as many contexts as possible; among all modalities, all types of data, all types of algorithms, etc.
+
+Before adding some new code to CASToR, it is highly recommended to read the general documentation \textit{CASToR\_general\_documentation.pdf} to get a good picture of the project, as well as the programming guidelines \textit{CASToR\_\_programming\_guidelines.pdf}.
+Also, the philosophy about adding new modules in CASToR (\textit{e.g.} projectors, optimizers, deformations, image processing, etc) is fully explained in \textit{CASToR\_\_add\_new\_modules.pdf}.
+Finally, the doxygen documentation is a very good resource to help understanding the code architecture.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Summary}
+
+This guide describes how to add your own optimization algorithm into CASToR and how to define penalties.
+CASToR is mainly designed to be modular in the sense that adding a new feature should be as easy as possible.
+This guide begins with a brief description of the optimizer and penalty parts of the CASToR architecture that explains the chosen philosophy.
+Then follows a step-by-step guide that explains how to add a new optimizer by simply adding a new class with few mandatory requirements, or a new penalty in the same way.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{The optimizer and penalty architectures}
+
+In CASToR, an optimizer is defined as an optimization algorithm specific to an objective function.
+In other words, the objective function and the optimization algorithm are regarded as a whole and not separately.
+
+The optimizer part of the code is based on 3 main classes: \textit{oOptimizerManager}, \textit{vOptimizer} and \textit{vPenalty}.
+The \textit{oOptimizerManager}, being the manager, is in charge of reading command line options and instantiating a \textit{vOptimizer} and a \textit{vPenalty} with respect to what the user asks for.
+
+The \textit{vOptimizer} is an abstract class, so only its children can be used as actual optimizers.
+It corresponds to the optimization algorithm used within the iterative process, such as MLEM for example, that does not include a penalty term, or OSL (One-Step-Late), that includes a penalty term.
+
+The \textit{vPenalty} is also an abstract class, so only its children can be used as actual penalties.
+It corresponds to the penalty term included in the objective function, that is added to the data-fidelity term, and that some optimizers can take into account.
+
+In CASToR, all iterative algorithms are decomposed in two main steps that we call \textit{data update step} and \textit{image udpate step}.
+The \textit{data update step} corresponds to the operations performed on each event in the data space, used to compute the correction terms in this space that are then backward projected into a correction image.
+The \textit{image update step} corresponds to the operations performed on each voxel of the image space, where the correction terms gathered in the image space during the \textit{data update step} are used to compute the new voxel value, also considering the sensitivity, the penalty and the current voxel value.
+
+\bigskip
+
+The main program instantiates and initializes the \textit{oOptimizerManager}, and during the reconstruction process, four functions of the \textit{oOptimizerManager} will be used:
+\begin{description}
+  \item[PreDataUpdateStep():]
+This function is called at the beginning of a subset, before the loop over all events.
+It basically calls the eponym function of \textit{vOptimizer} which itself calls the \textit{PreDataUpdateSpecificStep()} function.
+This last function does nothing on purpose but being virtual, so any specific optimizer can overload it to perform specific operations at this step.
+  \item[DataUpdateStep():]
+This function is called inside the loop over all events, for each event.
+It calls a series of functions of \textit{vOptimizer} that split up the update step in the data space in smaller steps:
+1. forward projection, 2. optional step, 3. backward projection of the sensitivity for histogram data, 4. optional step, 5. compute corrections, 6. optional step, 7. backward projection of corrections, 8. compute FOMs.
+See below for a description of these functions.
+  \item[PreImageUpdateStep():]
+This function is called between the loop over all events and the image update step.
+It basically calls the eponym function of \textit{vOptimizer} which itself calls the \textit{PreImageUpdateSpecificStep()} function.
+This last function does nothing on purpose but being virtual, so any specific optimizer can overload it to perform specific operations at this step.
+For optimizers that include a penalty term, this is where the penalty's functions are called (see below).
+  \item[ImageUpdateStep():]
+This function is called at the end of a subset, after the \textit{PreImageUpdateStep()} function.
+It is used to perform the image update step by calling the eponym function from \textit{vOptimizer}.
+Its aim is to apply the image correction factors computed from all the calls to the \textit{DataUpdateStep()} function and the potential penalty.
+\end{description}
+
+\bigskip
+
+Within the \textit{oOptimizerManager::DataUpdateStep()} function, the following functions from \textit{vOptimizer} are called in this order:
+\begin{description}
+  \item[DataStep1ForwardProjectModel():]
+This function performs the forward projection of the current image, taking all dynamic dimensions through their basis functions into account.
+It applies all multiplicative corrections included in the system matrix and add the additive terms to the result, so that the latter is directly comparable to the recorded data.
+It can deal with emission or transmission data natively.
+  \item[DataStep2Optional():]
+This function does nothing but being virtual, so that it can be overloaded by specific optimizers if needed.
+  \item[DataStep3BackwardProjectSensitivity():]
+This function first calls the pure virtual \textit{SensitivitySpecificOperations()} function to compute the weight associated to the current event.
+It then backward projects this weight into the sensitivity image, taking all multiplicative terms from the system matrix into account.
+It is called only when using histogram data so that an event corresponds to a histogram bin.
+  \item[DataStep4Optional():]
+This function does nothing but being virtual, so that it can be overloaded by specific optimizers if needed.
+  \item[DataStep5ComputeCorrections():]
+This function calls the pure virtual \textit{DataSpaceSpecificOperations()} function to compute the correction terms associated to the current event.
+  \item[DataStep6Optional():]
+This function does nothing but being virtual, so that it can be overloaded by specific optimizers if needed.
+  \item[DataStep7BackwardProjectCorrections():]
+This function performs the backward projection of the previously computed correction terms into the so-called backward image to gather the corrections from all events into the image space.
+It takes all dynamic dimensions through their intrinsic basis functions into account, as well as all multiplicative corrections included in the system matrix.
+  \item[DataStep8ComputeFOM():]
+This function computes some figures-of-merit in the data space, if asked for.
+\end{description}
+
+\bigskip
+
+The \textit{vOptimizer::ImageUpdateStep()} function performs the \textit{image update step}. It loops over all dynamic basis functions and for each voxel, compute the
+sensitivity using the \textit{ComputeSensitivity()} function and calls the pure virtual \textit{ImageSpaceSpecificOperations()} function to compute the new image value.\\
+
+\bigskip
+
+So basically, all operations specific to an optimizer without penalty are performed within the three following pure virtual functions:
+\begin{description}
+  \item[SensitivitySpecificOperations():]
+From the current data, forward model, projection line, etc, it must compute the weight associated to the current event.
+This function is used only for histogram data and thus for optimizers compatible with histogram data.
+  \item[DataSpaceSpecificOperations():]
+From the current data, forward model, projection line, etc, it must compute the correction term associated to the current event that will be back-projected.
+It can deal with multiple values as specified by the member variable \textit{m\_nbBackwardImages}.
+  \item[ImageSpaceSpecificOperations():]
+From the current voxel value, the correction value(s) and the sensitivity, it must compute the new image value.
+\end{description}
+
+\bigskip
+
+When a penalty is included, some computations specific to the penalty need to be done before the \textit{image update step}.
+Such computations are implemented by the specific optimizer by overloading the \textit{PreImageUpdateSpecificStep()} function of the \textit{vOptimizer} that does nothing by default.
+The penalty itself is implemented inside the abstract class \textit{vPenalty} which is instantiated and parameterized by the \textit{oOptimizerManager} class, and then managed by the specific optimizer.
+Inside the \textit{PreImageUpdateSpecificStep()} function of the specific optimizer, the 5 following functions from the \textit{vPenalty} may be used:
+\begin{description}
+  \item[GlobalPreProcessingStep():]
+This function does nothing by default but being virtual, so it can be overloaded by the specific penalty.
+It is designed to be called outside of the loops over dynamic and spatial dimensions.
+  \item[LocalPreProcessingStep():]
+This function does nothing by default but being virtual, so it can be overloaded by the specific penalty.
+It is designed to be called inside the loops over dynamic and spatial dimensions as it takes all indices as parameters.
+  \item[ComputePenaltyValue():]
+This function is a pure virtual function, so it has to be implemented by the specific penalty.
+It takes all dynamic and spatial indices as parameters and is supposed to return the value of the penalty term for these indices.
+  \item[ComputeFirstDerivative():]
+This function is a pure virtual function, so it has to be implemented by the specific penalty.
+It takes all dynamic and spatial indices as parameters and is supposed to return the value of the first derivative of the penalty term for these indices.
+  \item[ComputeSecondDerivative():]
+This function is a pure virtual function, so it has to be implemented by the specific penalty.
+It takes all dynamic and spatial indices as parameters and is supposed to return the value of the second derivative of the penalty term for these indices.
+\end{description}
+
+\bigskip
+
+Optimizers that include a penalty term may not need the second derivative.
+Some penalties may also not be twice differentiable.
+To deal with that, any optimizer that includes a penalty term has to specify the minimum required derivative order of the penalty.
+Any penalty also has to specify its own derivative order.
+A compatibility check is then performed during the initialization by the \textit{oOptimizerManager}.
+Nonetheless, all penalties have to implement the three pure virtual functions \textit{ComputePenaltyValue()}, \textit{ComputeFirstDerivative()} and \textit{ComputeSecondDerivative()}.
+Even if some penalties may not strictly require to compute the penalty value for optimization purposes, this function is used to compute the objective function for information purpose when the user asks for it.
+If a penalty is not twice differentiable, the \textit{ComputeSecondDerivative()} function is left empty, because it will not be called.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Implemented optimizers and penalties}
+
+Implemented optimizers that do not admit a penalty term include:
+\begin{itemize}
+  \item MLEM (for histogrammed transmission and emission data and list-mode emission data),
+  \item MLTR from Van Slambrouck (for histogrammed transmission data),
+  \item Landweber (for histogrammed emission and transmission data),
+  \item NEGML from Nuyts (for histogrammed emission data),
+  \item AML from Byrne (for histogrammed emission data).
+\end{itemize}
+Implemented optimizers that admit a penalty term include:
+\begin{itemize}
+  \item One-Step-Late from Green (for histogrammed transmission and emission data and list-mode emission data),
+  \item Penalized Preconditioned Gradient ML from Nuyts (for histogrammed emission data),
+  \item BSREM II from Ahn and Fessler (for histogrammed emission data),
+  \item Modified EM for penalized ML from De Pierro (for histogrammed emission data).
+\end{itemize}
+Implemented penalties include:
+\begin{itemize}
+  \item Markov Random Field penalizing differences between neighbors (including different neighborhood shapes, proximity factors, Bowsher's weights, and several potential functions),
+  \item Median Root Prior (including different neighborhood shapes).
+\end{itemize}
+
+For a complete and exhaustive list of all available optimizers and penalties, use the related help options directly within the CASToR program.\\
+
+Note that the current generic iterative algorithms can use subsets of the data.
+Any optimizer can thus benefit from the use of subsets.
+See the general documentation for a detailed description of how the iterative algorithm uses subsets of the data.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Add your own optimizer}
+
+\subsection{Basic concept}
+
+To add your own optimizer, you only have to build a specific class that inherits from the abstract class \textit{vOptimizer}.
+Then, you just have to implement a bunch of pure virtual functions corresponding to what you want your new optimizer to specifically do.
+Please refer to the \textit{CASToR\_\_add\_new\_modules.pdf} guide in order to fill up the mandatory parts of adding a new module (your new optimizer is a module);
+namely the auto-inclusion mechanism, the interface-related functions and the management functions.
+Right below are some instructions to help you fill the specific pure virtual optimization functions of your optimizer.\\
+
+To make things easier, we provide an example of template class that already implements all the squeleton.
+Basically, you will have to change the name of the class and fill the functions up with your own code.
+The actual files are \textit{include/optimizer/iOptimizerTemplate.hh} and \textit{src/optimizer/iOptimizerTemplate.cc} and are actually already part of the source code.
+Also, we recommend that you take a look at other implemented optimizers.
+
+\subsection{Implementation of the optimization functions}
+
+The optimization functions that you have to implement are the three ones mentionned in the previous section: \textit{SensitivitySpecificOperations()}, \textit{DataSpaceSpecificOperations()} and \textit{ImageSpaceSpecificOperations()}.
+All information and the tools needed to implement these functions are fully described in the template source file \textit{src/optimizer/iOptimizerTemplate.cc}, so please refer to it.
+Aside these three pure virtual functions, there are many virtual functions whose implementation in \textit{vOptimizer} do nothing on purpose, but that can be overloaded to perform other types of actions specific to your optimizer.
+There are the optional functions that are included in the \textit{data update step}; their name are \textit{vOptimizer::DataStepXOptional()}, where \textit{X} is the sub-step number defining when they are called in the \textit{data update step} process.
+To perform specific operations inside a subset before and/or after the loop on all events, there are the functions \textit{vOptimizer::PreDataUpdateSpecificStep()} and \textit{vOptimizer::PreImageUpdateSpecificStep()} respectively.
+If the optimizer admits a penalty term, you will most likely have to overload the \textit{PreImageUpdateSpecificStep()} function to perform instructions related to the computation of this penalty term.\\
+
+For optimizers highly differing from the way the \textit{vOptimizer} was thought, all functions related to the \textit{data update step} and the \textit{image update step} are virtual, so they can be overloaded to implement alternative behaviours.
+For details about that, look at the doxygen documentation contained in the \textit{include/optimizer/vOptimizer.hh} file.\\
+
+Finally, for any optimizer, there are different variables that must be set in the constructor, according to what the optimizer can do.
+First, one must specify if the optimizer is compatible with list-mode and/or histogram data.
+For example, MLEM is compatible with both types of data, but NEGML is only compatible with histogram data.
+If your optimizer is compatible with list-mode data, set the boolean member \textit{m\_listmodeCompatibility} to true in the constructor.
+If your optimizer is compatible with histogram data, set the boolean member \textit{m\_histogramCompatibility} to true in the constructor.
+Second, one must specify if the optimizer is compatible with emission and/or transmission data.
+For example, MLEM is compatible with both types of data, but MLTR is only compatible with transmission data and NEGML with emission data.
+If your optimizer is compatible with emission data, set the boolean member \textit{m\_emissionCompatibility} to true in the constructor.
+If your optimizer is compatible with transmission data, set the boolean member \textit{m\_transmissionCompatibility} to true in the constructor.
+By default, all these booleans are set to false in the constructor of \textit{vOptimizer}.
+Third, one must specify if the optimizer admits a penalty term, and if so, what is the minimum derivative order that the penalty must admit for being used with the optimizer.
+If your optimizer admits a penalty term, set the integer member \textit{m\_requiredPenaltyDerivativesOrder} to the required minimum derivative order that the penalty must admit.
+By default, this value is set to -1 in the constructor of \textit{vOptimizer} (which means that the optimizer does not admit a penalty term).
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Add your own penalty}
+
+\subsection{Basic concept}
+
+To add your own penalty, you only have to build a specific class that inherits from the abstract class \textit{vPenalty}.
+Then, you just have to implement a bunch of pure virtual functions corresponding to what you want your new penalty to specifically do.
+Please refer to the \textit{CASToR\_\_add\_new\_modules.pdf} guide in order to fill up the mandatory parts of adding a new module (your new penalty is a module);
+namely the auto-inclusion mechanism, the interface-related functions and the management functions.
+Right below are some instructions to help you fill the specific pure virtual functions of your penalty.\\
+
+To make things easier, we provide an example of template class that already implements all the squeleton.
+Basically, you will have to change the name of the class and fill the functions up with your own code.
+The actual files are \textit{include/optimizer/iPenaltyTemplate.hh} and \textit{src/optimizer/iPenaltyTemplate.cc} and are actually already part of the source code.
+Also, we recommend that you take a look at other implemented penalties.
+
+\subsection{Implementation of the specific penalty functions}
+
+First, one must specify the derivative order of the penalty.
+This must be done in the constructor by specifying the value of the integer member \textit{m\_penaltyDerivativesOrder}.\\
+
+Then, the functions that you have to implement are the three following ones: \textit{ComputePenaltyValue()}, \textit{ComputeFirstDerivative()} and \textit{ComputeSecondDerivative()}.
+If the penalty admits strictly less than two derivatives, then the \textit{ComputeSecondDerivative()} function must still be implemented (because it is pure virtual) but can be left empty as it will never be called if the member \textit{m\_penaltyDerivativeOrder} is appropriately set.
+Some information is provided in the template source file \textit{src/optimizer/iPenaltyTemplate.cc}, so please refer to it.
+See also already implemented penalties to get a good understanding.\\
+
+Aside these three pure virtual functions, there are two virtual functions whose implementation in \textit{vPenalty} do nothing on purpose, but that can be overloaded to perform other types of actions specific to your penalty.
+These functions are \textit{GlobalPreProcessingStep()} and \textit{LocalPreProcessingStep()}, as explained above.
+
+\end{document}
+
