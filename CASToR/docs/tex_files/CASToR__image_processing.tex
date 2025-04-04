@@ -1,0 +1,139 @@
+\documentclass[a4paper, 11pt]{article}
+
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{subscript}
+% Use symbols like degrees
+\usepackage{gensymb}
+% In case we need to rotate a table
+\usepackage{rotating}
+% To insert code samples
+\usepackage{listings}
+
+% Change margins because article class is too small
+\addtolength{\oddsidemargin}{-2cm}
+\addtolength{\evensidemargin}{12cm}
+\addtolength{\textwidth}{4cm}
+\addtolength{\topmargin}{-3cm}
+\addtolength{\textheight}{5cm}
+
+% define some colors here if needed
+\definecolor{_green}{rgb}{0,0.6,0}
+\definecolor{_gray}{rgb}{0.5,0.5,0.5}
+\definecolor{_mauve}{rgb}{0.58,0,0.82}
+\definecolor{_lyellow}{rgb}{0.1,0.1,0.1}
+
+% code listing settings
+\lstset{
+  %rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
+  tabsize=2,	                   
+  title=\lstname                    % show the filename of files included with \lstinputlisting; also try caption instead of title
+  backgroundcolor=\color{white},  % choose the background color;
+  language=C++,                     % the language of the code
+  basicstyle=\ttfamily\small,       % the size of the fonts that are used for the code 
+  aboveskip={1.0\baselineskip},
+  belowskip={1.0\baselineskip},
+  columns=fixed,
+  extendedchars=true,               % lets you use non-ASCII characters; for 8-bits encodings only, does not work with UTF-8
+  breaklines=true,                  % sets automatic line breaking
+  tabsize=4,                        % sets default tabsize to X spaces
+  prebreak=\raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+  frame=lines,                      % adds a frame around the code (eg. single)
+  showtabs=false,                   % show tabs within strings adding particular underscores
+  showspaces=false,                 % show spaces everywhere adding particular underscores; it overrides 'showstringspaces'
+  showstringspaces=false,           % underline spaces within strings only
+  keywordstyle=\color{_mauve},      % keyword style
+  commentstyle=\color{_green},      % comment style
+  stringstyle=\color{_gray},        % string literal style
+  deletekeywords={...},             % if you want to delete keywords from the given language
+  otherkeywords={*,...},            % if you want to add more keywords to the set
+  numbers=left,                     % where to put the line-numbers;
+  keepspaces=true,                  % keeps spaces in text, useful for keeping indentation of code (possibly needs columns=flexible)
+  numberstyle=\footnotesize\color{_gray},% the style that is used for the line-numbers 
+  stepnumber=1,                     % the step between two line-numbers.
+  numbersep=5pt,                    % how far the line-numbers are from the code
+  captionpos=t,                     % sets the caption-position bottom(b), top(t)
+  escapeinside={\%*}{*)}            % if you want to add LaTeX within your code
+}
+
+
+\begin{document}
+\title{Image processing modules in CASToR}
+\maketitle
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section*{Foreword}
+
+CASToR is designed to be flexible, but also as generic as possible.
+Any new implementation should be thought to be usable in as many contexts as possible; among all modalities, all types of data, all types of algorithms, etc.
+
+Before adding some new code to CASToR, it is highly recommended to read the general documentation \textit{CASToR\_general\_documentation.pdf} to get a good overview of the project, as well as the programming guidelines \textit{CASToR\_\_programming\_guidelines.pdf}.
+Also, the philosophy about adding new modules in CASToR (\textit{e.g.} projectors, optimizers, deformations, image processing, etc) is fully explained in \textit{CASToR\_\_add\_new\_modules.pdf}.
+Finally, the doxygen documentation is a very good resource to help understanding the code architecture.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Summary}
+
+This HowTo guide describes how to add your own image processing module into CASToR. CASToR is mainly designed to be modular in the sense that adding a new feature
+should be as easy as possible. This guide begins with a brief description of the image processing part of the CASToR architecture that explains the chosen philosophy.
+Then follows a step-by-step guide that explains how to add a new image processing module by simply adding a new class with few mandatory requirements.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{The image processing architecture}
+
+The image processing part of the code is based on 2 main classes: \textit{oImageProcessingManager} and \textit{vImageProcessingModule}. The main program will instantiate
+and initialize the \textit{oImageProcessingManager}. It is in charge of reading command line options and instantiating the different children of \textit{vImageProcessingModule}.
+As many image processing modules as desired can be used/combined. Each one is declared by the option \textit{-proc} when executing the program. To get some help on how to use it and a list of the
+implemented processing modules, execute the program with the option \textit{-help-proc}. The option format follows the philosophy described in
+\textit{CASToR\_HowTo\_\_add\_new\_modules.pdf}. Any image processing module can be used at different places during the program execution. For iterative algorithms,
+it can be used on the image to be forward-projected, on the back-projected correction terms, on the current estimated image either as a post-processing step (applied
+to the image to be saved), or as an intra-iterations processing (the processed image is put back into the next update as the current estimate).\\
+
+During the initialization the \textit{oImageProcessingManager} will call the \textit{InitializeSpecific()} function of each image processing module. This function is pure
+virtual and should implement everything that needs to be done to be able to apply the processing. Then, during the execution of the program, the function \textit{Process()}
+is called to actually apply the processing onto the image provided as a parameter. This is also a pure virtual function.\\
+
+Below is a more detailed description of how the image processing modules are used and how to add your own.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Add your own image convolver}
+
+\subsection{Basic concept}
+
+To add your own image processing module, you only have to build a specific class that inherits from the abstract class \textit{vImageProcessingModule}. Then, you just
+have to implement a bunch of pure virtual functions that will correspond to the specific stuff you want your new image processing module to do. Please refer to the
+\textit{CASToR\_\_add\_new\_modules.pdf} guide in order to fill up the mandatory parts of adding a new module; namely the auto-inclusion mechanism, the
+interface-related functions and the management functions. Right below are some instructions to help you fill the specific pure virtual functions of your image processing
+module.\\
+
+To make things easier, we provide an example of template class that already implements all the squeleton. Basically, you will have to change the name of the class
+and fill the functions up with your own code. The actual files are \textit{include/image/iImageProcessingTemplate.hh} and \textit{src/image/iImageProcessingTemplate.cc}
+and are actually already part of the source code.\\
+
+Based on what your processing module will do, the following boolean members have to be set in the constructor of the module:
+
+\begin{lstlisting}[label={Boolean members},caption={Boolean members specifying the actions of the module on the different dynamic dimensions.}]
+  // A boolean that specify if the module is affecting the time frame dynamic dimension
+  bool m_affectTimeDimensionFlag;
+  // A boolean that specify if the module is affecting the respiratory dynamic dimension
+  bool m_affectRespDimensionFlag;
+  // A boolean that specify if the module is affecting the cardiac dynamic dimension
+  bool m_affectCardDimensionFlag;
+\end{lstlisting}
+
+The \textit{oImageProcessingManager} will use these booleans during the initialization to check the consistency between how the dynamic dimensions are modeled and the
+processing modules in use. For instance, if your processing module is acting on the time frames and modifying them, then the boolean \textit{m\_affectTimeDimensionFlag}
+should be set to \textit{true} in the constructor. In that case, if the frame dimension is modeled by some basis functions, then the use of this processing module will
+automatically be forbidden.
+
+\subsection{Implementation of the specific functions}
+
+In addition to the initialization functions, there is only one pure virtual function to implement: \textit{Process()}. This function will actually perform the processing.
+It has only one parameter which is a pointer to the dynamic image to be processed. Note that the result of the processing should also be put into this image. The dynamic
+dimensions of the image are the standard ones used in CASToR. All information and the tools needed to implement this function are fully described in the template source
+file \textit{src/image/iImageProcessingTemplate.cc}, so please refer to it.\\
+
+\end{document}
+

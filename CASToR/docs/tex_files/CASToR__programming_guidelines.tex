@@ -1,0 +1,263 @@
+\documentclass[a4paper, 11pt]{article}
+
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{subscript}
+% Use symbols like degrees
+\usepackage{gensymb}
+% In case we need to rotate a table
+\usepackage{rotating}
+% To insert code samples
+\usepackage{listings}
+
+% Change margins because article class is too small
+\addtolength{\oddsidemargin}{-2cm}
+\addtolength{\evensidemargin}{12cm}
+\addtolength{\textwidth}{4cm}
+\addtolength{\topmargin}{-3cm}
+\addtolength{\textheight}{5cm}
+
+% define some colors here if needed
+\definecolor{_green}{rgb}{0,0.6,0}
+\definecolor{_gray}{rgb}{0.5,0.5,0.5}
+\definecolor{_mauve}{rgb}{0.58,0,0.82}
+\definecolor{_lyellow}{rgb}{0.1,0.1,0.1}
+
+% code listing settings
+\lstset{
+  %rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
+  tabsize=2,	                   
+  title=\lstname                    % show the filename of files included with \lstinputlisting; also try caption instead of title
+  backgroundcolor=\color{white},  % choose the background color;
+  language=C++,                     % the language of the code
+  basicstyle=\ttfamily\small,       % the size of the fonts that are used for the code 
+  aboveskip={1.0\baselineskip},
+  belowskip={1.0\baselineskip},
+  columns=fixed,
+  extendedchars=true,               % lets you use non-ASCII characters; for 8-bits encodings only, does not work with UTF-8
+  breaklines=true,                  % sets automatic line breaking
+  tabsize=4,                        % sets default tabsize to X spaces
+  prebreak=\raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+  frame=lines,                      % adds a frame around the code (eg. single)
+  showtabs=false,                   % show tabs within strings adding particular underscores
+  showspaces=false,                 % show spaces everywhere adding particular underscores; it overrides 'showstringspaces'
+  showstringspaces=false,           % underline spaces within strings only
+  keywordstyle=\color{_mauve},      % keyword style
+  commentstyle=\color{_green},      % comment style
+  stringstyle=\color{_gray},        % string literal style
+  deletekeywords={...},             % if you want to delete keywords from the given language
+  otherkeywords={*,...},            % if you want to add more keywords to the set
+  numbers=left,                     % where to put the line-numbers;
+  keepspaces=true,                  % keeps spaces in text, useful for keeping indentation of code (possibly needs columns=flexible)
+  numberstyle=\footnotesize\color{_gray},% the style that is used for the line-numbers 
+  stepnumber=1,                     % the step between two line-numbers.
+  numbersep=5pt,                    % how far the line-numbers are from the code
+  captionpos=t,                     % sets the caption-position bottom(b), top(t)
+  escapeinside={\%*}{*)}            % if you want to add LaTeX within your code
+}
+
+
+\begin{document}
+\title{General programming guidelines}
+\maketitle
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section*{Foreword}
+
+CASToR is designed to be flexible, but also as generic as possible.
+Any new implementation should be thought to be usable in as many contexts as possible; among all modalities, all types of data, all types of algorithms, etc.
+
+Before adding some new code to CASToR, it is highly recommended to read the general documentation \textit{CASToR\_general\_documentation.pdf} to get a good overview of the project, as well as this HowTo guide which provides information on the syntax used throughout the code, and some general programming guidelines to be observed when contributing to CASToR.
+This guide does not follow any particular organization so please be sure to read it entirely.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Class names}
+
+Begin with a lower case letter to identify the type of the class:
+\begin{itemize}
+  \item s: for singleton manager classes
+  \item o: for an standalone class
+  \item v: for abstract classes (pure virtual) that cannot be used on their own
+  \item i: for a child class that inherits from a virtual class (with prefix v)
+  \item g: for any file which is actually not a class
+\end{itemize}
+No underscore, all words attached and upper case at the beginning of each word.
+When an object is used, the first letter after the prefix must be upper case.
+
+\begin{lstlisting}[label={class_names},caption=Examples of class names.]
+class oChicken;
+class sMyManager;
+class vMyVirtualClass;
+class iChildChicken;
+\end{lstlisting}
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Class members}
+
+All class members begin with a lower case 'm', then follows the number of pointers indicated by the letter 'p', then underscore, and then begin the name of the member with two possibilities; i) first letter in lower case if it is a built-in non-object type, ii) first letter in upper case if it is an object.
+Then all words attached with upper case at the beginning of each word.
+
+\begin{lstlisting}[label={class_members},caption=Examples of class members naming.]
+int m_nbChicken;
+int* mp_chickenSizes;
+int** m2p_chickenChickenSizes;
+int*** m3p_chickenChickenChickenSizes;
+oChicken* mp_Chicken;
+\end{lstlisting}
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Class functions}
+
+Destructor declaration and implementation is mandatory.
+No prefix, no underscore, all words attached, begins with an upper case, upper case at the beginning of each word. Parameters begin with prefix 'a[xp]\_' followed by all words attached and upper case at the beginning of each word ('xp' for any pointers, as for class members eg: \textit{a2p\_chickenChickenSizes}), except for built-in non-object parameters where the first letter after the underscore is in lower case.
+
+\begin{lstlisting}[label={class_functions},caption=Examples of class functions naming.]
+int MyFunctionThatReturnsAnInteger(int a_intNumber, int* ap_pointerToAnInteger, oChicken* ap_MyChicken);
+\end{lstlisting}
+
+As a general rule, all functions must return an integer specifying the status of the function: 0 means success and any other value means an error occurred.
+By doing so, any error encountered at any level can be caught by the main which called the function which called the function which called the function, etc.
+Each time a function is called, the returning value must be tested.
+Exceptions include small functions that cannot possibly encounter errors and/or are called many times during the process, or functions returning a value. For the last case, as most functions return values superior or equal to 0, a returned negative value is usually used as an error indicator.
+
+In the implementation files (\textit{i.e.} '.cc' extension), use the following separator between two functions (one empty line before, another after):
+\begin{lstlisting}[label={function_separator},caption=Functions separator.]
+// =====================================================================
+// ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// =====================================================================
+\end{lstlisting}
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Class constructor, parameters and initialization}
+
+Most of the classes are built on the same concept. The constructors do not have parameters, must be called without parameters,
+and their sole role is to initialize all members with a default value. All parameters are then provided through the use of dedicated \textit{Set()} functions. Once done,
+a \textit{CheckParameters()} function is called to check that all mandatory parameters are correctly set. Follows a call to an \textit{Initialize()} function which performs all required initialization steps, as the name suggests. Then the class can be used through its other dedicated member functions.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Local variables}
+
+Syntax of the local variables involves underscore to separate all words. No upper case is used, except for the first letter of the variable's name if it is an object.
+
+\begin{lstlisting}[label={local_variables},caption=Examples of local variables naming.]
+int nb_chicken = 2;
+oChicken* p_My_chicken = NULL;
+\end{lstlisting}
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Indentation}
+
+Two spaces is the standard for indentation in the entire code. No tabulations.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Comments}
+
+Comment as much as possible inside the code to explain what is done and why, you will be rewarded for sure.
+In a new class, in the specification file, include a description of the purpose of the class. This is done using the doxygen syntax.
+Each function is documented in the specification file using the doxygen syntax. Documentation includes the aim of the function, description of the different parameters, and (optionally) details on the implementation. Documentation of the function in the implementation file is greatly advised, but not mandatory, and don't follow any specific format.
+
+Inside a function, comment on the methodology using standard C++ '//' signs; do not use the '/*' then '*/' signs.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Source tree}
+
+One root folder, inside which there are the main programs, the makefiles, two folders for the sources (\textit{include} and \textit{src}) containing themselves
+thematic folders, one folder for the configuration files (\textit{config}) containing itself different folders for specific purposes (e.g. \textit{scanner},
+\textit{projector}), and one folder for utilitaries code (\textit{toolkits}).
+The makefile will create a \textit{bin} and a \textit{tmp} folder.
+Each class is composed by at least 2 files when CPU only is used, and 3 files when GPU is used.
+\begin{itemize}
+  \item A specification file with '.hh' extension, located inside a thematic folder of the include folder
+  \item An implementation file for the CPU part, with '.cc' extension, located inside a thematic folder of the src folder
+  \item An implementation file for the GPU part (if needed), with '.cu' extension, located inside a thematic folder of the src folder.
+\end{itemize}
+The files' names are exactly the same as the class name with the associated extension.
+For independent GPU functions, the file name begins with a prefix 'g', and the specification file extension is '.cuh' and implementation file extension '.cu'.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Non-class files}
+
+For other files that include some general functionnalities not contained in classes, the file name begins with the lower case 'g'.
+Currently there is one important header file \textit{include/management/gVariables.hh} which contains important macro definitions, two other files
+\textit{include/management/gOptions.hh} and \textit{src/management/gOptions.cc} that implement some functions related to command line parameters reading.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Specific rules}
+
+At the beginning of each file, include the \textit{gVariables.hh} file.
+It contains all useful includes from the standard library. It also contains the line saying the \textit{std} namespace is used, so the use of another namespace
+is not allowed.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Messages display and verbosity}
+
+Macro definitions are used to display messages to the standard output or error interfaces, namely \textit{Cout} and \textit{Cerr} respectively. These macros
+allow to automatically log any message into a log file that is also automatically created when CASToR is used. The name and localization of this log file are
+based on where CASToR is executed and the provided output base name. See examples in the code to know how to use these macros.
+
+The verbosity level, whatever the class, should obey the following guidelines as much as possible (the test over the verbose level is incremental '$>=$'):
+
+\begin{itemize}
+  \item \textbf{0}:  No output except warnings and errors.
+  \item \textbf{VERBOSE\_LIGHT 1}:  The lightest setting for progression status (1 message from each involved manager starting initialization and basis status of reconstruction).
+  \item \textbf{VERBOSE\_NORMAL 2}:  The standard setting for progression status (specific types of modules used during initialization and more details reconstruction).
+  \item \textbf{VERBOSE\_DETAIL}:  The heaviest setting for progression status (all relevant information during initialization and reconstruction).
+  \item \textbf{VERBOSE\_DEBUG\_LIGHT 4}:  A message at the beginning of each function that is called only a few times, with prefix "+++++".
+                                         This is done by the macro DEBUG\_VERBOSE which itself is described only when CASTOR\_VERBOSE is set during compilation.
+  \item \textbf{VERBOSE\_DEBUG\_NORMAL 5}:  A message at the beginning of each function that is called many times, excluding those at the event level, with prefix "+++++"
+                                          This is done by the macro DEBUG\_VERBOSE which itself is described only when CASTOR\_VERBOSE is set during compilation.
+  \item \textbf{VERBOSE\_DEBUG\_EVENT 6}:  A message at the beginning of each function that is called many times, including those at the event level, with prefix "+++++"
+                                         This is done by the macro DEBUG\_VERBOSE which itself is described only when CASTOR\_VERBOSE is set during compilation.
+                                         Also any other message more specific than just entering a function, at the event level.
+  \item \textbf{VERBOSE\_DEBUG\_MAX 7+}: Any message originating from a function below the event level (\textit{e.g.} action on a voxel for an event), with prefix "+++++"
+                                       This is done by the macro DEBUG\_VERBOSE which itself is described only when CASTOR\_VERBOSE is set during compilation.
+                                       Also any other message more specific than just entering a function, below the event level.
+\end{itemize}
+
+The messages prompting a call to a function, including in levels 4, 5 and 6, are embedded into a specific macro definition DEBUG\_VERBOSE, defined in the file
+\textit{include/management/sOutputManager.hh}. At these verbose levels, the messages are not logged. For the levels 6 and 7++ (at or below the event level),
+the other messages are explicitely implemented within the code but should still be encapsulated within the CASTOR\_VERBOSE environment variable.
+
+Note that the harmonization of verbose levels is not an easy task, so this is a permanent work-in-progress.
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Configuration files}
+
+There is a \textit{config} folder that contains all possible configuration files organized in sub-folders.
+The \textit{CASTOR\_CONFIG} environnement variable or CMake variable must be set to the config folder of CASToR in order to be able to find the configuration files (or use the '-conf' option).
+Here is a list of all sub-folders including:
+\begin{itemize}
+  \item \textit{convolver} folder, which contains the configuration files specific to the different image convolvers
+  \item \textit{misc} folder, which contains miscellaneous configuration files, such as isotopes parameters
+  \item \textit{optimizer} folder, which contains the configuration files specific to the different optimizers
+  \item \textit{processing} folder, which contains the configuration files specific to the different image processing modules
+  \item \textit{projector} folder, which contains the configuration files specific to the different projectors
+  \item \textit{scanner} folder, which contains the scanner configuration files
+\end{itemize}
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Precision of the computation (floating point and integer numbers)}
+
+The precision of all computations in CASToR are left to the choice of the user when compiling the code. To do so, simple macros defining the types of the
+variables are used. They are defined in the \textit{include/management/gVariables.hh} file. Here are the different macro-types:
+\begin{description}
+  \item [FLTNB]: This macro-type defines the precision of floating point numbers used in all standard operations and image matrices. IT can be
+                 \textit{float}, \textit{double} or \textit{long double}. Any time you define a floating point variable, use this macro-type
+                 instead of the actual standard C type, or use the next one HPFLTNB.
+  \item [HPFLTNB]: This macro-type defines the precision of floating point numbers that require a high level of precision, usually at least double precision.
+                   Basically use this type for any part of the code that is sensitive to precision.
+  \item [FLTNBDATA]: This macro-type defines the precision of floating point numbers that are read or written, for datafiles.
+  \item [FLTNBLUT]: This macro-type defines the precision of floating point numbers that are read or written, for scanner LUT file.
+  \item [INTNB]: This macro-types defines the precision of integer numbers used for images dimensions.
+\end{description}
+
+%---------------------------------------------------------------------------------------------------------------------------------------------------------------
+\section{Doxygen}
+
+Technical documentation is generated using Doxygen. Doxygen comments must only appear in the header files (\textit{i.e.} '.hh' extension).
+
+\end{document}
+

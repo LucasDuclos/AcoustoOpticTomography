@@ -1,0 +1,14 @@
+scanner name: PET_ASIM_962
+modality: PET
+number of elements: 18432
+number of layers: 1
+voxels number transaxial: 256
+voxels number axial: 63
+field of view transaxial: 582.656 # given in mm
+field of view axial: 152.775 # given in mm
+number of rings in scanner: 32
+number of crystals in layer: 18432
+crystals size depth: 0 # given in mm
+mean depth of interaction: 0 # given in mm
+min angle difference: 0 # given in degree
+description: created by ./simul_5_60

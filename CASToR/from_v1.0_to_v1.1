@@ -1,0 +1,23 @@
+
+## New features
+
+- Add SPECT support for GATE tools (root output only)
+- '-sens-histo' option that allows to compute the global sensitivity from a histogram datafile
+- Add option to specify rotation direction (clockwise/counterclockwise) for PET scanner geometry generation
+- Acf estimation in GATE tools : Add option to select the projector for analytic projection
+- Add a .geom scanner example for PET in config/scanner (PET_GE_GATE.geom)
+
+## Bug corrections, code changes, that can affect the results in some way
+
+- Changes in Joseph projector to manage more accurately limit conditions at the borders of the image.
+  This affect the projector to a small degree, but which can be significant when testing the PET histogram benchmark.
+- MPI management bug correction after the sensitivity generation that prevented from proceeding to the reconstruction.
+- Bug fix when more threads than events are used (the code was stuck in an infinite loop before that).
+
+## Small bug fixes
+- Fix several errors in GATE conversion tools (calculation of several variables and rotation management)
+- Fix attenuation image in spect benchmark (incorrect mu values)
+- Fix return value of GetGATESystemType() if mac file was not found
+- Fix transaxial voxel number and field of view default in PET_CASTOR_BENCHMARK.hscan header file
+- Fix decay calculation for isotope with large half-life (i.e Ge-68)
+

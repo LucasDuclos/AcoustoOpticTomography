@@ -1,0 +1,7 @@
+./src/algorithm/oSensitivityGenerator.cc:    mp_ProjectorManager->ApplyBedOffset(bed);
+./src/algorithm/oSensitivityGenerator.cc:    oProjectionLine *line = mp_ProjectorManager->ComputeProjectionLine(event, th);
+./src/algorithm/oSensitivityGenerator.cc:          oProjectionLine *line = mp_ProjectorManager->ComputeProjectionLine(event, th);
+./src/algorithm/oSensitivityGenerator.cc:              oProjectionLine* line = mp_ProjectorManager->ComputeProjectionLine(event, th);
+./src/algorithm/oIterativeAlgorithm.cc:  mp_ProjectorManager->ApplyBedOffset(a_bed);
+./src/algorithm/oIterativeAlgorithm.cc:    oProjectionLine *line = mp_ProjectorManager->ComputeProjectionLine(event, th);
+./src/analytic_simulator/oAnalyticProjection.cc:              oProjectionLine* line = mp_ProjectorManager->ComputeProjectionLine(event, th);
