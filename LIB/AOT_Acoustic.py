@@ -1,3 +1,15 @@
+import scipy.io
+import numpy as np
+import h5py
+from scipy.signal import hilbert
+from math import ceil, sin, cos, radians, floor
+import os
+from kwave.kgrid import kWaveGrid
+from kwave.kmedium import kWaveMedium
+from kwave.ksource import kSource
+from kwave.ktransducer import kWaveTransducerSimple, NotATransducer
+from kwave.ksensor import kSensor
+
 def load_fieldHYDRO_XZ(file_path_h5, param_path_mat):    
 
     # Charger les fichiers .mat
