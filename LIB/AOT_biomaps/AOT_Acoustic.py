@@ -410,7 +410,7 @@ def generate_2Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_
         save_field(acoustic_field_ToSave, num_elements, active_list, angle_deg, folderPathBase, dx, f_aq,(len(signal)-1)*kgrid.dt)
     return acoustic_field_ToSave
     
-def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_listString, c0=1540, num_elements = 192, num_cycles = 4, element_width = 0.2/1000, element_height = 6/1000, depth_start = 0, f_US = 180e6, f_aq = 10e6, IsSaving=True):
+def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_listString, c0=1540, num_elements = 192, num_cycles = 4, element_width = 0.2/1000, element_height = 6/1000, depth_start = 0, f_US = 180e6, f_aq = 180e6, IsSaving=True):
 
     active_listbin = ''.join(f"{int(active_listString[i:i+2], 16):08b}" for i in range(0, len(active_listString), 2))
     active_list = np.array([int(char) for char in active_listbin])
@@ -421,17 +421,17 @@ def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_
     Yrange = [-element_height * 5 / 2, element_height * 5 / 2]  # Plage en Y en mètres
     Zrange = [depth_start, depth_end]  # Plage en Z en mètres
 
-    t0 = floor(Zrange[0]/f_US)
-    tmax = ceil((depth_end -depth_start + probeWidth*sin(radians(angle_deg)))/(c0*cos(radians(angle_deg)))*f_US)
-
     dx = element_width
     dz = dx
     dy = dx
 
-    Nx = ceil((Xrange[1] - Xrange[0]) / dx)
+    t0 = floor(Zrange[0] / f_aq)
+    tmax = ceil((depth_end - depth_start + probeWidth * sin(radians(abs(angle_deg)))) / (c0 * cos(radians(abs(angle_deg)))) * f_aq)
+
+    Nx = ceil((Xrange[1] - Xrange[0]) / element_width)
     Ny = 4 * ceil((Yrange[1] - Yrange[0]) / element_height)
-    Nz = ceil((Zrange[1] - Zrange[0]) / dz)
-    Nt = tmax - t0 + 1
+    Nz = ceil((Zrange[1] - Zrange[0]) / element_width)
+    Nt = tmax - t0 + 100
 
     # Print the results
     print("Xrange:", Xrange)
@@ -445,16 +445,16 @@ def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_
     print("dz:",dz)
     print("Angles : ",angle_deg)
     print("Active List : ",active_listString)
+    print("Nt:", Nt)
 
+    # Initialisation de la grille et du milieu
     kgrid = kWaveGrid([Nx, Ny, Nz], [element_width, element_height, dx])
-    kgrid.setTime(Nt = Nt, dt = 1/f_US)
-
-    inputFileName = os.path.join(folderPathBase,"/KwaveIN.h5")
-    outputFileName = os.path.join(folderPathBase,"/KwaveOUT.h5")
-
-    # Définir le medium
-    # medium = kWaveMedium(sound_speed=1540, density=1000, alpha_coeff=0.75, alpha_power=1.5, BonA=6)
+    kgrid.setTime(Nt=Nt, dt=1/f_aq)
     medium = kWaveMedium(sound_speed=c0)
+
+    inputFileName = os.path.join(folderPathBase,"KwaveIN.h5")
+    outputFileName = os.path.join(folderPathBase,"KwaveOUT.h5")
+
     
     acoustic_field = np.zeros((kgrid.Nt, Nz, Ny, Nx))
     acoustic_envelope_squared = np.zeros((kgrid.Nt, Nz, Nx))
@@ -481,7 +481,7 @@ def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_
     # Inclinaison de la sonde (en degrés)
     angle_rad = np.radians(abs(angle_deg))  # Convertir en radians
 
-    delayed_signals = apply_delay(signal, num_elements, element_width, c0, angle_rad, kgrid.dt, is_positive_angle)
+    delayed_signals = apply_delay(signal, angle_rad, kgrid.dt, is_positive_angle, num_elements, element_width, c0)
 
     # Filtrer les signaux pour correspondre aux éléments actifs
     delayed_signals_active = delayed_signals[active_list == 1, :]
@@ -517,27 +517,29 @@ def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_
         execution_options=execution_options,
     )
     print("Simulation terminée avec succès.")
-    
     acoustic_field = sensor_data['p'].reshape(kgrid.Nt,Nz, Ny, Nx)
+    
+    downsample_factor = int(180/25)
 
-    print("Calcul de l'enveloppe acoustique...")
+    acoustic_fieldSampled = acoustic_field[::downsample_factor, :,:, :]
+
+    EnveloppeField = np.zeros_like(acoustic_fieldSampled)
     for y in range(acoustic_field.shape[2]):
-        acoustic_field[:, :, y, :]= np.abs(hilbert(acoustic_field[:, :, y, :], axis=0))
-    acoustic_envelope_squared = np.sum(acoustic_field, axis=2)**2
-    if f_US != f_aq:
-        downsample_factor = int(f_US / f_aq)
-    else:
-        downsample_factor = 1    
-
-    acoustic_field_ToSave = acoustic_envelope_squared[::downsample_factor, :, :]
+        for z in range(acoustic_field.shape[1]):
+            EnveloppeField[:, z, y, :] = np.abs(hilbert(acoustic_fieldSampled[:, z, y, :], axis=1))
+  
+    print(f"acoustic_envelope_squared : {EnveloppeField.shape}")
+    sliceEnvelopeField = np.sum(EnveloppeField, axis=2)**2
     
     if IsSaving:
         print("Saving...")
-        save_field(folderPathBase, acoustic_field_ToSave, num_elements, active_list, angle_deg, dx, f_aq,(len(signal)-1)*kgrid.dt)
+        save_field(sliceEnvelopeField, num_elements, active_list, angle_deg, folderPathBase, dx, f_aq,(len(signal)-1)*kgrid.dt)
 
-    return acoustic_field_ToSave
+    
 
-def save_field(folderPathBase, acoustic_field, num_elements, active_list, angle, dx, f0,t_ex):
+    return sliceEnvelopeField
+
+def save_field(folderPathBase, acoustic_field, active_list, angle, f0, num_elements =192, dx = 0.2/1000):
     """
     Fonction Python qui reproduit la logique de la méthode SaveField du code MATLAB.
 
@@ -548,7 +550,7 @@ def save_field(folderPathBase, acoustic_field, num_elements, active_list, angle,
     - structuration : Structure d'activation des transducteurs.
     - folderPath : Chemin où les fichiers .img et .hdr seront enregistrés.
     """
-
+    t_ex = 1/f0
     active_list_str = ''.join(map(str, active_list))  # Convertit la liste en chaîne de 0 et 1
     print("active list : ", active_list_str)
     # Compléter la chaîne pour que sa longueur soit un multiple de 4 (car 1 hexadécimal = 4 bits)

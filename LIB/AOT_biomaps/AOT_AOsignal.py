@@ -111,7 +111,6 @@ def save_AOsignal(AOsignal, save_directory, angles, Nt, active_list):
         for j in range(nScan):
              # Écrire les identifiants hexadécimaux
             active_list_str = ''.join(map(str, active_list[j,:] )) 
-
             nb_padded_zeros = (4 - len(active_list_str) % 4) % 4  # Calcul du nombre de 0 nécessaires
             active_list_str += '0' * nb_padded_zeros  # Ajout des zéros à la fin de la chaîne
 
@@ -126,7 +125,7 @@ def save_AOsignal(AOsignal, save_directory, angles, Nt, active_list):
             fileID.write(np.int8(angle).tobytes())
             
             # Écrire le signal AO correspondant (times x 1) en single (float32)
-            fileID.write(AOsignal[j,:].astype(np.float32).tobytes())
+            fileID.write(AOsignal[:,j].astype(np.float32).tobytes())
 
    # **2. Sauvegarde du fichier .cdh**
     header_content = (

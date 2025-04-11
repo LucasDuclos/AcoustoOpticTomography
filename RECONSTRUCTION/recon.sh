@@ -4,11 +4,16 @@
 # Model : Y = A*L
 # Make the reconstruction of L -> L_recon
 
-Y_path="/home/duclos/AOT/TEMP/AOSignals.cdh"
-A_path="/home/duclos/AOT/TEMP"
-L_recon_Path="/home/duclos/AOT/TEMP"
+Y_path="pathTO/AOSignals.cdh"
+A_path="pathTO/system_matrix/"
+L_recon_Path="PathTo/results/"
+
 CASToR_path="/home/duclos/AOT/Reconstruction/CASToR_LuK/bin/castor-recon"
+
 iter="100:10"
+opti="MLEM" #MLEM DEPIERRO95
+penalty="" # "-pnlt MRF:MRF.conf -pnlt-beta 0.4"
+
 
 if [ ! -f ${Y_path} ]; then
   echo "$0> Error: no input file ${Y_path}"
@@ -17,8 +22,7 @@ elif [ ! -d ${A_path} ]; then
   echo "$0> Error: no system matrix directory ${A_path}"
   exit 2
 fi  
-opti="MLEM" #MLEM DEPIERRO95
-penalty="" # "-pnlt MRF:MRF.conf -pnlt-beta 0.4"
+
 
 cmd="${CASToR_path} -df ${Y_path} -opti ${opti} ${penalty} -it ${iter}"
 cmd="${cmd} -proj matrix -dout ${imageDir} -th 24 -vb 5 -proj-comp 1 -ignore-scanner"
