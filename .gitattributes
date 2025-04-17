@@ -1,3 +1,5 @@
 NOTEBOOKS/recon.ipynb filter=lfs diff=lfs merge=lfs -text
 NOTEBOOKS/recon_walkthrough.ipynb filter=lfs diff=lfs merge=lfs -text
 NOTEBOOKS/recon_walkthrough.ipynb、 filter=lfs diff=lfs merge=lfs -text
+NOTEBOOKS/recon_walkthrough.html filter=lfs diff=lfs merge=lfs -text
+NOTEBOOKS/recon.html filter=lfs diff=lfs merge=lfs -text
