@@ -68,6 +68,31 @@ def apply_delay(signal, angle_rad, kgrid_dt, is_positive, num_elements = 192, el
 
     return delayed_signals
     
+def getActiveListBin(path):
+    base_name = os.path.basename(path)
+    file = os.path.splitext(base_name)[0]
+    start = file.index('_') + 1
+    end = file.index('_', start)
+    hexa = file[start:end]
+    return hex_to_binary_array(hexa)
+
+def getActiveListHexa(path):
+    base_name = os.path.basename(path)
+    file = os.path.splitext(base_name)[0]
+    start = file.index('_') + 1
+    end = file.index('_', start)
+    return file[start:end]
+
+def getAngle(path):
+    base_name = os.path.basename(path)
+    file = os.path.splitext(base_name)[0]
+    angle_str = file[-3:]
+    if angle_str[0] == '0':
+        sign = 1
+    else:
+        sign = -1
+    return sign * int(angle_str[1:])
+
 def load_fieldHYDRO_XZ(file_path_h5, param_path_mat):    
 
     # Charger les fichiers .mat
@@ -164,9 +189,6 @@ def load_fieldHydro_XYZ(file_path_h5, param_path_mat):
     y_range = param['y'].flatten()
     z_range = param['z'].flatten()
 
-    print(f"x_range : {x_range.shape}")
-    print(f"y_range : {y_range.shape}")
-    print(f"z_range : {z_range.shape}")
     # Create a meshgrid for x, y, and z
     X, Y, Z = np.meshgrid(x_range, y_range, z_range, indexing='ij')
 
@@ -210,94 +232,16 @@ def load_fieldHydro_XYZ(file_path_h5, param_path_mat):
         reorganized_data[x_idx, y_idx, z_idx, :] = data[index, :]
     
     EnveloppeField = np.zeros_like(reorganized_data)
-    print(f"EnveloppeField data :  {EnveloppeField.shape}")
-    print(f"reorganized data :  {reorganized_data.shape}")
+
     for y in range(reorganized_data.shape[1]):
         for z in range(reorganized_data.shape[2]):
             EnveloppeField[:, y, z, :] = np.abs(hilbert(reorganized_data[:, y, z, :], axis=1))
 
     return EnveloppeField.T, x_range, y_range, z_range
 
-def load_fieldKWAVE_XZ(hdr_path):
-    """
-    Lit un fichier Interfile (.hdr) et son fichier binaire (.img) pour reconstruire un champ acoustique.
-
-    Paramètres :
-    ------------
-    - folderPathBase : dossier de base contenant les fichiers
-    - hdr_path : chemin relatif du fichier .hdr depuis folderPathBase
-
-    Retour :
-    --------
-    - field : tableau NumPy contenant le champ acoustique avec les dimensions réordonnées en (X, Z, time)
-    - header : dictionnaire contenant les métadonnées du fichier .hdr
-    """
-    header = {}
-    # Lecture du fichier .hdr
-    with open(hdr_path, 'r') as f:
-        for line in f:
-            if ':=' in line:
-                key, value = line.split(':=', 1)
-                key = key.strip().lower().replace('!', '')
-                value = value.strip()
-                header[key] = value
-
-
-    # Récupère le nom du fichier .img associé
-    data_file = header.get('name of data file') or header.get('name of date file')
-    if data_file is None:
-        raise ValueError(f"Impossible de trouver le fichier de données associé au fichier header {hdr_path}")
-    img_path = os.path.join(os.path.dirname(hdr_path),os.path.basename(data_file))
-
-    # Détermine la taille du champ à partir des métadonnées
-    shape = [int(header[f'matrix size [{i}]']) for i in range(1, 4) if f'matrix size [{i}]' in header]
-    if not shape:
-        raise ValueError("Impossible de déterminer la forme du champ acoustique à partir des métadonnées.")
-
-    # Type de données
-    data_type = header.get('number format', 'short float').lower()
-    dtype_map = {
-        'short float': np.float32,
-        'float': np.float32,
-        'int16': np.int16,
-        'int32': np.int32,
-        'uint16': np.uint16,
-        'uint8': np.uint8
-    }
-    dtype = dtype_map.get(data_type)
-    if dtype is None:
-        raise ValueError(f"Type de données non pris en charge : {data_type}")
-
-    # Ordre des octets (endianness)
-    byte_order = header.get('imagedata byte order', 'LITTLEENDIAN').lower()
-    endianess = '<' if 'little' in byte_order else '>'
-
-    # Vérifie la taille réelle du fichier .img
-    img_size = os.path.getsize(img_path)
-    expected_size = np.prod(shape) * np.dtype(dtype).itemsize
-    if img_size != expected_size:
-        raise ValueError(f"La taille du fichier img ({img_size} octets) ne correspond pas à la taille attendue ({expected_size} octets).")
-
-    # Lecture des données binaires
-    with open(img_path, 'rb') as f:
-        data = np.fromfile(f, dtype=endianess + np.dtype(dtype).char)
-
-    # Reshape les données en (time, Z, X)
-    field = data.reshape(shape[::-1])  # NumPy interprète dans l'ordre C (inverse de MATLAB)
-
-
-
-    # Applique les facteurs d'échelle si disponibles
-    rescale_slope = float(header.get('data rescale slope', 1))
-    rescale_offset = float(header.get('data rescale offset', 0))
-    field = field * rescale_slope + rescale_offset
-
-    return field
-
 def generate_2Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_listString, c0=1540, num_elements = 192, num_cycles = 4, element_width = 0.2/1000, depth_start = 0, f_US = 180e6, f_aq = 10e6, IsSaving=True):
     active_listbin = ''.join(f"{int(active_listString[i:i+2], 16):08b}" for i in range(0, len(active_listString), 2))
     active_list = np.array([int(char) for char in active_listbin])
-    print(active_list.shape)
     # Grille
     probeWidth = num_elements * element_width
     Xrange = [-20 / 1000, 20 / 1000]  # Plage en X en mètres
@@ -410,14 +354,19 @@ def generate_2Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_
         save_field(acoustic_field_ToSave, num_elements, active_list, angle_deg, folderPathBase, dx, f_aq,(len(signal)-1)*kgrid.dt)
     return acoustic_field_ToSave
     
-def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_listString, c0=1540, num_elements = 192, num_cycles = 4, element_width = 0.2/1000, element_height = 6/1000, depth_start = 0, f_US = 180e6, f_aq = 180e6, IsSaving=True):
-
-    active_listbin = ''.join(f"{int(active_listString[i:i+2], 16):08b}" for i in range(0, len(active_listString), 2))
+def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_list_hex, c0=1540, num_elements = 192, num_cycles = 4, element_width = 0.2/1000, element_height = 6/1000, depth_start = 0, f_US = 180e6, f_aq = 180e6, IsSaving=True):
+    print((active_list_hex))
+    active_listbin = ''.join(f"{int(active_list_hex[i:i+2], 16):08b}" for i in range(0, len(active_list_hex), 2))
     active_list = np.array([int(char) for char in active_listbin])
+    angle_sign = '1' if angle_deg < 0 else '0'
+    formatted_angle = f"{angle_sign}{abs(angle_deg):02d}"
+    file_name = f"KWAVE_{active_list_hex}_{formatted_angle}"
+    hdr_path = os.path.join(folderPathBase, file_name + ".hdr")
     print(active_list.shape)
+    
     # Grille
     probeWidth = num_elements * element_width
-    Xrange = [-20 / 1000, 20 / 1000]  # Plage en X en mètres
+    Xrange = [-24 / 1000, 24 / 1000]  # Plage en X en mètres
     Yrange = [-element_height * 5 / 2, element_height * 5 / 2]  # Plage en Y en mètres
     Zrange = [depth_start, depth_end]  # Plage en Z en mètres
 
@@ -431,7 +380,7 @@ def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_
     Nx = ceil((Xrange[1] - Xrange[0]) / element_width)
     Ny = 4 * ceil((Yrange[1] - Yrange[0]) / element_height)
     Nz = ceil((Zrange[1] - Zrange[0]) / element_width)
-    Nt = tmax - t0 + 100
+    Nt = int(np.round(1.5*(tmax - t0)))
 
     # Print the results
     print("Xrange:", Xrange)
@@ -444,7 +393,7 @@ def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_
     print("dy:",dy)
     print("dz:",dz)
     print("Angles : ",angle_deg)
-    print("Active List : ",active_listString)
+    print("Active List : ",active_list_hex)
     print("Nt:", Nt)
 
     # Initialisation de la grille et du milieu
@@ -472,7 +421,7 @@ def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_
     # Placement des transducteurs actifs dans le masque
     for i in range(num_elements):
         if active_list[i] == 1:  # Vérifiez si l'élément est actif
-            x_pos = i  # Position des éléments sur l'axe X
+            x_pos = i+Nx//2 - num_elements//2 # Position des éléments sur l'axe X
             source.p_mask[x_pos, Ny // 2, 0] = 1  # Position dans le plan XZ
 
     source.p_mask = source.p_mask.astype(int)  # Conversion en entier
@@ -533,13 +482,73 @@ def generate_3Dacoustic_field_KWAVE(folderPathBase,depth_end, angle_deg, active_
     
     if IsSaving:
         print("Saving...")
-        save_field(sliceEnvelopeField, num_elements, active_list, angle_deg, folderPathBase, dx, f_aq,(len(signal)-1)*kgrid.dt)
-
-    
-
+        save_field(sliceEnvelopeField, hdr_path)
     return sliceEnvelopeField
 
-def save_field(folderPathBase, acoustic_field, active_list, angle, f0, num_elements =192, dx = 0.2/1000):
+def save_AOsignal(AOsignal,listHDRpath, save_directory,fs_aq=25e6, num_elements=192):
+    """
+    Sauvegarde le signal AO au format .cdf et .cdh (comme dans le script MATLAB)
+    
+    :param AOsignal: np.ndarray de taille (times, angles) 
+    :param save_directory: chemin de sauvegarde
+    :param set_id: identifiant du set
+    :param n_experiment: identifiant de l'expérience
+    :param param: dictionnaire contenant les paramètres nécessaires (comme fs_aq, Nt, angles, etc.)
+    """
+
+    # Noms des fichiers de sortie
+    cdf_location = os.path.join(save_directory, "AOSignals.cdf")
+    cdh_location = os.path.join(save_directory, "AOSignals.cdh")
+    info_location = os.path.join(save_directory, "info.txt")
+
+    # Calcul des angles (en degrés) si nécessaire
+
+    nScan = AOsignal.shape[1]  # Nombre de scans ou d'événements
+
+    # **1. Sauvegarde du fichier .cdf**
+    with open(cdf_location, "wb") as fileID:
+        for j in range(nScan):
+            file = listHDRpath[j]
+            active_list = getActiveListBin(file)
+            angle = getAngle(file)
+             # Écrire les identifiants hexadécimaux
+            active_list_str = ''.join(map(str, active_list)) 
+
+            nb_padded_zeros = (4 - len(active_list_str) % 4) % 4  # Calcul du nombre de 0 nécessaires
+            active_list_str += '0' * nb_padded_zeros  # Ajout des zéros à la fin de la chaîne
+
+            # Regrouper par paquets de 4 bits et convertir chaque paquet en hexadécimal
+            active_list_hex = ''.join([hex(int(active_list_str[i:i+4], 2))[2:] for i in range(0, len(active_list_str), 4)])
+
+            for i in range(0, len(active_list_hex), 2):  # Chaque 2 caractères hex représentent 1 octet
+                byte_value = int(active_list_hex[i:i + 2], 16)  # Convertit l'hexadécimal en entier
+                fileID.write(byte_value.to_bytes(1, byteorder='big'))  # Écriture en big endian
+        
+            fileID.write(np.int8(angle).tobytes())
+            
+            # Écrire le signal AO correspondant (times x 1) en single (float32)
+            fileID.write(AOsignal[:, j].astype(np.float32).tobytes())
+
+   # **2. Sauvegarde du fichier .cdh**
+    header_content = (
+        f"Data filename: AOSignals.cdf\n"
+        f"Number of events: {nScan}\n"
+        f"Number of acquisitions per event: {AOsignal.shape[1]}\n"
+        f"Start time (s): 0\n"
+        f"Duration (s): 1\n"
+        f"Acquisition frequency (Hz): {fs_aq}\n"
+        f"Data mode: histogram\n"
+        f"Data type: AOT\n"
+        f"Number of US transducers: {num_elements}"
+    )
+    with open(cdh_location, "w") as fileID:
+        fileID.write(header_content)
+
+    with open(info_location, "w") as fileID:
+        for path in listHDRpath:
+            fileID.write(path + "\n")
+
+def save_field(acoustic_field, filePath, f0=6e6, num_elements =192, dx = 0.2/1000):
     """
     Fonction Python qui reproduit la logique de la méthode SaveField du code MATLAB.
 
@@ -551,25 +560,19 @@ def save_field(folderPathBase, acoustic_field, active_list, angle, f0, num_eleme
     - folderPath : Chemin où les fichiers .img et .hdr seront enregistrés.
     """
     t_ex = 1/f0
-    active_list_str = ''.join(map(str, active_list))  # Convertit la liste en chaîne de 0 et 1
-    print("active list : ", active_list_str)
-    # Compléter la chaîne pour que sa longueur soit un multiple de 4 (car 1 hexadécimal = 4 bits)
-    nb_padded_zeros = (4 - len(active_list_str) % 4) % 4  # Combien de zéros il faut ajouter à la fin
-    active_list_str += '0' * nb_padded_zeros
 
-    # Regrouper par paquets de 4 bits et convertir chaque paquet en hexadécimal
-    active_list_hex = ''.join([hex(int(active_list_str[i:i+4], 2))[2:] for i in range(0, len(active_list_str), 4)])
+    active_list_hex = getActiveListHexa(filePath)
+    active_list_bin = ''.join(map(str,getActiveListBin(filePath)))
 
-    print(" test angle :", angle)
-    # 3. Formater l'angle
+    angle = getAngle(filePath)
     angle_sign = '1' if angle < 0 else '0'
     formatted_angle = f"{angle_sign}{abs(angle):02d}"
 
     # 4. Définir les noms de fichiers (img et hdr)
-    file_name = f"KWAVE_{active_list_hex}_{formatted_angle}"
-    img_path = os.path.join(folderPathBase, file_name + ".img")
-    hdr_path = os.path.join(folderPathBase, file_name + ".hdr")
+    file_name = f"field_{active_list_hex}_{formatted_angle}"
 
+    img_path = os.path.join(Path(filePath).parent , file_name + ".img")
+    hdr_path = os.path.join(Path(filePath).parent , file_name + ".hdr")
     
 
     # === 3. Sauvegarder le champ acoustique dans le fichier .img ===
@@ -627,7 +630,7 @@ def save_field(folderPathBase, acoustic_field, active_list, angle, f0, num_eleme
         f"quantification units := 1\n\n"
         f"!SPECIFIC PARAMETERS :=\n"
         f"angle (degree) := {angle}\n"
-        f"activation list := {active_list_str}\n"
+        f"activation list := {active_list_bin}\n"
         f"number of US transducers := {num_elements}\n"
         f"delay (s) := 0\n"
         f"us frequency (Hz) := {f0}\n"
@@ -639,7 +642,81 @@ def save_field(folderPathBase, acoustic_field, active_list, angle, f0, num_eleme
     with open(hdr_path, "w") as f_hdr:
         f_hdr.write(header)
 
-    with open(folderPathBase + "/field.hdr", "w") as f_hdr2:
+    with open(os.path.join(Path(filePath).parent ,"field.hdr"), "w") as f_hdr2:
         f_hdr2.write(headerFieldGlob)
 
-    print(f"Field saved: {img_path} and {hdr_path}")   
+def load_fieldKWAVE_XZ(hdr_path):
+    """
+    Lit un fichier Interfile (.hdr) et son fichier binaire (.img) pour reconstruire un champ acoustique.
+
+    Paramètres :
+    ------------
+    - folderPathBase : dossier de base contenant les fichiers
+    - hdr_path : chemin relatif du fichier .hdr depuis folderPathBase
+
+    Retour :
+    --------
+    - field : tableau NumPy contenant le champ acoustique avec les dimensions réordonnées en (X, Z, time)
+    - header : dictionnaire contenant les métadonnées du fichier .hdr
+    """
+    header = {}
+    # Lecture du fichier .hdr
+    with open(hdr_path, 'r') as f:
+        for line in f:
+            if ':=' in line:
+                key, value = line.split(':=', 1)
+                key = key.strip().lower().replace('!', '')
+                value = value.strip()
+                header[key] = value
+
+
+    # Récupère le nom du fichier .img associé
+    data_file = header.get('name of data file') or header.get('name of date file')
+    if data_file is None:
+        raise ValueError(f"Impossible de trouver le fichier de données associé au fichier header {hdr_path}")
+    img_path = os.path.join(os.path.dirname(hdr_path),os.path.basename(data_file))
+
+    # Détermine la taille du champ à partir des métadonnées
+    shape = [int(header[f'matrix size [{i}]']) for i in range(1, 3) if f'matrix size [{i}]' in header]
+    if not shape:
+        raise ValueError("Impossible de déterminer la forme du champ acoustique à partir des métadonnées.")
+
+    # Type de données
+    data_type = header.get('number format', 'short float').lower()
+    dtype_map = {
+        'short float': np.float32,
+        'float': np.float32,
+        'int16': np.int16,
+        'int32': np.int32,
+        'uint16': np.uint16,
+        'uint8': np.uint8
+    }
+    dtype = dtype_map.get(data_type)
+    if dtype is None:
+        raise ValueError(f"Type de données non pris en charge : {data_type}")
+
+    # Ordre des octets (endianness)
+    byte_order = header.get('imagedata byte order', 'LITTLEENDIAN').lower()
+    endianess = '<' if 'little' in byte_order else '>'
+
+    # Vérifie la taille réelle du fichier .img
+    fileSize = os.path.getsize(img_path)
+    timeDim = int(fileSize / (np.dtype(dtype).itemsize *np.prod(shape)))
+        # if img_size != expected_size:
+    #     raise ValueError(f"La taille du fichier img ({img_size} octets) ne correspond pas à la taille attendue ({expected_size} octets).")
+    shape = [timeDim] + shape
+    # Lecture des données binaires
+    with open(img_path, 'rb') as f:
+        data = np.fromfile(f, dtype=endianess + np.dtype(dtype).char)
+
+    # Reshape les données en (time, Z, X)
+    field = data.reshape(shape[::-1])  # NumPy interprète dans l'ordre C (inverse de MATLAB)
+
+
+
+    # Applique les facteurs d'échelle si disponibles
+    rescale_slope = float(header.get('data rescale slope', 1))
+    rescale_offset = float(header.get('data rescale offset', 0))
+    field = field * rescale_slope + rescale_offset
+
+    return field
