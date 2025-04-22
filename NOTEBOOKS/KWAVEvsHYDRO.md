@@ -95,6 +95,10 @@ To do this, the data is visualized at the initial time, i.e., time zero, and the
 
 ## a. Film des enveloppes acoustiques élevées au carré
 
+
+https://github.com/user-attachments/assets/1c2c790f-d99a-4e83-88ed-c1eb3d930a2f
+
+
 ## b. Max pressure
 
 ![StructuredWaveMAX](https://github.com/user-attachments/assets/1e9bab48-3158-4488-bc8c-b2217c5129ad)
