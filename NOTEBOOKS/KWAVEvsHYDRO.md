@@ -86,12 +86,21 @@ To do this, the data is visualized at the initial time, i.e., time zero, and the
 ## a. Movie of the Squared Acoustic Envelopes
 
 ## b. Cartes spatiales des maxima spatiaux de l'enveloppe du champ acoustique au carré
+![PlaneWaveMAX](https://github.com/user-attachments/assets/b89e1d0a-63f4-418d-b4a9-53c375b31f8f)
+
+
+![PlaneWaveMAX_2](https://github.com/user-attachments/assets/1f252db2-1ed2-415d-9bb5-92c04ad5265f)
 
 # IV. Résultats onde structurée ($f_s=0.31mm^{-1}$) à $-10^{\circ}$
 
 ## a. Film des enveloppes acoustiques élevées au carré
 
 ## b. Max pressure
+
+![StructuredWaveMAX](https://github.com/user-attachments/assets/1e9bab48-3158-4488-bc8c-b2217c5129ad)
+
+
+![StructuredWaveMAX_2](https://github.com/user-attachments/assets/75b3838a-f05b-4eeb-ad38-34e510e6b9a5)
 
 # V. Conclusion
 
