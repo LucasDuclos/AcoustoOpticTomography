@@ -51,24 +51,24 @@ To closely match the conditions in the hydrophone tank, it is necessary to calcu
 ## Speed Calculation
 
 - **Formula**:
-  $
+  $$
   \text{Speed} = \frac{\text{Distance traveled}}{\text{Time elapsed}}
-  $
+  $$
 
 - **Distance traveled**:
-  $
+  $$
   \Delta d = (z_2 - z_1) \times 0.3 \, \text{mm} \times \frac{1}{1000} \, \text{m/mm}
-  $
+  $$
 
 - **Time elapsed**:
-  $
+  $$
   \Delta t = (t_2 - t_1) \times 0.04 \, \mu\text{s} \times \frac{1}{1,000,000} \, \text{s/}\mu\text{s}
-  $
+  $$
 
 - **Speed**:
-  $
+  $$
   v = \frac{\Delta d}{\Delta t}
-  $
+  $$
 
 - **Result**:
   - Round the speed to the nearest unit in meters per second (m/s).
