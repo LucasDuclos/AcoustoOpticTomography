@@ -81,3 +81,20 @@ Since the probe is not perfectly aligned in the plane of the simulated acoustic 
 
 To do this, the data is visualized at the initial time, i.e., time zero, and the position of the wavefront in the measured data is detected at this time. The time delay required for the wave to travel a certain distance is calculated considering the speed of sound, and this delay is converted into the number of samples to synchronize the measured data with the simulations.
 
+# III. Plane Wave Results at $0^{\circ}$
+
+## a. Movie of the Squared Acoustic Envelopes
+
+## b. Cartes spatiales des maxima spatiaux de l'enveloppe du champ acoustique au carré
+
+# IV. Résultats onde structurée ($f_s=0.31mm^{-1}$) à $-10^{\circ}$
+
+## a. Film des enveloppes acoustiques élevées au carré
+
+## b. Max pressure
+
+# V. Conclusion
+
+Structuration -> OK
+Angle -> OK 
+Propagation -> bizarre
