@@ -14,6 +14,15 @@ the system matrix $A$ is a fundamental component in tomographic reconstruction, 
 
 In our specific case of acousto-optic tomography, the system matrix $A$ represents the squared envelope of the acoustic pressure field in the $XZ$ plane where $y=0$. This plane corresponds to the region directly beneath the ultrasound probe.
 
+Example : 
+
+<div style="text-align: center;">
+  <img src="https://github.com/user-attachments/assets/e7075b88-2dce-4a35-9c58-85056eebc957" alt="test" width="400"/>
+</div>
+
+
+### Acousto-optic signal (AO Signal)
+
 $$
     y_{\theta,t} = \sum_{x,z} {[A_{t, z , x, \theta}]}^T \lambda_{x,z}
 $$
