@@ -15,17 +15,9 @@ The data is acquired across the entire 3D volume with the following parameters:
 To address the uncertainty regarding the probe's position, we acquire the acoustic field in the 3D plane and then perform a summation along the $Y$ axis. This allows us to obtain only the envelope of the acoustic field in the $XZ$ plane.
 
 The data is qualitatively validated using the following elements:
-- **Spatial maps of the spatial maxima of the squared acoustic field envelope**, calculated over the spatial dimensions $X$ and $Z$ for each time instant. This is represented by:
+- **Spatial maps of the spatial maxima of the squared acoustic field envelope**, calculated over the spatial dimensions $X$ and $Z$ for each time instant.
 
-  $$
-  M = \underset{t}{\max} \left| A(t, X, Z) \right|^2
-  $$
-
-- **Movie of the squared acoustic envelopes**, represented by:
-
-  $$
-  F(t) = \left| A(t, X, Z) \right|^2
-  $$
+- **Movie of the squared acoustic envelopes**.
 
 # I. Analysis of Ultrasound Propagation Speed in the Tank with the Hydrophone
 
@@ -48,34 +40,12 @@ To closely match the conditions in the hydrophone tank, it is necessary to calcu
    - Convert positions $z_1$ and $z_2$ from pixels to meters.
    - Convert time indices $t_1$ and $t_2$ to seconds.
 
-## Speed Calculation
-
-- **Formula**:
-  $$
-  \text{Speed} = \frac{\text{Distance traveled}}{\text{Time elapsed}}
-  $$
-
-- **Distance traveled**:
-  $$
-  \Delta d = (z_2 - z_1) \times 0.3 \, \text{mm} \times \frac{1}{1000} \, \text{m/mm}
-  $$
-
-- **Time elapsed**:
-  $$
-  \Delta t = (t_2 - t_1) \times 0.04 \, \mu\text{s} \times \frac{1}{1,000,000} \, \text{s/}\mu\text{s}
-  $$
-
-- **Speed**:
-  $$
-  v = \frac{\Delta d}{\Delta t}
-  $$
-
 - **Result**:
   - Round the speed to the nearest unit in meters per second (m/s).
 
 ![init](https://github.com/user-attachments/assets/d4a51364-7dfc-4f39-bbee-6b50bfd55fea)
 
-$c_0 = 1500 \, \text{m/s}$
+$c_0 = 1500 \text{m/s}$
 
 # II. Adjustment of the Probe Position
 
