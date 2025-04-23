@@ -27,4 +27,17 @@ $$
     y_{\theta,t} = \sum_{x,z} {[A_{t, z , x, \theta}]}^T \lambda_{x,z}
 $$
 
+# Tomographic reconstruction
 
+## Analytic reconstruction (FBP)
+
+## Algébraic reconstruction (MLEM)
+
+### Plane Waves
+
+### Structured Waves
+
+### Mix Waves
+
+![influenceIteration](https://github.com/user-attachments/assets/c01c658d-f438-4b7b-8df7-166e1ff7bc13)
+![influenceIteration2](https://github.com/user-attachments/assets/1540cf73-bd87-4546-b7d9-e2e6a6b4b0c2)
