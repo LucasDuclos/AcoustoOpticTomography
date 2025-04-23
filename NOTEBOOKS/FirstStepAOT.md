@@ -6,7 +6,8 @@ Premiers pas en tomographie acousto-optique
 
 The optical image corresponds to the cross-section under the ultrasound probe of the optical properties of the medium. It represents the depth image to be reconstructed. The two black spots of absorption illustrate two tumors (with different properties from healthy cells). The halo centered on the image corresponds to the diffusion spot (assuming a Gaussian beam) under the ultrasound probe.
 
-![LAMBDA](https://github.com/user-attachments/assets/301aa68c-3c9c-46ba-83c1-ba8a87c7b69f)
+![lambdaAndFFt](https://github.com/user-attachments/assets/40af3b90-b1ec-4038-83e4-4fec8237534b)
+
 
 ### System matrix $A$
 
