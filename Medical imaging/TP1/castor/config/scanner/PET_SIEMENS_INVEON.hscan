@@ -1,0 +1,18 @@
+scanner name: PET_SIEMENS_INVEON
+modality: PET
+description: This scanner description is based on an actual scanner, however, this implementation is not supported nor validated by its manufacturer.
+number of rings in scanner: 80
+number of elements: 25600
+number of layers: 1
+number of crystals in layer: 25600
+crystals size depth: 10.
+mean depth of interaction: 4.584
+min angle difference: 90
+# Sampling corresponding to standard whole-body
+voxels number transaxial: 128
+voxels number axial: 159
+# This is the default FOV
+field of view transaxial: 101.888
+field of view axial: 126.564
+# Bed displacement between two successive bed positions (74 slices of 2.027mm)
+#multiple bed displacement: 149.998
