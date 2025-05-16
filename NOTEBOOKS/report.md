@@ -1,5 +1,6 @@
 Premiers pas en tomographie acousto-optique
 
+
 ![schéma_tomo_AVEC_particules2](https://github.com/user-attachments/assets/b8ebaed4-4c7a-4dea-80f0-039e9902b7ea)
 
 ### Optic Image $\lambda$
@@ -24,15 +25,14 @@ Example :
 
 ### Acousto-optic signal (AO Signal)
 
-$$
-    y_{\theta,t} = \sum_{x,z} {[A_{t, z , x, \theta}]}^T \lambda_{x,z}
-$$
+$y_{\theta,t} = \sum_{x,z} {[A_{t, z , x, \theta}]}^T \lambda_{x,z}$
 
 # Tomographic reconstruction
 
 ## Analytic reconstruction (FBP)
 
-## Algébraic reconstruction (MLEM)
+## Algebraic reconstruction (MLEM)
+
 
 ### Plane Waves
 
