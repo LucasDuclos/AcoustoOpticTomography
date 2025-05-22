@@ -36,26 +36,39 @@ For each axis of the 3D volume, the angle is corrected using maximum pressure ma
 
 ### Axis X: 
 
-The angle is calculated by first determining the coordinate differences ΔY and ΔZ between the barycenter and the vertical axis. Then, the inverse tangent function is used to obtain the angle θ = arctan(ΔZ/ΔY).
-![angleX](https://github.com/user-attachments/assets/28196d81-b9ee-46c6-9e6b-f0e7c0afb016)
+The angle is calculated by first determining the coordinate differences ΔY and ΔZ between the barycenter and the vertical axis. Then, the inverse tangent function is used to obtain the angle θ = arctan(ΔZ/ΔY)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/28196d81-b9ee-46c6-9e6b-f0e7c0afb016" alt="angleY_1" width="200"/>
+</p>
+
 
 
 ### Axis Y:
 
 The horizontal position differences, d1 and d2, are calculated by subtracting the start and end positions. The vertical position difference, dz, is obtained by subtracting the heights of the horizontal lines. The angle is then calculated using the inverse tangent function on the ratio of the horizontal and vertical position differences, and then converted to degrees.
+
 ![angleY_1](https://github.com/user-attachments/assets/8aa00f55-9951-4168-8b83-ba803f726fff)
 
 ### Axis Z: 
 
 The angle is calculated using linear regression on the coordinates of the non-zero pixels in the masked pressure sub-matrix. The sub-matrix is obtained by applying a threshold to reveal the ends of the probe in the XY plane. The slope of the regression line is used to determine the misalignment angle relative to the vertical.
-![angleZ_1](https://github.com/user-attachments/assets/72ad14f3-21be-4230-a58f-d8fa3561188a)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/72ad14f3-21be-4230-a58f-d8fa3561188a" alt="angleY_1" width="400"/>
+</p>
 
 ## Results
 
 ### 2D XZ Slice for $Y=0$
 
+![Capture d’écran 2025-05-21 101948](https://github.com/user-attachments/assets/189021bb-653e-45cd-b0aa-11a1f83f2767)
 
 Similarly for the structured wave:
+
+![Capture d’écran 2025-05-22 152212](https://github.com/user-attachments/assets/1779540b-e3d3-42e1-b8f5-23e9c8db7b5c)
+
+![PlaneWaveComparaison](https://github.com/user-attachments/assets/c5e6b4a4-a3d2-4440-a0af-c23b7b58f0d8)
+
+![structWaveComparaison](https://github.com/user-attachments/assets/99a0a878-81a6-406d-b49b-e2584b19edb1)
 
 
 Field II has a significant advantage in this context. It integrates the curvature of the probe in the elevation plane into its reasoning, a feature that is not yet available in k-Wave, where this curvature is set to infinity. In our specific case, since we integrate the calculation of the acousto-optic signal along the Y-axis, the curvature of the probe in the elevation plane (Y) is not important. Therefore, for a 2D slice at a given Y, Field II is the most suitable and offers more precise results.
@@ -67,7 +80,14 @@ This slice is less intuitive but corresponds more closely to our acousto-optic m
 
 Additionally, by summing along the Y-axis, we eliminate problems related to the inclination of the probe, as studied in the previous section. This approach simplifies the analysis and allows us to focus on the essential aspects of the acousto-optic model without being affected by variations in the elevation plane.
 
+![Capture d’écran 2025-05-21 095809](https://github.com/user-attachments/assets/ef5d40d2-f513-41c0-b795-19714b41702f)
+
 The attenuation effect of the acoustic field in water is easily visualized in both cases.
+
+![validationKWAVE](https://github.com/user-attachments/assets/fe9e1f17-89ef-4076-9615-3ec7343f382c)
+
+![validationKwaveStruct](https://github.com/user-attachments/assets/f06954e4-e8d7-4a9a-8e9e-bc8c7279c9ec)
+
 
 ## Conclusion 
 
