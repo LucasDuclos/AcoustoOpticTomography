@@ -135,9 +135,45 @@ $$
 
 
 
-Où $\left( 1-\frac{\delta \varphi^{2}}{4} \right) e^{j\left( 2 \pi f_i t -n K_i y\right)}$ correspond à la composante spectrale principale de la lumière non modulé en sortie du champs acoustique à $f_i$
+Où $\left( 1-\frac{\delta \varphi^{2}}{4} \right) e^{j\left( 2 \pi f_i t -n K_i y\right)}$ correspond à la composante spectrale principale de la lumière non modulé en sortie du champs acoustique à $f_i$ de forte amplitude $\left( 1-\frac{\delta \varphi^{2}}{4}\right)$
 et $\frac{\delta \varphi}{2} \left( e^{j 2 \pi (f_i + f_{us}) t - (n K_i z + K_{us} y)} - e^{j 2 \pi (f_i - f_{us}) t - (n K_i z - K_{us} y)} \right)$ représente les deux composantes 
-spectrale de la lumière modulé par le champs acoustique à $\pm f_{US}$
+spectrale de la lumière modulé par le champs acoustique à $\pm f_{US}$ de faible amplitude $\left( \pm \frac{\delta \varphi}{2} \right)$ (pour rappel dépendant de $P_m$).
+
+Le développement d'odre $n$ en série taylor impliquerait donc les harmoniques du champs acosutiques $nf_{US}$ où les amplitudes des harmoniques dépendent de l'épaisseur de diffraction du régime: mince (Raman-Nath) ou épais (Bragg). Ce qui est développé dans des travaux de **Citation JM**.
+
+Vous l'aurez compris ce sont les deux composante modulées par le champ acoustique qui nous intéresse dans l'imagerie acousto-optique. 
+
+Intervient alors la question comment filtrer la composante principale $f_i$. Cette dernière étant de forte intensité et sa largeur de bande recouvre les composantes à $f_i \pm f_{US}$
+
+## Detection par interférométrie des ultrasons. 
+
+**A COMPLETER**
+
+### Holographie numérique 
+
+**A COMPLETER**
+
+### Holographie photoréfractive
+
+L'holographie photoréfractive consiste en l'utilisation d'un cristal photoréfractif pour capturer la figure d'interférence 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
