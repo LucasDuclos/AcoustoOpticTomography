@@ -83,13 +83,52 @@ $$
 L = n_0e + \mu P_m \sin \left( 2 \pi f_{US}t-K_{US}y \right) \dot e
 $$
 
-Ce chemin 
-
-Le champ électrique de l'onde lumineuse en sortie du milieu est donné par :
+Pour rappel, la phase de la lumière dans un milieu donné est définie par: 
 
 $$
-E(x, y, z+e, t) = E_M e^{i\left( 2 \pi f_i t - n K_i z \right)} \cdot e^{i \delta \varphi \left( 2 \pi f_{us} t - K_{us} y \right)}
+\varphi = \frac{2 \pi}{\lambda_0}L_0=\frac{2 \pi}{\lambda_0}d
 $$
+
+Où $\lambda_0$ est la longueur d'onde de la lumière dans le vide. Et dans le vide, le chemin optique $L_0$ est simplement la distance physique $d$ parcourue par la lumière, car l'indice de réfraction du vide est 1.
+
+Lorsque l'onde lumineuse traverse le champs acoustique,la phase de l'onde lumineuse est directement affecté par la variation de l'indice de réfraction du milieu et par la variation du chemin optique.
+
+En effet, 
+
+$$
+\delta \varphi = \frac{2 \pi}{\lambda_0}L = \frac{2 \pi}{\lambda_0}n(x,y,z,t)e
+$$
+
+Ainsi,
+
+$$
+\varphi(x,y,z,t)= \frac{2 \pi}{\lambda_i}n_0 e + \frac{2 \pi n}{\lambda_i} P_m \sin \left(2 \pi f_{US} t - K_{US} y \right)
+$$
+
+Posons,
+
+$$
+\varphi_0 = \frac{2 \pi n_0 e}{\lambda_i} \text{   et,   } \delta \varphi = \frac{2 \pi \mu P_m e}{\lambda_i}
+$$
+
+Le champ électrique de l'onde lumineuse en sortie du milieu traversé par le champ acoustique est donné par :
+
+$$
+E(x, y, z+e, t) = E_M e^{j\left( 2 \pi f_i t - n K_i z \right)} \cdot e^{j\varphi_0} e^{j\delta \varphi \left( 2 \pi f_{us} t - K_{us} y \right)}
+$$
+
+Décomposons en série de taylor du secon ordre:
+
+$$
+E(x, y+e, z, t) \approx E_M e^{j \varphi_0} \left[ \left( 1 - \frac{\delta \varphi^2}{4} \right) e^{j(2 \pi f_i t - n K_i z)} + \frac{\delta \varphi}{2} \left( e^{j 2 \pi (f_i + f_{us}) t - (n K_i z + K_{us} y)} - e^{j 2 \pi (f_i - f_{us}) t - (n K_i z - K_{us} y)} \right) \right]
+$$
+
+
+
+Où $\left( 1-\frac{\delta \varphi^{2}}{4} \right) e^{j\left( 2 \pi f_i t -n K_i y\right)}$ correspond à la composante spectrale principale de la lumière non modulé en sortie du champs acoustique à $f_i$
+et $\frac{\delta \varphi}{2} \left( e^{j 2 \pi (f_i + f_{us}) t - (n K_i z + K_{us} y)} - e^{j 2 \pi (f_i - f_{us}) t - (n K_i z - K_{us} y)} \right)$ représente les deux composantes 
+spectrale de la lumière modulé par le champs acoustique à $\pm f_{US}$
+
 
 
 Et : 
