@@ -55,11 +55,20 @@ Example :
 
 ### Acousto-optic signal (AO Signal)
 
-L'indice de réfraction optique $n$ est proportionnel au premier ordre à la masse volumique de celui-ci $\rho$. Ainsi, lorsque l'onde ultrasonore se propage dans le milieu, elle modifie localement son indice de réfraction.
+L'indice de réfraction optique $n$ est proportionnel au premier ordre à la masse volumique de celui-ci $\rho$.
+
+Ainsi, lorsque l'onde ultrasonore se propage dans le milieu, elle modifie localement son indice de réfraction.
+
+En introduisant le coefficient adiabatique piezo-électrique :
+
+$$
+\mu = \frac{\delta n}{\delta \rho} 
+$$
+
 Cette modulation de l'indice de réfraction est décrite par l'équation : 
 
 $$
-n (x,y,z,t)  = n_0 + \Delta n \sin \left( 2 \pi f_{US} t - K_{US} y \right)
+n (x,y,z,t)  = n_0 + \mu P_m \sin \left( 2 \pi f_{US} t - K_{US} z \right)
 $$
 
 Où $n_0$ est l'indice moyen de réfraction du milieu et $\Delta n$ est l'amplitude de la modulation de l'indice de réfraction.
@@ -77,7 +86,8 @@ Lorsque l'onde plane monochromatique lumineuse traverse le champ acoustique (d'�
 $$ 
 L = n(x,y,z,t) \dot e 
 $$
-Où $n(x,y,z,t) est la fonction qui régit la modification de l'indice de réfraction du milieu
+
+Où $n(x,y,z,t)$ est la fonction qui régit la modification de l'indice de réfraction du milieu
 
 $$
 L = n_0e + \mu P_m \sin \left( 2 \pi f_{US}t-K_{US}y \right) \dot e
