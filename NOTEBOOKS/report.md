@@ -55,6 +55,45 @@ Example :
 
 ### Acousto-optic signal (AO Signal)
 
+L'indice de réfraction optique $n$ est proportionnel au premier ordre à la masse volumique de celui-ci $\rho$. Ainsi, lorsque l'onde ultrasonore se propage dans le milieu, elle modifie localement son indice de réfraction.
+Cette modulation de l'indice de réfraction est décrite par l'équation : 
+
+$$
+n (x,y,z,t)  = n_0 + \Delta n \sin \left( 2 \pi f_{US} t - K_{US} y \right)
+$$
+
+Où $n_0$ est l'indice moyen de réfraction du milieu et $\Delta n$ est l'amplitude de la modulation de l'indice de réfraction.
+
+En supposant une onde plane monochromatique lumineuse, le champ électrique de l'onde émise est de la forme :
+
+$$
+E(x,y,z,t) = E_M e^{j \left( 2 \pi f_i t - n K_i z \right)}
+$$
+
+Avec $E_M$ l'amplitude du champ électrique, $f_i$ la fréquence de la lumière et $K_i$ la norme du vecteur d'onde dans le vide donné par $K_i = 2 \pi \frac{f_i}{c}$
+
+Lorsque l'onde plane monochromatique lumineuse traverse le champ acoustique (d'épaisseur $e$) modulé par l'onde ultrasonore, elle subit une diffraction due à la variation périodique de l'indice de réfraction. 
+
+$$ 
+L = n(x,y,z,t) \dot e 
+$$
+Où $n(x,y,z,t) est la fonction qui régit la modification de l'indice de réfraction du milieu
+
+$$
+L = n_0e + \mu P_m \sin \left( 2 \pi f_{US}t-K_{US}y \right) \dot e
+$$
+
+Ce chemin 
+
+Le champ électrique de l'onde lumineuse en sortie du milieu est donné par :
+
+$$
+E(x, y, z+e, t) = E_M e^{i\left( 2 \pi f_i t - n K_i z \right)} \cdot e^{i \delta \varphi \left( 2 \pi f_{us} t - K_{us} y \right)}
+$$
+
+
+Et : 
+
 $y_{\theta,t} = \sum_{x,z} {[A_{t, z , x, \theta}]}^T \lambda_{x,z}$
 
 # Tomographic reconstruction
