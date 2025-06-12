@@ -187,6 +187,72 @@ $y_{\theta,t} = \sum_{x,z} {[A_{t, z , x, \theta}]}^T \lambda_{x,z}$
 
 ## Algebraic reconstruction (MLEM)
 
+## Bayesian reconstruction (MAP)
+
+
+$$
+\theta_j^{(p+1)} = \theta_j^{(p)} + 
+\textcolor{blue}{
+\frac{
+    \theta_j^{(p)} 
+}{
+    \sum_{i=1}^I a_{ij} 
+    \textcolor{green}{+} \textcolor{green}{\theta_j^{(p)} \beta \left. \frac{\partial^2 U}{\partial \theta_j^2} \right|_ {\theta_j = \theta_j^{(p)}}}
+}
+}
+\left(
+    {\sum_{i=1}^{I} a_{ij}} \frac{m_i - (\sum_{l=1}^{J} a_{il} \theta_l^{(p)} + b_i)}{\sum_{l=1}^{J} a_{il} \theta_l^{(p)} + b_i}
+    \textcolor{green}{-} \textcolor{green}{\beta \left. \frac{\partial U}{\partial \theta_j} \right|_{\theta_j = \theta_j^{(p)}}}
+\right)
+$$
+
+$$
+\hat{\boldsymbol{\theta}}_ {\text{MAP}} = \mathop{\arg\max}\limits_{\boldsymbol{\theta} \in \boldsymbol{\Theta}}
+\left( l(\mathbf{m} \mid \boldsymbol{\theta}) - \beta \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \psi(\theta_k, \theta_j) \right)
+$$
+
+
+$$
+U(\boldsymbol{\theta}) = \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \boxed{\psi(\theta_k, \theta_j)} 
+$$
+
+
+- Quadratic
+
+$$
+\psi_{\text{Quad}} (\theta_k, \theta_j) = \frac{1}{2} \left( \frac{\theta_k - \theta_j}{\sigma} \right)^2
+$$
+
+- Huber
+
+$$
+  \psi_{\text{Huber}} (\theta_k, \theta_j) =
+  \begin{cases}
+  \delta |\theta_k - \theta_j| - \frac{\delta^2}{2} & \text{if } |\theta_k - \theta_j| > \delta, \\
+  \frac{1}{2} (\theta_k - \theta_j)^2 & \text{if } |\theta_k - \theta_j| \leq \delta.
+  \end{cases}
+$$
+
+- Relative difference 
+
+$$
+    \psi_{\text{RD}} (\theta_k, \theta_j) = 
+    \frac{(\theta_k - \theta_j)^2}{(\theta_k + \theta_j) + \gamma |\theta_k - \theta_j|}
+$$
+
+$$
+\hat{\boldsymbol{\theta}}_  {\text{MAP}} = \mathop{\arg\max}\limits_{\boldsymbol{\theta} \in \boldsymbol{\Theta}} \left( l(\mathbf{m} \mid \boldsymbol{\theta}) - \beta \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \boxed{\psi(\theta_k, \theta_j)} \right)
+$$
+
+$$
+\hat{\boldsymbol{\theta}}_ {\text{MAP}}  = \mathop{\arg\max}\limits_{\boldsymbol{\theta} \in \boldsymbol{\Theta}}
+\left( \sum_{i=1}^I \left( m_i \ln \left( \sum_{j=1}^J a_{ij} \theta_j + b_i \right) - \left( \sum_{j=1}^J a_{ij} \theta_j + b_i \right) - \ln (m_i!) \right) - \beta \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \boxed{\psi(\theta_k, \theta_j)} \right) \\
+$$
+
+$$
+\hat{\boldsymbol{\theta}}_ {\text{MAP}}  = \mathop{\arg\max}\limits_{\boldsymbol{\theta} \in \boldsymbol{\Theta}}
+\left( \sum_{i=1}^I \left( m_i \ln \left( \sum_{j=1}^J a_{ij} \theta_j + b_i \right) - \left( \sum_{j=1}^J a_{ij} \theta_j + b_i \right) \right) - \beta \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \boxed{\psi(\theta_k, \theta_j)} \right)
+$$
 
 ### Plane Waves
 
