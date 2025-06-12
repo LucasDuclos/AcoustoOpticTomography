@@ -141,9 +141,36 @@ spectrale de la lumière modulé par le champs acoustique à $\pm f_{US}$ de fai
 
 Le développement d'odre $n$ en série taylor impliquerait donc les harmoniques du champs acosutiques $nf_{US}$ où les amplitudes des harmoniques dépendent de l'épaisseur de diffraction du régime: mince (Raman-Nath) ou épais (Bragg). Ce qui est développé dans des travaux de **Citation JM**.
 
-Vous l'aurez compris ce sont les deux composante modulées par le champ acoustique qui nous intéresse dans l'imagerie acousto-optique. 
+Vous l'aurez compris ce sont les deux composante modulées par le champ acoustique qui nous intéresse dans l'imagerie acousto-optique, étant donné que ce sont ces deux composantes qui contiennent l'information sur la position du front d'onde acoustique.
 
-Intervient alors la question comment filtrer la composante principale $f_i$. Cette dernière étant de forte intensité et sa largeur de bande recouvre les composantes à $f_i \pm f_{US}$
+Maintenant, il est nécessaire de faire un lien entre l'intensité des photons marqués par le champ acoustique traversant le milieu et l'intensité local de la lumière dans le milieu. C'est cette intensité locale qui nous donne une information sur la présence ou non de tumeur précosse.
+
+$$
+I_{tagged} \propto \|E_{tagged}\|^{2}
+$$
+
+$$
+I_{tagged} \propto \left| \delta \varphi \cdot E_0 e^{j \varphi_0} \cdot e^{j 2 \pi (f_i t \pm f_{US}) t - (n K_i y + K_{US} Z)} \right|^2
+$$
+
+
+
+$$
+I_{tagged} \propto \left|E_{0}\right|^2 \cdot  \left|\delta \varphi\right|^2
+$$
+
+$$
+I_{tagged} \propto \left|E_{0}\right|^2 \cdot  \left|\delta \varphi\right|^2
+$$
+
+Avec $\delta \varphi \propto P \text{ et } P = P_m \sin(2 \pi f_{US} t - K_{US} z)$.
+
+
+Ainsi, si on intègre localement dans tout le plan $XZ$. 
+
+
+
+Une fois qu'on a déterminer le lien de proportionalité entre l'intensité des photons marqués mesuré par la photodiode (signal acousto-optique) et l'intensité optique locale dans le plan $XZ$, intervient alors la question comment filtrer la composante principale $f_i$. Cette dernière étant de forte intensité et sa largeur de bande recouvre les composantes à $f_i \pm f_{US}$
 
 ## Detection par interférométrie des ultrasons. 
 
