@@ -41,16 +41,40 @@ systemPath = "/path/to/folder/System_matrixParams.txt"
 param = AOT_biomaps.Settings.Params(paramPath)
 ```
 
-Pour plus d'info sur la structure des paramètres, consulter l'exemple ```ExampleParameters.yaml``` et ```ExampleSystem_matrixParams.txt```
+L'objet ```param``` contient les élements: general / acoustic / optic / reconstruction. Pour plus d'info sur la structure et la définition de chaques paramètres, consulter l'exemple ```ExampleParameters.yaml``` et ```ExampleSystem_matrixParams.txt```.
+Pour accéder à un paramètre spécifique `param.acoustic['f_US']`.
 
-L'objet ```param``` est structuré de la manière suivante:
-  general:
-    Paramètres généraux, 
-  acoustic:
-  
-  optic:
-  Paramètre 
-  Reconstruction:
+### AOT_Experiment
+
+La classe `AOT_Experiment` permet de gérer notre expérience. Lors de sa création avec son constructeur, elle prend en compte les 3 éléments clés:
+ - L'image optique
+ - Les champs acoustiques
+ - Les signaux acousto-optiques
+
+Exemple d'utilisation : 
+
+```
+manip = AOT_biomaps.AOT_Experiment.Tomography(params=param, fieldDataPath=fieldDir, fieldParamPath=systemPath)
+```
+
+Remarque:
+
+La simulation des champs acoustiques peut faire apparaitre des artefacts au niveau des bords de la grille de simulation. Il peut être nécessaire de tronquer les champs acoustiques : 
+
+```
+manip.cutAcousticFields(min_t=0,max_t=float(2.5e-5),saveFields=True)
+```
+`t_min` et `t_max`sont initialiser en secondes.
+Si `saveFields=True`, les champs tronqués sont sauvegardés dans le répertoire.
+
+### AOT_Optic
+
+```
+phantom = AOT_biomaps.AOT_Optic.Phantom(params=param)
+```
+
+
+
 
 
 
