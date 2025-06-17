@@ -212,6 +212,65 @@ $y_{\theta,t} = \sum_{x,z} {[A_{t, z , x, \theta}]}^T \lambda_{x,z}$
 
 ## Analytic reconstruction (FBP)
 
+Ultrasound-modulated optical tomography (UOT) is an imaging technique that couples light and ultrasound to perform in-depth optical imaging of highly scattering media. This document describes two methods for image reconstruction in structured ultrasound-modulated optical tomography: iRadon and iFourier.
+
+### iRadon Inversion Method
+
+The iRadon method is derived using the polar coordinates of the object in the Fourier domain. This method constitutes a generalization of the filtered backprojection (FBP).
+
+Generalization of the Fourier Slice Theorem:
+
+For each angle θ, the acquisition is done by spatially structuring the acoustic field emitted by the US probe. The Fourier decomposition of function \( h_0(x') \) is the sum of a positive constant equal to its average over one period \( \lambda_s \) and harmonic terms of frequency \( f_s \).
+
+$$
+h_0(x') \approx \frac{1}{2} + \frac{2}{\pi} \cos(2 \pi f_s x' + \phi)
+$$
+
+By performing four distinct measurements with \( \phi = 0, \frac{\pi}{2}, \pi, \frac{3\pi}{2} \), we retrieve the Fourier component of the object along direction \( x' \) using the linear combination:
+
+\[ s(c_s t, \theta, f_s) = \frac{(s_0 - s_\pi) - i(s_{\frac{\pi}{2}} - s_{\frac{3\pi}{2}})}{2 / \pi} \]
+
+Taking the Fourier transform of the above equation with respect to variable \( c_s t \), we find the following generalized Fourier Slice Theorem (FST) relation:
+
+$$
+\mathcal{F}_{c_s t}(s(c_s t, \theta, f_s)) = \mathcal{F}_{x, z}(I)(f_s \sin \theta + f_s \cos \theta, f_s \cos \theta - f_s \sin \theta) 
+$$
+
+The integral is then split into two terms \( \int_{\theta=0}^{\pi} \) and \( \int_{\theta=\pi}^{2\pi} \) followed by a change of variable \( \theta \leftarrow \theta - \pi \) on the second term. Making use of the relation \( \tilde{s}(f_s, \theta + \pi, f_s) = \tilde{s}(f_s, \theta, f_s)^* \), and limiting the integration domain to \( [-\theta_m, \theta_m] \) as it is performed in FBP, the generalized FBP expression is:
+
+$$
+I_{\text{rec}}(x, z) = \int_{-\theta_m}^{\theta_m} 2 \Re\left[\int_{\mathbb{R}^+} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi x' f_s} e^{2 i \pi x' f_s} f_s \mathrm{d} f_s\right] \mathrm{d} \theta + \int_{-\theta_m}^{\theta_m} \int_{-f_s}^{f_s} \tilde{s}(f_s, \theta, 0) e^{2 i \pi z' f_s} f_s \mathrm{d} f_s \mathrm{d} \theta 
+$$
+
+### iFourier Inversion Method
+
+The iFourier method is derived using Cartesian coordinates in the Fourier domain. It is well adapted to the ideal case where US waves are structured for multiple discrete values of \( f_s \) while \( \theta \) is fixed.
+
+Inverse Fourier Transform:
+
+We start with the integral, which defines the inverse Fourier transform using the generalized FST relation, and define the rotation operator of angle $\( \theta \)$:
+
+$$
+\mathbf{R}_{\theta}:(f_s, f_s) \in \mathbb{R}^2 \rightarrow \begin{cases}
+f_x(f_s, f_s) = f_s \sin \theta + f_s \cos \theta \\
+f_z(f_s, f_s) = f_s \cos \theta - f_s \sin \theta
+\end{cases}
+$$
+
+$\( \mathbf{R}_{\theta} \)$ is a unitary operator, and therefore the determinant of its Jacobian matrix is equal to one. This allows a simple change of integration variables in the following expression:
+
+$$
+\mathcal{F}_{f_s, f_s}^{-1}[s(f_s, \theta, f_s)] = \int_{\mathbb{R}^2} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi(x f_x + z f_z)} \mathrm{d} f_x \mathrm{d} f_z = I(x', z')
+$$
+
+### Reconstruction Formula
+
+The inversion formula is therefore:
+
+\[ I_{\text{rec}}(x, z) = \frac{1}{N_{\theta}} \sum_{-\theta_m}^{\theta_m} \left[\int_{\mathbb{R}^2} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi(x' f_x + z' f_z)} \mathrm{d} f_x \mathrm{d} f_z\right] \]
+
+
+
 ## Algebraic reconstruction (MLEM)
 
 ## Bayesian reconstruction (MAP)
