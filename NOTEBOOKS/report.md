@@ -187,7 +187,23 @@ L'holographie photoréfractive consiste en l'utilisation d'un cristal photoréfr
 
 
 
+### Plane Waves
 
+Le concept de tomographie prend tout son sens à partir de cette notion d'onde plane, 
+
+<div style="text-align: center;">
+  <img src="https://github.com/user-attachments/assets/c2aac671-6919-46ff-af7d-2952015b4408" alt="test" width="400"/>
+</div>
+
+En appliquant une loi de retard sur les éléments piezo-électrique de notre sonde ultrasonore, Plus les retards entre chaque élément piézo-électrique voisin sont élevés et plus l'angle d'émession de l'onde plane est important.
+
+### Structured Waves
+
+<div style="text-align: center;">
+  <img src="https://github.com/user-attachments/assets/cc615d02-a886-43e0-8efe-ec7974d8573d" alt="test" width="400"/>
+</div>
+
+### Mix Waves
 
 
 
@@ -210,9 +226,13 @@ $y_{\theta,t} = \sum_{x,z} {[A_{t, z , x, \theta}]}^T \lambda_{x,z}$
 
 # Tomographic reconstruction
 
+La tomographie est une méthode de reconstruction d'images basé sur un ensemble de projections acquis à différents angles d'émission $\theta$. 
+Dans notre cas, la tomographie nous permet de reconstruire la carte d'intensité lumineuse des photons marqués dans le milieu diffusant uniquement à partir des projections, c'est à dire, des signaux acousto-optique (1D) acquis par la photodiode. 
+Pour rappel, le montage expériemental est statique, aucun éléments ne bouge pour acquérir différentes projections. En effet, l'intérêt de la méthode est d'envoyer différentes ondes acoustiques pour obtenir différents 
+
 ## Analytic reconstruction (FBP)
 
-Ultrasound-modulated optical tomography (UOT) is an imaging technique that couples light and ultrasound to perform in-depth optical imaging of highly scattering media. This document describes two methods for image reconstruction in structured ultrasound-modulated optical tomography: iRadon and iFourier.
+La reconstruction tomographique analytique est le type de reconstruction le plus simple, basé sur des modèles analytiques d'intégrales.
 
 ### iRadon Inversion Method
 
@@ -220,20 +240,22 @@ The iRadon method is derived using the polar coordinates of the object in the Fo
 
 Generalization of the Fourier Slice Theorem:
 
-For each angle θ, the acquisition is done by spatially structuring the acoustic field emitted by the US probe. The Fourier decomposition of function \( h_0(x') \) is the sum of a positive constant equal to its average over one period \( \lambda_s \) and harmonic terms of frequency \( f_s \).
+For each angle $\theta$, the acquisition is done by spatially structuring the acoustic field emitted by the US probe. The Fourier decomposition of function $h_0(x')$ is the sum of a positive constant equal to its average over one period $\lambda_s$ and harmonic terms of frequency $f_s$.
 
 $$
 h_0(x') \approx \frac{1}{2} + \frac{2}{\pi} \cos(2 \pi f_s x' + \phi)
 $$
 
-By performing four distinct measurements with \( \phi = 0, \frac{\pi}{2}, \pi, \frac{3\pi}{2} \), we retrieve the Fourier component of the object along direction \( x' \) using the linear combination:
-
-\[ s(c_s t, \theta, f_s) = \frac{(s_0 - s_\pi) - i(s_{\frac{\pi}{2}} - s_{\frac{3\pi}{2}})}{2 / \pi} \]
-
-Taking the Fourier transform of the above equation with respect to variable \( c_s t \), we find the following generalized Fourier Slice Theorem (FST) relation:
+By performing four distinct measurements with $\phi = 0, \frac{\pi}{2}, \pi, \frac{3\pi}{2}$, we retrieve the Fourier component of the object along direction $x'$ using the linear combination:
 
 $$
-\mathcal{F}_{c_s t}(s(c_s t, \theta, f_s)) = \mathcal{F}_{x, z}(I)(f_s \sin \theta + f_s \cos \theta, f_s \cos \theta - f_s \sin \theta) 
+s(c_s t, \theta, f_s) = \frac{(s_0 - s_\pi) - i(s_{\frac{\pi}{2}} - s_{\frac{3\pi}{2}})}{2 / \pi}
+$$
+
+Taking the Fourier transform of the above equation with respect to variable $c_s t$, we find the following generalized Fourier Slice Theorem (FST) relation:
+
+$$
+\mathcal{F}_ {c_s t}(s(c_s t, \theta, f_s)) = \mathcal{F}_{x, z}(I)(f_s \sin \theta + f_s \cos \theta, f_s \cos \theta - f_s \sin \theta) 
 $$
 
 The integral is then split into two terms \( \int_{\theta=0}^{\pi} \) and \( \int_{\theta=\pi}^{2\pi} \) followed by a change of variable \( \theta \leftarrow \theta - \pi \) on the second term. Making use of the relation \( \tilde{s}(f_s, \theta + \pi, f_s) = \tilde{s}(f_s, \theta, f_s)^* \), and limiting the integration domain to \( [-\theta_m, \theta_m] \) as it is performed in FBP, the generalized FBP expression is:
@@ -340,11 +362,7 @@ $$
 \left( \sum_{i=1}^I \left( m_i \ln \left( \sum_{j=1}^J a_{ij} \theta_j + b_i \right) - \left( \sum_{j=1}^J a_{ij} \theta_j + b_i \right) \right) - \beta \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \boxed{\psi(\theta_k, \theta_j)} \right)
 $$
 
-### Plane Waves
 
-### Structured Waves
-
-### Mix Waves
 
 ![influenceIteration](https://github.com/user-attachments/assets/c01c658d-f438-4b7b-8df7-166e1ff7bc13)
 ![influenceIteration2](https://github.com/user-attachments/assets/1540cf73-bd87-4546-b7d9-e2e6a6b4b0c2)
