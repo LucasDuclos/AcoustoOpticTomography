@@ -3,37 +3,33 @@
 
 # Introduction
 
+## Formation of an Acousto-Optic Signal
 
-## Formation d'un signal acousto-optic
-
-Comme son nom l'indique, l'acousto-optic est une bimodalité d'imagerie qui permet de combiner l'acoustique et l'optique dans le but de reconstruire une image optique en profondeur dans un milieu diffusant. Ce qui n'est pas possible avec les modlalités d'imagerie optique standard.
-
-### 
-
-Premiers pas en tomographie acousto-optique
-
+As its name suggests, acousto-optic is a bimodal imaging technique that combines acoustics and optics to reconstruct an optical image deep within a scattering medium. This is not possible with standard optical imaging modalities.
 
 ![schéma_tomo_AVEC_particules2](https://github.com/user-attachments/assets/b8ebaed4-4c7a-4dea-80f0-039e9902b7ea)
 
-### Optic Image $\lambda$
+### Optical Image $\lambda$
 
-Dans un milieu diffusant la lumière incidante dévie de sa trajectoire lorsqu'elle rencontre des particules. Dépassé une certaine longueur de transport, le photon incident perd la mémoire de sa direction initiale. 
+In a scattering medium, incident light deviates from its path when it encounters particles. Beyond a certain transport length, the incident photon loses memory of its initial direction. The transport length is given by:
 
-$l^{*}=\frac{l_s}{1-g}$ où $l_s$ est la distance moyenne entre eux évènement de diffusion.
-$g$ définit la directivité de la lumière. Lorsque $g=1$, la lumière se propage en ligne droite. Dans le cas de tissus biologique $g \approx 0.8-0.9$  **citation technique de l'ingénieur**, la longueur de transport est de l'ordre du mm. Au delà, la diffusion multiple prend le dessus.
-Il devient alors impossible avec des modalités d'imagerie optique standard de construire une image optique en profondeur.
+$$
+l^{*} = \frac{l_s}{1 - g}
+$$
 
-Pour rappel, en acousto-optique, l'ambition est d'imager à une profondeur de l'ordre de quelques centimètres. La diffusion multiple 
+where $l_s$ is the mean distance between scattering events, and $g$ defines the directionality of the light. When $g = 1$, light propagates in a straight line. In the case of biological tissues, $g \approx 0.8 - 0.9$ (technical citation from "l'ingénieur"), the transport length is on the order of millimeters. Beyond this, multiple scattering dominates.
 
-La solution de l'équation de diffusion pour une source ponctuelle dans un milieu infini, homogène et isotrope, est donnée par :
+It then becomes impossible with standard optical imaging modalities to construct an optical image at depth. As a reminder, in acousto-optics, the ambition is to image at depths on the order of a few centimeters despite multiple scattering.
+
+The solution to the diffusion equation for a point source in an infinite, homogeneous, and isotropic medium is given by:
 
 $$
 \Phi(\mathbf{r}, t) = \frac{1}{(4 \pi D t)^{3/2}} \exp \left( -\frac{r^2}{4 D t} \right)
 $$
 
-Ce qui correspond à une distribution gaussienne en 3D avec variance $\(2 D t\)$.
+This corresponds to a 3D Gaussian distribution with variance $2 D t$.
 
-Pour la suite des simulations nous allons faire l'approximation suivante, notre image optique dans le plan XZ à une profondeur Y suit une distribution gaussienne.
+For the subsequent simulations, we will make the following approximation: our optical image in the $XZ$ plane at a depth $Y$ follows a Gaussian distribution.
 
 The optical image corresponds to the cross-section under the ultrasound probe of the optical properties of the medium. It represents the depth image to be reconstructed. The two black spots of absorption illustrate two tumors (with different properties from healthy cells). The halo centered on the image corresponds to the diffusion spot (assuming a Gaussian beam) under the ultrasound probe.
 
@@ -53,97 +49,89 @@ Example :
 </div>
 
 
-### Acousto-optic signal (AO Signal)
+### Acousto-Optic Signal (AO Signal)
 
-L'indice de réfraction optique $n$ est proportionnel au premier ordre à la masse volumique de celui-ci $\rho$.
+The optical refractive index $n$ is proportional to the mass density $\rho$ to the first order. Thus, as the ultrasonic wave propagates through the medium, it locally alters its refractive index.
 
-Ainsi, lorsque l'onde ultrasonore se propage dans le milieu, elle modifie localement son indice de réfraction.
-
-En introduisant le coefficient adiabatique piezo-électrique :
+By introducing the adiabatic piezoelectric coefficient:
 
 $$
-\mu = \frac{\delta n}{\delta \rho} 
+\mu = \frac{\delta n}{\delta \rho}
 $$
 
-Cette modulation de l'indice de réfraction est décrite par l'équation : 
+This modulation of the refractive index is described by the equation:
 
 $$
-n (x,y,z,t)  = n_0 + \mu P_m \sin \left( 2 \pi f_{US} t - K_{US} z \right)
+n(x, y, z, t) = n_0 + \mu P_m \sin \left( 2 \pi f_{US} t - K_{US} z \right)
 $$
 
-Où $n_0$ est l'indice moyen de réfraction du milieu et $\Delta n$ est l'amplitude de la modulation de l'indice de réfraction.
+Where $n_0$ is the average refractive index of the medium and $\Delta n$ is the amplitude of the refractive index modulation.
 
-En supposant une onde plane monochromatique lumineuse, le champ électrique de l'onde émise est de la forme :
-
-$$
-E(x,y,z,t) = E_M e^{j \left( 2 \pi f_i t - n K_i z \right)}
-$$
-
-Avec $E_M$ l'amplitude du champ électrique, $f_i$ la fréquence de la lumière et $K_i$ la norme du vecteur d'onde dans le vide donné par $K_i = 2 \pi \frac{f_i}{c}$
-
-Lorsque l'onde plane monochromatique lumineuse traverse le champ acoustique (d'épaisseur $e$) modulé par l'onde ultrasonore, elle subit une diffraction due à la variation périodique de l'indice de réfraction. 
-
-$$ 
-L = n(x,y,z,t) \dot e 
-$$
-
-Où $n(x,y,z,t)$ est la fonction qui régit la modification de l'indice de réfraction du milieu
+Assuming a monochromatic plane light wave, the electric field of the emitted wave is of the form:
 
 $$
-L = n_0e + \mu P_m \sin \left( 2 \pi f_{US}t-K_{US}y \right) \dot e
+E(x, y, z, t) = E_M e^{j \left( 2 \pi f_i t - n K_i z \right)}
 $$
 
-Pour rappel, la phase de la lumière dans un milieu donné est définie par: 
+With $E_M$ the amplitude of the electric field, $f_i$ the frequency of the light, and $K_i$ the norm of the wave vector in the vacuum given by $K_i = 2 \pi \frac{f_i}{c}$.
+
+When the monochromatic plane light wave passes through the acoustic field (of thickness $e$) modulated by the ultrasonic wave, it undergoes diffraction due to the periodic variation of the refractive index.
 
 $$
-\varphi = \frac{2 \pi}{\lambda_0}L_0=\frac{2 \pi}{\lambda_0}d
+L = n(x, y, z, t) \cdot e
 $$
 
-Où $\lambda_0$ est la longueur d'onde de la lumière dans le vide. Et dans le vide, le chemin optique $L_0$ est simplement la distance physique $d$ parcourue par la lumière, car l'indice de réfraction du vide est 1.
-
-Lorsque l'onde lumineuse traverse le champs acoustique,la phase de l'onde lumineuse est directement affecté par la variation de l'indice de réfraction du milieu et par la variation du chemin optique.
-
-En effet, 
+Where $n(x, y, z, t)$ is the function governing the modification of the refractive index of the medium:
 
 $$
-\delta \varphi = \frac{2 \pi}{\lambda_0}L = \frac{2 \pi}{\lambda_0}n(x,y,z,t)e
+L = n_0 e + \mu P_m \sin \left( 2 \pi f_{US} t - K_{US} y \right) \cdot e
 $$
 
-Ainsi,
+As a reminder, the phase of the light in a given medium is defined by:
 
 $$
-\varphi(x,y,z,t)= \frac{2 \pi}{\lambda_i}n_0 e + \frac{2 \pi n}{\lambda_i} P_m \sin \left(2 \pi f_{US} t - K_{US} y \right)
+\varphi = \frac{2 \pi}{\lambda_0} L_0 = \frac{2 \pi}{\lambda_0} d
 $$
 
-Posons,
+Where $\lambda_0$ is the wavelength of light in a vacuum. And in a vacuum, the optical path $L_0$ is simply the physical distance $d$ traveled by the light, as the refractive index of the vacuum is 1.
+
+When the light wave passes through the acoustic field, the phase of the light wave is directly affected by the variation of the refractive index of the medium and by the variation of the optical path. Indeed,
 
 $$
-\varphi_0 = \frac{2 \pi n_0 e}{\lambda_i} \text{   et,   } \delta \varphi = \frac{2 \pi \mu P_m e}{\lambda_i}
+\delta \varphi = \frac{2 \pi}{\lambda_0} L = \frac{2 \pi}{\lambda_0} n(x, y, z, t) e
 $$
 
-Le champ électrique de l'onde lumineuse en sortie du milieu traversé par le champ acoustique est donné par :
+Thus,
 
 $$
-E(x, y, z+e, t) = E_M e^{j\left( 2 \pi f_i t - n K_i z \right)} \cdot e^{j\varphi_0} e^{j\delta \varphi \left( 2 \pi f_{us} t - K_{us} y \right)}
+\varphi(x, y, z, t) = \frac{2 \pi}{\lambda_i} n_0 e + \frac{2 \pi \mu}{\lambda_i} P_m \sin \left( 2 \pi f_{US} t - K_{US} y \right)
 $$
 
-Décomposons en série de taylor du secon ordre:
+Let,
 
 $$
-E(x, y+e, z, t) \approx E_M e^{j \varphi_0} \left[ \left( 1 - \frac{\delta \varphi^2}{4} \right) e^{j(2 \pi f_i t - n K_i z)} + \frac{\delta \varphi}{2} \left( e^{j 2 \pi (f_i + f_{us}) t - (n K_i z + K_{us} y)} - e^{j 2 \pi (f_i - f_{us}) t - (n K_i z - K_{us} y)} \right) \right]
+\varphi_0 = \frac{2 \pi n_0 e}{\lambda_i} \text{ and } \delta \varphi = \frac{2 \pi \mu P_m e}{\lambda_i}
 $$
 
+The electric field of the light wave exiting the medium traversed by the acoustic field is given by:
 
+$$
+E(x, y, z+e, t) = E_M e^{j \left( 2 \pi f_i t - n K_i z \right)} \cdot e^{j \varphi_0} e^{j \delta \varphi \sin \left( 2 \pi f_{US} t - K_{US} y \right)}
+$$
 
-Où $\left( 1-\frac{\delta \varphi^{2}}{4} \right) e^{j\left( 2 \pi f_i t -n K_i y\right)}$ correspond à la composante spectrale principale de la lumière non modulé en sortie du champs acoustique à $f_i$ de forte amplitude $\left( 1-\frac{\delta \varphi^{2}}{4}\right)$
-et $\frac{\delta \varphi}{2} \left( e^{j 2 \pi (f_i + f_{us}) t - (n K_i z + K_{us} y)} - e^{j 2 \pi (f_i - f_{us}) t - (n K_i z - K_{us} y)} \right)$ représente les deux composantes 
-spectrale de la lumière modulé par le champs acoustique à $\pm f_{US}$ de faible amplitude $\left( \pm \frac{\delta \varphi}{2} \right)$ (pour rappel dépendant de $P_m$).
+Expanding in a second-order Taylor series:
 
-Le développement d'odre $n$ en série taylor impliquerait donc les harmoniques du champs acosutiques $nf_{US}$ où les amplitudes des harmoniques dépendent de l'épaisseur de diffraction du régime: mince (Raman-Nath) ou épais (Bragg). Ce qui est développé dans des travaux de **Citation JM**.
+$$
+E(x, y+e, z, t) \approx E_M e^{j \varphi_0} \left[ \left( 1 - \frac{\delta \varphi^2}{4} \right) e^{j(2 \pi f_i t - n K_i z)} + \frac{\delta \varphi}{2} \left( e^{j 2 \pi (f_i + f_{US}) t - (n K_i z + K_{US} y)} - e^{j 2 \pi (f_i - f_{US}) t - (n K_i z - K_{US} y)} \right) \right]
+$$
 
-Vous l'aurez compris ce sont les deux composante modulées par le champ acoustique qui nous intéresse dans l'imagerie acousto-optique, étant donné que ce sont ces deux composantes qui contiennent l'information sur la position du front d'onde acoustique.
+Where $\left( 1 - \frac{\delta \varphi^2}{4} \right) e^{j \left( 2 \pi f_i t - n K_i y \right)}$ corresponds to the main spectral component of the unmodulated light exiting the acoustic field at $f_i$ with high amplitude $\left( 1 - \frac{\delta \varphi^2}{4} \right)$, and $\frac{\delta \varphi}{2} \left( e^{j 2 \pi (f_i + f_{US}) t - (n K_i z + K_{US} y)} - e^{j 2 \pi (f_i - f_{US}) t - (n K_i z - K_{US} y)} \right)$ represents the two spectral components of the light modulated by the acoustic field at $\pm f_{US}$ with low amplitude $\left( \pm \frac{\delta \varphi}{2} \right)$ (which depends on $P_m$).
 
-Maintenant, il est nécessaire de faire un lien entre l'intensité des photons marqués par le champ acoustique traversant le milieu et l'intensité local de la lumière dans le milieu. C'est cette intensité locale qui nous donne une information sur la présence ou non de tumeur précosse.
+The $n$-th order Taylor series expansion would therefore involve the harmonics of the acoustic field $n f_{US}$, where the amplitudes of the harmonics depend on the thickness of the diffraction regime: thin (Raman-Nath) or thick (Bragg). This is developed in the works of **Citation JM**.
+
+As you will have understood, it is the two components modulated by the acoustic field that interest us in acousto-optic imaging, since these two components contain the information on the position of the acoustic wavefront.
+
+Now, it is necessary to make a link between the intensity of the photons marked by the acoustic field passing through the medium and the local intensity of the light in the medium. It is this local intensity that gives us information on the presence or absence of an early tumor.
 
 $$
 I_{tagged} \propto \|E_{tagged}\|^{2}
@@ -153,49 +141,37 @@ $$
 I_{tagged} \propto \left| \delta \varphi \cdot E_0 e^{j \varphi_0} \cdot e^{j 2 \pi (f_i t \pm f_{US}) t - (n K_i y + K_{US} Z)} \right|^2
 $$
 
-
-
 $$
-I_{tagged} \propto \left|E_{0}\right|^2 \cdot  \left|\delta \varphi\right|^2
+I_{tagged} \propto \left| E_{0} \right|^2 \cdot \left| \delta \varphi \right|^2
 $$
 
-$$
-I_{tagged} \propto \left|E_{0}\right|^2 \cdot  \left|\delta \varphi\right|^2
-$$
+With $\delta \varphi \propto P \) and \( P = P_m \sin(2 \pi f_{US} t - K_{US} z)$.
 
-Avec $\delta \varphi \propto P \text{ et } P = P_m \sin(2 \pi f_{US} t - K_{US} z)$.
+Thus, if we integrate locally over the entire $XZ$ plane.
 
+Once we have determined the proportionality link between the intensity of the tagged photons measured by the photodiode (acousto-optic signal) and the local optical intensity in the $XZ$ plane, the question arises of how to filter the main component $f_i$. The latter being of high intensity and its bandwidth covers the components at $f_i \pm f_{US}$.
 
-Ainsi, si on intègre localement dans tout le plan $XZ$. 
+## Detection by Interferometry of Ultrasounds
 
+**TO BE COMPLETED**
 
+### Digital Holography
 
-Une fois qu'on a déterminer le lien de proportionalité entre l'intensité des photons marqués mesuré par la photodiode (signal acousto-optique) et l'intensité optique locale dans le plan $XZ$, intervient alors la question comment filtrer la composante principale $f_i$. Cette dernière étant de forte intensité et sa largeur de bande recouvre les composantes à $f_i \pm f_{US}$
+**TO BE COMPLETED**
 
-## Detection par interférométrie des ultrasons. 
+### Photorefractive Holography
 
-**A COMPLETER**
-
-### Holographie numérique 
-
-**A COMPLETER**
-
-### Holographie photoréfractive
-
-L'holographie photoréfractive consiste en l'utilisation d'un cristal photoréfractif pour capturer la figure d'interférence 
-
-
-
+Photorefractive holography involves using a photorefractive crystal to capture the interference pattern.
 
 ### Plane Waves
 
-Le concept de tomographie prend tout son sens à partir de cette notion d'onde plane, 
+The concept of tomography fully comes into its own with the notion of a plane wave.
 
 <div style="text-align: center;">
   <img src="https://github.com/user-attachments/assets/c2aac671-6919-46ff-af7d-2952015b4408" alt="test" width="400"/>
 </div>
 
-En appliquant une loi de retard sur les éléments piezo-électrique de notre sonde ultrasonore, Plus les retards entre chaque élément piézo-électrique voisin sont élevés et plus l'angle d'émession de l'onde plane est important.
+By applying a delay law to the piezoelectric elements of our ultrasonic probe, the greater the delays between each neighboring piezoelectric element, the more significant the emission angle of the plane wave.
 
 ### Structured Waves
 
@@ -205,34 +181,22 @@ En appliquant une loi de retard sur les éléments piezo-électrique de notre so
 
 ### Mix Waves
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Et : 
 
 $y_{\theta,t} = \sum_{x,z} {[A_{t, z , x, \theta}]}^T \lambda_{x,z}$
 
 # Tomographic reconstruction
 
-La tomographie est une méthode de reconstruction d'images basé sur un ensemble de projections acquis à différents angles d'émission $\theta$. 
-Dans notre cas, la tomographie nous permet de reconstruire la carte d'intensité lumineuse des photons marqués dans le milieu diffusant uniquement à partir des projections, c'est à dire, des signaux acousto-optique (1D) acquis par la photodiode. 
-Pour rappel, le montage expériemental est statique, aucun éléments ne bouge pour acquérir différentes projections. En effet, l'intérêt de la méthode est d'envoyer différentes ondes acoustiques pour obtenir différents 
+Tomography is a method of image reconstruction based on a set of projections acquired at different emission angles $\theta$.
 
-## Analytic reconstruction (FBP)
+In our case, tomography allows us to reconstruct the light intensity map of the tagged photons in the scattering medium solely from the projections, that is, the acousto-optic signals ($1D$) acquired by the photodiode.
 
-La reconstruction tomographique analytique est le type de reconstruction le plus simple, basé sur des modèles analytiques d'intégrales.
+As a reminder, the experimental setup is static; no elements move to acquire different projections. Indeed, the advantage of the method is to send different acoustic waves to obtain different projections.
+
+## Analytic Reconstruction (FBP)
+
+Analytic tomographic reconstruction is the simplest type of reconstruction, based on analytic models of integrals.
+
 
 ### iRadon Inversion Method
 
