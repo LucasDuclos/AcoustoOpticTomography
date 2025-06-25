@@ -145,7 +145,7 @@ $$
 I_{tagged} \propto \left| E_{0} \right|^2 \cdot \left| \delta \varphi \right|^2
 $$
 
-With $\delta \varphi \propto P \) and \( P = P_m \sin(2 \pi f_{US} t - K_{US} z)$.
+With $\delta \varphi \propto P and P = P_m \sin(2 \pi f_{US} t - K_{US} z)$.
 
 Thus, if we integrate locally over the entire $XZ$ plane.
 
@@ -222,7 +222,7 @@ $$
 \mathcal{F}_ {c_s t}(s(c_s t, \theta, f_s)) = \mathcal{F}_{x, z}(I)(f_s \sin \theta + f_s \cos \theta, f_s \cos \theta - f_s \sin \theta) 
 $$
 
-The integral is then split into two terms \( \int_{\theta=0}^{\pi} \) and \( \int_{\theta=\pi}^{2\pi} \) followed by a change of variable \( \theta \leftarrow \theta - \pi \) on the second term. Making use of the relation \( \tilde{s}(f_s, \theta + \pi, f_s) = \tilde{s}(f_s, \theta, f_s)^* \), and limiting the integration domain to \( [-\theta_m, \theta_m] \) as it is performed in FBP, the generalized FBP expression is:
+The integral is then split into two terms $\int_{\theta=0}^{\pi}$ and $\int_{\theta=\pi}^{2\pi}$ followed by a change of variable $\theta \leftarrow \theta - \pi$ on the second term. Making use of the relation $\tilde{s}(f_s, \theta + \pi, f_s) = \tilde{s}(f_s, \theta, f_s)^*$, and limiting the integration domain to $[-\theta_m, \theta_m]$ as it is performed in FBP, the generalized FBP expression is:
 
 $$
 I_{\text{rec}}(x, z) = \int_{-\theta_m}^{\theta_m} 2 \Re\left[\int_{\mathbb{R}^+} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi x' f_s} e^{2 i \pi x' f_s} f_s \mathrm{d} f_s\right] \mathrm{d} \theta + \int_{-\theta_m}^{\theta_m} \int_{-f_s}^{f_s} \tilde{s}(f_s, \theta, 0) e^{2 i \pi z' f_s} f_s \mathrm{d} f_s \mathrm{d} \theta 
@@ -230,11 +230,11 @@ $$
 
 ### iFourier Inversion Method
 
-The iFourier method is derived using Cartesian coordinates in the Fourier domain. It is well adapted to the ideal case where US waves are structured for multiple discrete values of \( f_s \) while \( \theta \) is fixed.
+The iFourier method is derived using Cartesian coordinates in the Fourier domain. It is well adapted to the ideal case where US waves are structured for multiple discrete values of $f_s$ while $\theta$ is fixed.
 
 Inverse Fourier Transform:
 
-We start with the integral, which defines the inverse Fourier transform using the generalized FST relation, and define the rotation operator of angle $\( \theta \)$:
+We start with the integral, which defines the inverse Fourier transform using the generalized FST relation, and define the rotation operator of angle $\theta$:
 
 $$
 \mathbf{R}_{\theta}:(f_s, f_s) \in \mathbb{R}^2 \rightarrow \begin{cases}
@@ -243,17 +243,17 @@ f_z(f_s, f_s) = f_s \cos \theta - f_s \sin \theta
 \end{cases}
 $$
 
-$\( \mathbf{R}_{\theta} \)$ is a unitary operator, and therefore the determinant of its Jacobian matrix is equal to one. This allows a simple change of integration variables in the following expression:
+$\mathbf{R}_{\theta}$ is a unitary operator, and therefore the determinant of its Jacobian matrix is equal to one. This allows a simple change of integration variables in the following expression:
 
 $$
-\mathcal{F}_{f_s, f_s}^{-1}[s(f_s, \theta, f_s)] = \int_{\mathbb{R}^2} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi(x f_x + z f_z)} \mathrm{d} f_x \mathrm{d} f_z = I(x', z')
+\mathcal{F}_ {f_s, f_s}^{-1}[s(f_s, \theta, f_s)] = \int_{\mathbb{R}^2} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi(x f_x + z f_z)} \mathrm{d} f_x \mathrm{d} f_z = I(x', z')
 $$
-
-### Reconstruction Formula
 
 The inversion formula is therefore:
 
-\[ I_{\text{rec}}(x, z) = \frac{1}{N_{\theta}} \sum_{-\theta_m}^{\theta_m} \left[\int_{\mathbb{R}^2} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi(x' f_x + z' f_z)} \mathrm{d} f_x \mathrm{d} f_z\right] \]
+$$
+I_{\text{rec}}(x, z) = \frac{1}{N_{\theta}} \sum_{-\theta_m}^{\theta_m} \left[\int_{\mathbb{R}^2} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi(x' f_x + z' f_z)} \mathrm{d} f_x \mathrm{d} f_z\right]
+$$
 
 
 
