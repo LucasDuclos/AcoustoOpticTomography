@@ -1,64 +1,62 @@
 # AOT_Acoustic
 
-Le module `AOT_biomaps.AOT_Acoustic` regroupe toutes les classes associées à la création de champs acoustiques, destiné à la tomographie acousto-optique. Les différentes émissions ultrasonores disponibles sont les suivantes:
+The `AOT_biomaps.AOT_Acoustic` module groups all classes associated with the creation of acoustic fields, intended for acousto-optic tomography. The various available ultrasonic emissions are as follows:
 
 - Focused Waves (`AOT_biomaps.AOT_Acoustic.FocusedWave()`)
 - Plane Waves (`AOT_biomaps.AOT_Acoustic.PlaneWave()`)
 - Structured Waves (`AOT_biomaps.AOT_Acoustic.StructuredWave()`)
 - Irregular Waves (`AOT_biomaps.AOT_Acoustic.IrregularWave()`)
 
-Il possible de simuler des champs acoustique en 2D (`AOT_biomaps.AOT_Acoustic.Dim.D2`) 3D (`AOT_biomaps.AOT_Acoustic.Dim.D3`). Comme expliqué dans la théorie, l'acquisition de champs en 3D n'est pas nécessaire (kwave ne prend pas en compte le rayon d'élévation de la sonde). À noter que comme les autres module de la librairie, la création de champs acoustiques peut se faire avec CPU ou GPU.
+It is possible to simulate acoustic fields in 2D (`AOT_biomaps.AOT_Acoustic.Dim.D2`) and 3D (`AOT_biomaps.AOT_Acoustic.Dim.D3`). As explained in the theory, the acquisition of fields in 3D is not necessary (kwave does not take into account the elevation radius of the probe). Note that, like other modules in the library, the creation of acoustic fields can be done with either CPU or GPU.
 
-## General functions
+## General Functions
 
-### Generate Field (2D and 3D) 
+### Generate Field (2D and 3D)
 
-### Calculate squared enveloppe of the acoustic Field
+### Calculate Squared Envelope of the Acoustic Field
 
-Cette fonction calcule l'enveloppe analytique au carré d'un champ acoustique en utilisant soit le CPU soit le GPU.
+This function calculates the squared analytical envelope of an acoustic field using either the CPU or the GPU.
 
-#### Paramètres :
+#### Parameters:
+- `isGPU`: Boolean indicating whether the calculation should be performed on the GPU (default is `True` if the configured process is 'gpu', otherwise `False`).
 
-- `isGPU` : Booléen indiquant si le calcul doit être effectué sur le GPU (par défaut, `True` si le processus configuré est 'gpu', sinon `False`).
-#### Retourne :
-- `envelope` : Un tableau `numpy.ndarray` ou `cupy.ndarray` représentant l'enveloppe analytique au carré du champ acoustique.
+#### Returns:
+- `envelope`: A `numpy.ndarray` or `cupy.ndarray` representing the squared analytical envelope of the acoustic field.
 
-**Transformation de Hilbert :**
-   - Pour chaque tranche \( A_i \) du champ acoustique, calcule l'enveloppe analytique \( \mathcal{H}(A_i) \) en utilisant la transformation de Hilbert :
+**Hilbert Transformation:**
+
+- For each slice \( A_i \) of the acoustic field, calculate the analytical envelope \( \mathcal{H}(A_i) \) using the Hilbert transform:
+ 
+$$
+  \mathcal{H}(A_i)(t) = \frac{1}{\pi} \text{P.V.} \int_{-\infty}^{\infty} \frac{A_i(\tau)}{t - \tau} \, d\tau
+$$
+
+- Calculate the squared envelope:
 
 $$
-\mathcal{H}(A_i)(t) = \frac{1}{\pi} \text{P.V.} \int_{-\infty}^{\infty} \frac{A_i(\tau)}{t - \tau} \, d\tau
+  |\mathcal{H}(A_i)(t)|^2
 $$
-     
-   - Calcule l'enveloppe au carré :
 
-$$
-\mathcal{H}(A_i)(t)|^2
-$$
-     
-  
 ### Save Field
 
-Il existe trois formats de sauvegarde disponibles dans la librairie AOT-Biomaps. Les trois formats permettent la sauvegarde des valeurs de pression du champ acoustique créé.
+There are three save formats available in the AOT-Biomaps library. The three formats allow saving the pressure values of the created acoustic field.
 
-- Format HDR / IMG (`AOT_biomaps.AOT_Acoustic.FormatSave.HDR_IMG`)
+- HDR/IMG Format (`AOT_biomaps.AOT_Acoustic.FormatSave.HDR_IMG`)
 
-La sauvegarde sous le format HDR / IMG est la sauvegarde par défaut dans la librairie.
-Lors de la sauvegarde, deux fichiers (`.hdr`) et (`.img`) sont créés. Le fichier HDR contient au format ASCII les caractéristiques du champs acoustiques, le fichier IMG contient le champ acoustique en format `float32`.
-- Format HDF5 (`AOT_biomaps.AOT_Acoustic.FormatSave.H5`)
+  Saving in HDR/IMG format is the default save format in the library. When saving, two files (`.hdr` and `.img`) are created. The HDR file contains the characteristics of the acoustic fields in ASCII format, and the IMG file contains the acoustic field in `float32` format.
 
-- Format Numpy Array (`AOT_biomaps.AOT_Acoustic.FormatSave.NPY`)
+- HDF5 Format (`AOT_biomaps.AOT_Acoustic.FormatSave.H5`)
+
+- Numpy Array Format (`AOT_biomaps.AOT_Acoustic.FormatSave.NPY`)
 
 ## Focused Waves
 
 ## Plane Waves
 
 $$
-\text{delay}[i] = \frac{x_i \cdot \tan( \theta|)}{c_0}
+\text{delay}[i] = \frac{x_i \cdot \tan(\theta)}{c_0}
 $$
 
 ## Structured Waves
 
 ## Irregular Waves
-
-
