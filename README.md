@@ -46,15 +46,32 @@ Pour accéder à un paramètre spécifique `param.acoustic['f_US']`.
 
 ### AOT_Experiment
 
-La classe `AOT_Experiment` permet de gérer notre expérience. Lors de sa création avec son constructeur, elle prend en compte les 3 éléments clés:
+La classe `AOT_Experiment` permet de gérer notre expérience. Elle intègre les trois éléments clés de l'imagerie acousto-optique :
  - L'image optique
  - Les champs acoustiques
  - Les signaux acousto-optiques
 
-Exemple d'utilisation : 
+La librairie prend en compte les deux modes d'utilisations possibles:
+ - Simulation
+ - Expérimental
+
+La simulation nécessite de générer une image optique (pour la simulation de signaux acousto-optique) et les signaux acousto-optiques. De son côté la tomographie avec des données expérimental nécessite uniquement le chargement des signaux acousto-optiques.
+
+#### Simulation:
 
 ```
-manip = AOT_biomaps.AOT_Experiment.Tomography(params=param, fieldDataPath=fieldDir, fieldParamPath=systemPath)
+manip = AOT_biomaps.AOT_Experiment.Tomography(params=param)
+manip.generatePhantom()
+manip.generateAcousticFields(fieldDataPath, systemPath, show_log = False)
+manip.generateAOsignal(withTumor=True)
+```
+
+#### Expérimental
+
+```
+manip = AOT_biomaps.AOT_Experiment.Tomography(params=param)
+manip.generateAcousticFields(fieldDataPath, systemPath, show_log = False)
+manip.loadAOsignal(withTumor=True)
 ```
 
 Remarque:
@@ -62,16 +79,25 @@ Remarque:
 La simulation des champs acoustiques peut faire apparaitre des artefacts au niveau des bords de la grille de simulation. Il peut être nécessaire de tronquer les champs acoustiques : 
 
 ```
-manip.cutAcousticFields(min_t=0,max_t=float(2.5e-5),saveFields=True)
+manip.cutAcousticFields(min_t=0,max_t=2.5e-5,saveFields=True)
 ```
-`t_min` et `t_max`sont initialiser en secondes.
+`t_min` et `t_max`sont initialisés en secondes.
 Si `saveFields=True`, les champs tronqués sont sauvegardés dans le répertoire.
 
-### AOT_Optic
+### Reconstruction
 
-```
-phantom = AOT_biomaps.AOT_Optic.Phantom(params=param)
-```
+- Analytique
+- Algébrique
+- Bayésienne
+
+#### Analytique
+
+#### Algébrique
+
+
+
+recon = AOT_biomaps.AOT_Reconstruction.AlgebraicRecon(experiment= manip, numIterations=20,saveDir=f"/home/duclos/AOT/SetMixte/{set}/recon",isGPU=False)
+recon.run()
 
 
 
