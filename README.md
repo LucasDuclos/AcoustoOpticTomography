@@ -98,7 +98,9 @@ Il existe différent algorithme
 Par défaut, la reconstruction s'effectue avec un optimiseur Maximum Likelihood Estimation Method (ML-EM) (pour plus d'information regarder la documentation)
 
 ```
-recon = AOT_biomaps.AOT_Reconstruction.AlgebraicRecon(experiment= manip, numIterations=200,saveDir=f"/home/duclos/AOT/SetMixte/{set}/recon",isGPU=False)
+optimizer =  AOT_biomaps.AOT_Reconstruction.OptimizerType.MLEM
+
+recon = AOT_biomaps.AOT_Reconstruction.AlgebraicRecon(experiment= manip, opti=optimizer, numIterations=200,saveDir=f"/home/duclos/AOT/SetMixte/{set}/recon",isGPU=False)
 recon.run()
 ```
 
@@ -116,8 +118,13 @@ Pour l'instant uniquement les fonctions potentielles suivantes sont supportées 
 
 
 ```
-recon = AOT_biomaps.AOT_Reconstruction.BayesianRecon(experiment= manip, numIterations=200,saveDir=f"/home/duclos/AOT/SetMixte/{set}/recon",isGPU=False,potentialFunction=AOT_biomaps.AOT_Reconstruction.PotentialType.HUBER_PIECEWISE)
+optimizer =  AOT_biomaps.AOT_Reconstruction.OptimizerType.PGC
+potentialFunction = AOT_biomaps.AOT_Reconstruction.PotentialType.HUBER_PIECEWISE
+
+recon = AOT_biomaps.AOT_Reconstruction.BayesianRecon(experiment=manip, opti=optimizer, potentialFunction=potentialFunction, numIterations=200,saveDir=f"/home/duclos/AOT/SetMixte/{set}/recon",isGPU=False)
 recon.run()
+```
+
 
 
 
