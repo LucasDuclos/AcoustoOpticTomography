@@ -1,5 +1,6 @@
-# TomographyAcoustoOptic
-Acosuto-optic tomographic reconstruction 
+# AOT-BioMaps
+
+Tomographic reconstruction for acousto-optic imaging
 
 ## Utilisation de la librairie aot-biomaps:
 ### Installation de la librairie
@@ -21,6 +22,7 @@ import torch
 
 ```
 Remarque:
+
 Bien s'assurer que cuda est disponible sur la machine.
 
 ```
