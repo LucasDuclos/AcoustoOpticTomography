@@ -94,12 +94,30 @@ Si `saveFields=True`, les champs tronqués sont sauvegardés dans le répertoire
 
 #### Algébrique
 
+Il existe différent algorithme 
+Par défaut, la reconstruction s'effectue avec un optimiseur Maximum Likelihood Estimation Method (ML-EM) (pour plus d'information regarder la documentation)
 
-
-recon = AOT_biomaps.AOT_Reconstruction.AlgebraicRecon(experiment= manip, numIterations=20,saveDir=f"/home/duclos/AOT/SetMixte/{set}/recon",isGPU=False)
+```
+recon = AOT_biomaps.AOT_Reconstruction.AlgebraicRecon(experiment= manip, numIterations=200,saveDir=f"/home/duclos/AOT/SetMixte/{set}/recon",isGPU=False)
 recon.run()
+```
+
+#### Bayésienne
+
+Pour l'instant uniquement les optimiseurs suivants sont supportés par la librairie:
+ - Preconditioned Conjugate Gradient Maximum A Posteriori Expectation Maximization (**PCG MAP-EM**)
+ - Preconditioned Conjugate Gradient Maximum A Posteriori Expectation Maximization avec condition stop (**PCG MAP-EM stop**)
+ - De Pierro Maximum A Posteriori Expectation Maximization (**Pierro MAP-EM**)
+
+Pour l'instant uniquement les fonctions potentielles suivantes sont supportées par la librairie:
+ - Huber (`AOT_biomaps.AOT_Reconstruction.PotentialType.HUBER_PIECEWISE`)
+ - Quadratique (`AOT_biomaps.AOT_Reconstruction.PotentialType.QUADRATIC`)
+ - Différence Relative (`AOT_biomaps.AOT_Reconstruction.PotentialType.RELATIVE_DIFFERENCE`)
 
 
+```
+recon = AOT_biomaps.AOT_Reconstruction.BayesianRecon(experiment= manip, numIterations=200,saveDir=f"/home/duclos/AOT/SetMixte/{set}/recon",isGPU=False,potentialFunction=AOT_biomaps.AOT_Reconstruction.PotentialType.HUBER_PIECEWISE)
+recon.run()
 
 
 
