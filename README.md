@@ -1,134 +1,142 @@
 # AOT-BioMaps
+**Tomographic Reconstruction for Acousto-Optic Imaging**
 
-Tomographic reconstruction for acousto-optic imaging
+---
 
-## Utilisation de la librairie aot-biomaps:
-### Installation de la librairie
+## Overview
+AOT-BioMaps is a Python library designed for tomographic reconstruction in acousto-optic imaging. It supports both simulation and experimental data processing, offering a range of reconstruction algorithms (analytical, algebraic, and Bayesian) optimized for CPU and GPU environments.
 
-CPU : 
+---
+
+## Installation
+
+### CPU Installation
+```bash
+pip install --upgrade aot-biomaps
 ```
-!pip install --upgrade aot-biomaps
-```
-ou 
-```
-!pip install --upgrade aot-biomaps[cpu]
+or
+```bash
+pip install --upgrade aot-biomaps[cpu]
 ```
 
-GPU :
+### GPU Installation
+```bash
+pip install --upgrade aot-biomaps[gpu]
+pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-\$(python -c "import torch; print(torch.__version__)")+\$(python -c "import torch; print(''.join(torch.__version__.split('+')[1:]))").html
 ```
-!pip install --upgrade aot-biomaps[gpu]
-import torch
-!pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/{torch.__version__}.html
+**Note:** Ensure CUDA is available on your machine.
 
-```
-Remarque:
-
-Bien s'assurer que cuda est disponible sur la machine.
-
-```
+### Verify Installation
+```python
 import AOT_biomaps
 print(AOT_biomaps.__version__)
 print(AOT_biomaps.__process__)
 ```
+The `AOT_biomaps.__process__` variable returns the type of process (CPU or GPU) used for computations.
 
-La variable `AOT_biomaps.__process__` retourne le type de process CPU ou GPU sur laquelle la machine va effectuer les calculs
+---
 
-### Set-up des paramètres
+## Library Usage
 
-```
+### Setting Up Parameters
+```python
 fieldDir = "/path/to/folder/Fieldfolder"
 paramPath = "/path/to/folder/parameters.yaml"
 systemPath = "/path/to/folder/System_matrixParams.txt"
-
 param = AOT_biomaps.Settings.Params(paramPath)
 ```
+The `param` object contains the following sections: `general`, `acoustic`, `optic`, and `reconstruction`. For details on the structure and definition of each parameter, refer to the example files: [`ExampleParameters.yaml`](ExampleParameters.yaml) and [`ExampleSystem_matrixParams.txt`](ExampleSystem_matrixParams.txt).
 
-L'objet ```param``` contient les élements: general / acoustic / optic / reconstruction. Pour plus d'info sur la structure et la définition de chaques paramètres, consulter l'exemple ```ExampleParameters.yaml``` et ```ExampleSystem_matrixParams.txt```.
-Pour accéder à un paramètre spécifique `param.acoustic['f_US']`.
-
-### AOT_Experiment
-
-La classe `AOT_Experiment` permet de gérer notre expérience. Elle intègre les trois éléments clés de l'imagerie acousto-optique :
- - L'image optique
- - Les champs acoustiques
- - Les signaux acousto-optiques
-
-La librairie prend en compte les deux modes d'utilisations possibles:
- - Simulation
- - Expérimental
-
-La simulation nécessite de générer une image optique (pour la simulation de signaux acousto-optique) et les signaux acousto-optiques. De son côté la tomographie avec des données expérimental nécessite uniquement le chargement des signaux acousto-optiques.
-
-#### Simulation:
-
+To access a specific parameter:
+```python
+param.acoustic['f_US']
 ```
+
+---
+
+## AOT_Experiment Class
+The `AOT_Experiment` class manages acousto-optic imaging experiments, integrating:
+- Optical images
+- Acoustic fields
+- Acousto-optic signals
+
+The library supports two modes:
+- **Simulation**: Generates optical images and acousto-optic signals.
+- **Experimental**: Loads acousto-optic signals from experimental data.
+
+### Simulation Mode
+```python
 manip = AOT_biomaps.AOT_Experiment.Tomography(params=param)
 manip.generatePhantom()
-manip.generateAcousticFields(fieldDataPath, systemPath, show_log = False)
+manip.generateAcousticFields(fieldDataPath, systemPath, show_log=False)
 manip.generateAOsignal(withTumor=True)
 ```
 
-#### Expérimental
-
-```
+### Experimental Mode
+```python
 manip = AOT_biomaps.AOT_Experiment.Tomography(params=param)
-manip.generateAcousticFields(fieldDataPath, systemPath, show_log = False)
+manip.generateAcousticFields(fieldDataPath, systemPath, show_log=False)
 manip.loadAOsignal(withTumor=True)
 ```
-
-Remarque:
-
-La simulation des champs acoustiques peut faire apparaitre des artefacts au niveau des bords de la grille de simulation. Il peut être nécessaire de tronquer les champs acoustiques : 
-
+**Note:** Simulating acoustic fields may introduce artifacts at the edges of the simulation grid. Truncate the fields if necessary:
+```python
+manip.cutAcousticFields(min_t=0, max_t=2.5e-5, saveFields=True)
 ```
-manip.cutAcousticFields(min_t=0,max_t=2.5e-5,saveFields=True)
-```
-`t_min` et `t_max`sont initialisés en secondes.
-Si `saveFields=True`, les champs tronqués sont sauvegardés dans le répertoire.
+- `min_t` and `max_t` are in seconds.
+- If `saveFields=True`, truncated fields are saved to the directory.
 
-### Reconstruction
+---
 
-- Analytique
-- Algébrique
-- Bayésienne
+## Reconstruction Algorithms
 
-#### Analytique
+### Analytical Reconstruction
+*(Details to be added)*
 
-#### Algébrique
+### Algebraic Reconstruction
+The default optimizer is **Maximum Likelihood Estimation Method (ML-EM)**. For more information, see the [documentation](#).
 
-Il existe différent algorithme 
-Par défaut, la reconstruction s'effectue avec un optimiseur Maximum Likelihood Estimation Method (ML-EM) (pour plus d'information regarder la documentation)
-
-```
-optimizer =  AOT_biomaps.AOT_Reconstruction.OptimizerType.MLEM
-
-recon = AOT_biomaps.AOT_Reconstruction.AlgebraicRecon(experiment= manip, opti=optimizer, numIterations=200,saveDir=f"/home/duclos/AOT/SetMixte/{set}/recon",isGPU=False)
+```python
+optimizer = AOT_biomaps.AOT_Reconstruction.OptimizerType.MLEM
+recon = AOT_biomaps.AOT_Reconstruction.AlgebraicRecon(
+    experiment=manip,
+    opti=optimizer,
+    numIterations=200,
+    saveDir="/home/duclos/AOT/SetMixte/{set}/recon",
+    isGPU=False
+)
 recon.run()
 ```
 
-#### Bayésienne
+### Bayesian Reconstruction
+Supported optimizers:
+- Preconditioned Conjugate Gradient Maximum A Posteriori Expectation Maximization (**PCG MAP-EM**)
+- PCG MAP-EM with stopping condition (**PCG MAP-EM stop**)
+- De Pierro MAP-EM (**Pierro MAP-EM**)
 
-Pour l'instant uniquement les optimiseurs suivants sont supportés par la librairie:
- - Preconditioned Conjugate Gradient Maximum A Posteriori Expectation Maximization (**PCG MAP-EM**)
- - Preconditioned Conjugate Gradient Maximum A Posteriori Expectation Maximization avec condition stop (**PCG MAP-EM stop**)
- - De Pierro Maximum A Posteriori Expectation Maximization (**Pierro MAP-EM**)
+Supported potential functions:
+- Huber (`AOT_biomaps.AOT_Reconstruction.PotentialType.HUBER_PIECEWISE`)
+- Quadratic (`AOT_biomaps.AOT_Reconstruction.PotentialType.QUADRATIC`)
+- Relative Difference (`AOT_biomaps.AOT_Reconstruction.PotentialType.RELATIVE_DIFFERENCE`)
 
-Pour l'instant uniquement les fonctions potentielles suivantes sont supportées par la librairie:
- - Huber (`AOT_biomaps.AOT_Reconstruction.PotentialType.HUBER_PIECEWISE`)
- - Quadratique (`AOT_biomaps.AOT_Reconstruction.PotentialType.QUADRATIC`)
- - Différence Relative (`AOT_biomaps.AOT_Reconstruction.PotentialType.RELATIVE_DIFFERENCE`)
-
-
-```
-optimizer =  AOT_biomaps.AOT_Reconstruction.OptimizerType.PGC
+```python
+optimizer = AOT_biomaps.AOT_Reconstruction.OptimizerType.PGC
 potentialFunction = AOT_biomaps.AOT_Reconstruction.PotentialType.HUBER_PIECEWISE
-
-recon = AOT_biomaps.AOT_Reconstruction.BayesianRecon(experiment=manip, opti=optimizer, potentialFunction=potentialFunction, numIterations=200,saveDir=f"/home/duclos/AOT/SetMixte/{set}/recon",isGPU=False)
+recon = AOT_biomaps.AOT_Reconstruction.BayesianRecon(
+    experiment=manip,
+    opti=optimizer,
+    potentialFunction=potentialFunction,
+    numIterations=200,
+    saveDir="/home/duclos/AOT/SetMixte/{set}/recon",
+    isGPU=False
+)
 recon.run()
 ```
 
+---
+
+## License
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
 
-
-
-
+## Contact
+For questions or feedback, please open an issue or contact the maintainers.
