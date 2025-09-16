@@ -16,30 +16,29 @@ from tempfile import gettempdir
 
 class FocusedWave(AcousticField):
 
-    def __init__(self, focal_point, **kwargs):
+    def __init__(self, focal_line, **kwargs):
         """
         Initialize the FocusedWave object.
 
         Parameters:
-        - focal_point (tuple): The focal point coordinates (x, z) in meters.
+        - focal_line (tuple): The focal line coordinates (x) in meters.
         - **kwargs: Additional keyword arguments for AcousticField initialization.
         """
         super().__init__(**kwargs)
         self.waveType = WaveType.FocusedWave
         self.kgrid.setTime(int(self.kgrid.Nt*2),self.kgrid.dt) # Extend the time grid to allow for delays
-        self.focal_point = (focal_point[0] / 1000, focal_point[1] / 1000)  
+        self.focal_line = focal_line
         self.delayedSignal = self._apply_delay()
 
     def getName_field(self):
         """
-        Generate the name for the field file based on the focal point.
+        Generate the name for the field file based on the focal line.
 
         Returns:
             str: File name for the system matrix file.
         """
         try:
-            x_focal, z_focal = self.focal_point
-            return f"field_focused_X{x_focal*1000:.2f}_Z{z_focal*1000:.2f}"
+            return f"field_focused_X{self.focal_line*1000:.2f}"
         except Exception as e:
             print(f"Error generating file name: {e}")
             return None
@@ -58,7 +57,7 @@ class FocusedWave(AcousticField):
             element_positions = np.linspace(-self.TxWidth/2, self.TxWidth/2, self.params['num_elements'])
 
             # Calcul des distances entre chaque élément et le point focal (x_focal, Foc)
-            distances = np.sqrt((self.x_line - element_positions)**2 + self.params['Foc']**2)
+            distances = np.sqrt((self.focal_line - element_positions)**2 + self.params['Foc']**2)
 
             # Délai maximal (pour l'élément le plus éloigné du point focal)
             max_distance = np.max(distances)
