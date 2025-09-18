@@ -1,5 +1,4 @@
-
- <span style="color:red; font-weight:bold; text-decoration:underline;">Acousto-Optic</span>
+[↩ Back to Home Page](../README.md)
 
 # Introduction
 
