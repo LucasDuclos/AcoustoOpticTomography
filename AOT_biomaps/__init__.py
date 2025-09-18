@@ -43,7 +43,7 @@ from .AOT_Recon.AOT_PotentialFunctions.RelativeDifferences import *
 from .Config import config
 from .Settings import *
 
-__version__ = '2.9.9'
+__version__ = '2.9.21'
 
 if config.get_process() == 'gpu':
     __process__ = 'gpu'
@@ -57,3 +57,15 @@ def initialize(process='cpu'):
         print(f"Initialized with process: {config.get_process()} using GPU: {config.bestGPU}")
     else:
         print(f"Initialized with process: {config.get_process()}")
+
+
+
+
+
+
+
+
+
+
+
+

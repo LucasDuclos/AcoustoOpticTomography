@@ -46,41 +46,48 @@ class FocusedWave(AcousticField):
     def _apply_delay(self):
         """
         Apply a temporal delay to focus the wave at a given lateral position (x_focal) and fixed focal depth (Foc).
-        - Foc: Fixed focal depth (in mm), set by the probe.
-        - x_focal: Lateral position (in mm), chosen by the user.
-
         Returns:
             ndarray: Delayed signals, shape (nbPiezo, len(burst) + max_delay).
         """
         try:
-            # Positions des éléments (centrées autour de x=0)
-            element_positions = np.linspace(-self.TxWidth/2, self.TxWidth/2, self.params['num_elements'])
+            # 1. Positions latérales de tous les éléments (en mètres)
+            element_positions = np.linspace(self.params['Xrange'][0], self.params['Xrange'][1], self.params['num_elements'])
 
-            # Calcul des distances entre chaque élément et le point focal (x_focal, Foc)
-            distances = np.sqrt((self.focal_line - element_positions)**2 + self.params['Foc']**2)
+            # 2. Trouver l'indice de l'élément le plus proche de self.focal_line
+            center_idx = np.argmin(np.abs(element_positions - self.focal_line))
 
-            # Délai maximal (pour l'élément le plus éloigné du point focal)
+            start_idx = max(0, center_idx - self.params['N_piezoFocal'] // 2)
+            end_idx = min(self.params['num_elements'] - 1, start_idx + self.params['N_piezoFocal'] - 1)
+
+            # 4. Positions des éléments sélectionnés (en mètres)
+            selected_indices = np.arange(start_idx, end_idx + 1)
+            selected_positions = element_positions[selected_indices]
+
+            # 5. Distance entre chaque élément sélectionné et le point focal (self.focal_line, self.params['Foc'])
+            distances = np.sqrt((self.focal_line - selected_positions)**2 + self.params['Foc']**2)
+
+            # 6. Délais en secondes : (distance_max - distance) / self.params['c0']
             max_distance = np.max(distances)
+            delays = (max_distance - distances) / self.params['c0']
 
-            # Délais en µs : (max_distance - distance) / c
-            delays_us = (max_distance - distances) / (self.params['c0'] * 1e-3)
-
-            # Conversion en secondes puis en échantillons
-            delays = delays_us * 1e-6  # µs → s
+            # 7. Conversion en échantillons (vérifier que self.kgrid.dt est en secondes)
             delay_samples = np.round(delays / self.kgrid.dt).astype(int)
             max_delay = np.max(delay_samples)
 
-            # Initialisation et application des délais
+            # 8. Application des délais
             delayed_signals = np.zeros((self.params['num_elements'], len(self.burst) + max_delay))
-            for i in range(self.params['num_elements']):
+            for i, idx in enumerate(selected_indices):
                 shift = delay_samples[i]
-                delayed_signals[i, shift:shift + len(self.burst)] = self.burst
+                delayed_signals[idx, shift:shift + len(self.burst)] = self.burst
 
             return delayed_signals
 
         except Exception as e:
             print(f"Error applying delay: {e}")
             return None
+
+
+
 
         
     def plot_delay(self):

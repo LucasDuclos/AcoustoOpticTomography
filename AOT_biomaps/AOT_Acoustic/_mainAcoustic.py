@@ -70,6 +70,8 @@ class AcousticField(ABC):
 
             self.params = {
                 'c0': params.acoustic['c0'],
+                'Foc': params.acoustic['Foc'],
+                'N_piezoFocal': params.acoustic['N_piezoFocal'],
                 'f_US': int(float(params.acoustic['f_US'])),
                 'f_AQ': params.acoustic['f_AQ'],
                 'f_saving': int(float(params.acoustic['f_saving'])),
