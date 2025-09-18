@@ -13,7 +13,7 @@ For physical explanations, feel free to check the [explanation page](./Doc/Expla
 
 ## Installation
 
-[Installation](./Doc/Installation.md)
+Follow the [installation steps](./Doc/Installation.md).
 
 ## Library Usage
 
