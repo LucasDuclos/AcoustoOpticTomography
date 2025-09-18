@@ -1,7 +1,6 @@
 ## Installation
 
 ### CPU Installation
-
 ```bash
 pip install --upgrade aot-biomaps
 ```
@@ -22,4 +21,4 @@ print(AOT_biomaps.__process__)
 The `AOT_biomaps.__process__` variable returns the type of process (CPU or GPU) used for computations.
 
 ---
-
+[↩ Back to Home Page](../README.md)
