@@ -7,7 +7,6 @@ import os
 import psutil
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 from tqdm import trange
 
 class Tomography(Experiment):
@@ -71,15 +70,19 @@ class Tomography(Experiment):
         if self.AcousticFields is None:
             raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
 
+        # Collect entries as a list of tuples
         entries = []
         for field in self.AcousticFields:
             if field.waveType != WaveType.StructuredWave:
                 raise TypeError("AcousticFields must be of type StructuredWave to plot pattern.")
-            entries.append(((field.pattern.space_0, field.pattern.space_1, field.pattern.move_head_0_2tail, field.pattern.move_tail_1_2head), field.pattern.activeList, field.angle))
-        print("Entries:", entries)
-        
+            pattern = field.pattern
+            entries.append((
+                (pattern.space_0, pattern.space_1, pattern.move_head_0_2tail, pattern.move_tail_1_2head),
+                pattern.activeList,  # hex_str
+                field.angle
+            ))
 
-        # Sorting rule
+        # Sort entries (same logic as before)
         entries.sort(
             key=lambda x: (
                 -(x[0][0] + x[0][1]),  # Total length descending
@@ -90,49 +93,42 @@ class Tomography(Experiment):
             )
         )
 
-        df = pd.DataFrame([
-            {
-                "hex": hex_str,
-                "space_0": t[0],
-                "space_1": t[1],
-                "move_head_0_2tail": t[2],
-                "move_tail_1_2head": t[3],
-                "angles": angles
-            }
-            for t, hex_str, angles in entries
-        ])
+        # Extract data without Pandas
+        hex_list = [hex_str for _, hex_str, _ in entries]
+        angle_list = [angle for _, _, angle in entries]
+        space_data = [t for t, _, _ in entries]  # List of (space_0, space_1, move_head_0_2tail, move_tail_1_2head)
 
+        # Convert hex strings to binary columns (NumPy)
         def hex_string_to_binary_column(hex_str):
             bits = ''.join(f'{int(c, 16):04b}' for c in hex_str)
             return np.array([int(b) for b in bits], dtype=np.uint8).reshape(-1, 1)
 
-        hex_list = df['hex'].tolist()
-        angle_list = df['angles'].tolist()
         bit_columns = [hex_string_to_binary_column(h) for h in hex_list]
         image = np.hstack(bit_columns)
         height = image.shape[0]
 
+        # Plot
         _, ax = plt.subplots(figsize=(12, 10))
         ax.imshow(image, cmap='gray', aspect='auto')
         ax.set_title("Scan configuration", fontsize='large')
         ax.set_xlabel("Wave", fontsize='medium')
         ax.set_ylabel("Transducer activation", fontsize='medium')
 
+        # Plot angle markers
         angle_min = -20.2
         angle_max = 20.2
         center = height / 2
         scale = height / (angle_max - angle_min)
-
         for i, angle in enumerate(angle_list):
             y = round(center - angle * scale)
-            if 0 <= y <= height:
-                ax.plot(i, y-0.5, 'r.', markersize=5)
+            if 0 <= y < height:
+                ax.plot(i, y - 0.5, 'r.', markersize=5)
 
         ax.set_ylim(height - 0.5, -0.5)
 
+        # Twin axis for angle labels
         ax2 = ax.twinx()
         ax2.set_ylim(ax.get_ylim())
-
         yticks_angle = np.linspace(20, -20, 9)
         yticks_pos = np.interp(yticks_angle, [angle_min, angle_max], [height - 0.5, -0.5])
         ax2.set_yticks(yticks_pos)

@@ -1,7 +1,7 @@
 from ._mainRecon import Recon
 from .ReconEnums import ReconType, OptimizerType, ProcessType
 from .AOT_Optimizers import MLEM
-from .ReconTools import check_gpu_memory, calculate_memory_requirement
+from .ReconTools import check_gpu_memory, calculate_memory_requirement, mse
 from AOT_biomaps.Config import config
 
 
@@ -15,7 +15,7 @@ import matplotlib.animation as animation
 from IPython.display import HTML
 from datetime import datetime
 from tempfile import gettempdir
-from sklearn.metrics import mean_squared_error
+
 
 
 class AlgebraicRecon(Recon):
@@ -398,7 +398,7 @@ class AlgebraicRecon(Recon):
         for i in iter_list:
             
             diff_abs_without_tumor = np.abs(recon_without_tumor - self.experiment.OpticImage.laser.intensity)
-            mse_without_tumor = mean_squared_error(self.experiment.OpticImage.laser.intensity.flatten(), recon_without_tumor.flatten())
+            mse_without_tumor = mse(self.experiment.OpticImage.laser.intensity.flatten(), recon_without_tumor.flatten())
 
             noise = np.mean(np.abs(self.reconLaser[i] - self.experiment.OpticImage.laser.intensity))
 
@@ -463,7 +463,7 @@ class AlgebraicRecon(Recon):
         for i in iter_list:
             recon_with_tumor = self.reconPhantom[i]
             diff_abs_with_tumor = np.abs(recon_with_tumor - self.experiment.OpticImage.phantom)
-            mse_with_tumor = mean_squared_error(self.experiment.OpticImage.phantom.flatten(), recon_with_tumor.flatten())
+            mse_with_tumor = mse(self.experiment.OpticImage.phantom.flatten(), recon_with_tumor.flatten())
 
             noise = np.mean(np.abs(self.reconPhantom[i] - self.experiment.OpticImage.phantom))  # !! without tumor
 

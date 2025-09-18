@@ -1,8 +1,7 @@
 import AOT_biomaps.Settings
 from AOT_biomaps.Config import config
-from AOT_biomaps.AOT_Acoustic.AcousticTools import calculate_envelope_squared, CPU_hilbert
+from AOT_biomaps.AOT_Acoustic.AcousticTools import calculate_envelope_squared, CPU_hilbert, loadmat
 
-import scipy.io
 import h5py
 import os
 import numpy as np
@@ -588,7 +587,7 @@ class AcousticField(ABC):
         """
         try:
             # Load parameters from the .mat file
-            param = scipy.io.loadmat(param_path_mat)
+            param = loadmat(param_path_mat)
 
             # Load the ranges for x and z
             x_test = param['x'].flatten()
@@ -647,7 +646,7 @@ class AcousticField(ABC):
         """
         try:
             # Load parameters from the .mat file
-            param = scipy.io.loadmat(param_path_mat)
+            param = loadmat(param_path_mat)
 
             # Extract the ranges for y and z
             y_range = param['y'].flatten()
@@ -710,7 +709,7 @@ class AcousticField(ABC):
         """
         try:
             # Load parameters from the .mat file
-            param = scipy.io.loadmat(param_path_mat)
+            param = loadmat(param_path_mat)
 
             # Extract the ranges for x, y, and z
             x_range = param['x'].flatten()

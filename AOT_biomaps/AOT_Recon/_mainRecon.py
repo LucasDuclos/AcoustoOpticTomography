@@ -1,13 +1,13 @@
 from AOT_biomaps.Config import config
 from AOT_biomaps.AOT_Experiment.Tomography import Tomography
+from .ReconEnums import ReconType
+from .ReconTools import mse, ssim
 
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 from abc import ABC, abstractmethod
-from .ReconEnums import ReconType
-from sklearn.metrics import mean_squared_error
-from skimage.metrics import structural_similarity as ssim
+
 
 class Recon(ABC):
     def __init__(self, experiment, saveDir = None, isGPU = config.get_process() == 'gpu',  isMultiGPU =  True if config.numGPUs > 1 else False, isMultiCPU = True):
@@ -74,12 +74,12 @@ class Recon(ABC):
             raise ValueError("Reconstructed phantom is empty. Run reconstruction first.")
 
         if self.reconType in (ReconType.Analytic, ReconType.DeepLearning):
-            self.MSE = mean_squared_error(self.experiment.OpticImage.phantom, self.reconPhantom)
+            self.MSE = mse(self.experiment.OpticImage.phantom, self.reconPhantom)
 
         elif self.reconType in (ReconType.Algebraic, ReconType.Bayesian):
             self.MSE = []
             for theta in self.reconPhantom:
-                self.MSE.append(mean_squared_error(self.experiment.OpticImage.phantom, theta))
+                self.MSE.append(mse(self.experiment.OpticImage.phantom, theta))
   
     def calculateSSIM(self):
         """

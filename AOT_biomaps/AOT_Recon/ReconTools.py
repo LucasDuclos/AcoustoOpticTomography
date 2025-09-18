@@ -79,6 +79,75 @@ def load_recon(hdr_path):
     
     return image.T
 
+def mse(y_true, y_pred):
+    """
+    Calcule la Mean Squared Error (MSE) entre deux tableaux.
+    Équivalent à sklearn.metrics.mean_squared_error.
+    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    return np.mean((y_true - y_pred) ** 2)
+
+def ssim(img1, img2, win_size=7, k1=0.01, k2=0.03, L=1.0):
+    """
+    Calcule l'SSIM entre deux images 2D (niveaux de gris).
+    Équivalent à skimage.metrics.structural_similarity avec :
+    - data_range=1.0 (images normalisées entre 0 et 1)
+    - gaussian_weights=True (fenêtre gaussienne)
+    - multichannel=False (1 canal)
+
+    Args:
+        img1, img2: Images 2D (numpy arrays) de même taille.
+        win_size: Taille de la fenêtre de comparaison (doit être impair).
+        k1, k2: Constantes pour stabiliser la division (valeurs typiques : 0.01, 0.03).
+        L: Dynamique des pixels (1.0 si images dans [0,1], 255 si dans [0,255]).
+    Returns:
+        SSIM moyen sur l'image (float entre -1 et 1).
+    """
+    if img1.shape != img2.shape:
+        raise ValueError("Les images doivent avoir la même taille.")
+    if win_size % 2 == 0:
+        raise ValueError("win_size doit être impair.")
+
+    # Constantes
+    C1 = (k1 * L) ** 2
+    C2 = (k2 * L) ** 2
+
+    # Fenêtre gaussienne
+    window = np.ones((win_size, win_size)) / (win_size ** 2)  # Approximation (skimage utilise une gaussienne)
+    window = window / np.sum(window)  # Normalisation
+
+    # Pad les images pour éviter les bords
+    pad = win_size // 2
+    img1_pad = np.pad(img1, pad, mode='reflect')
+    img2_pad = np.pad(img2, pad, mode='reflect')
+
+    # Calcul des statistiques locales
+    mu1 = np.zeros_like(img1, dtype=np.float64)
+    mu2 = np.zeros_like(img1, dtype=np.float64)
+    sigma1_sq = np.zeros_like(img1, dtype=np.float64)
+    sigma2_sq = np.zeros_like(img1, dtype=np.float64)
+    sigma12 = np.zeros_like(img1, dtype=np.float64)
+
+    # Itère sur chaque pixel (optimisé avec des convolutions)
+    for i in range(pad, img1_pad.shape[0] - pad):
+        for j in range(pad, img1_pad.shape[1] - pad):
+            patch1 = img1_pad[i-pad:i+pad+1, j-pad:j+pad+1]
+            patch2 = img2_pad[i-pad:i+pad+1, j-pad:j+pad+1]
+
+            mu1[i-pad, j-pad] = np.sum(patch1 * window)
+            mu2[i-pad, j-pad] = np.sum(patch2 * window)
+            sigma1_sq[i-pad, j-pad] = np.sum(window * (patch1 - mu1[i-pad, j-pad]) ** 2)
+            sigma2_sq[i-pad, j-pad] = np.sum(window * (patch2 - mu2[i-pad, j-pad]) ** 2)
+            sigma12[i-pad, j-pad] = np.sum(window * (patch1 - mu1[i-pad, j-pad]) * (patch2 - mu2[i-pad, j-pad]))
+
+    # SSIM locale
+    ssim_map = ((2 * mu1 * mu2 + C1) * (2 * sigma12 + C2)) / (
+        (mu1**2 + mu2**2 + C1) * (sigma1_sq + sigma2_sq + C2)
+    )
+
+    return np.mean(ssim_map)
+
 def calculate_memory_requirement(SMatrix, y):
     """Calculate the memory requirement for the given matrices in GB."""
     num_elements_SMatrix = SMatrix.size

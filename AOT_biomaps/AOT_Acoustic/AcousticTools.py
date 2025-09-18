@@ -1,77 +1,116 @@
 from AOT_biomaps.Config import config
 
 import os
+import h5py
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
-from scipy.interpolate import RegularGridInterpolator
 import torch
-import numpy as np
-import re
+from concurrent.futures import ThreadPoolExecutor
 
-
-def reshape_field(field,factor):
+def loadmat(param_path_mat):
     """
-    Downsample the acoustic field using interpolation to reduce its size for faster processing.
-    This method uses interpolation to estimate values on a coarser grid.
+    Charge un fichier .mat (format HDF5) sans SciPy.
+    Args:
+        param_path_mat: Chemin vers le fichier .mat.
+    Returns:
+        Dictionnaire contenant les variables du fichier.
     """
-    try:
-        if field is None:
-            raise ValueError("Acoustic field is not generated. Please generate the field first.")
+    with h5py.File(param_path_mat, 'r') as f:
+        data = {}
+        for key in f.keys():
+            # Récupère les données et convertit en numpy array si nécessaire
+            item = f[key]
+            if isinstance(item, h5py.Dataset):
+                data[key] = item[()]  # Convertit en numpy array
+            elif isinstance(item, h5py.Group):
+                # Pour les structures MATLAB (nested)
+                data[key] = {}
+                for subkey in item:
+                    data[key][subkey] = item[subkey][()]
+    return data
 
-        if len(factor) == 3:
-            # Create new grid for 3D field
-            x = np.arange(field.shape[0])
-            y = np.arange(field.shape[1])
-            z = np.arange(field.shape[2])
+def reshape_field(field, factor, device=None):
+    """
+    Downsample a 3D or 4D field using PyTorch interpolation (auto-detects GPU/CPU).
+    Args:
+        field: Input field (numpy array or torch.Tensor).
+        factor: Downsampling factor (tuple of ints).
+        device: Force device ('cpu' or 'cuda'). If None, auto-detects GPU.
+    Returns:
+        Downsampled field (same type as input: numpy array or torch.Tensor).
+    """
+    # Check input
+    if field is None:
+        raise ValueError("Acoustic field is not generated. Please generate the field first.")
 
-            # Create interpolating function
-            interpolator = RegularGridInterpolator((x, y, z), field)
+    # Auto-detect device if not specified
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    else:
+        device = device.lower()
+        if device not in ['cpu', 'cuda']:
+            raise ValueError("Device must be 'cpu' or 'cuda'.")
 
-            # Create new coarser grid points
-            x_new = np.linspace(0, field.shape[0] - 1, field.shape[0] // factor[0])
-            y_new = np.linspace(0, field.shape[1] - 1, field.shape[1] // factor[1])
-            z_new = np.linspace(0, field.shape[2] - 1, field.shape[2] // factor[2])
+    # Convert to torch.Tensor if needed
+    if isinstance(field, np.ndarray):
+        field = torch.from_numpy(field)
+    elif not isinstance(field, torch.Tensor):
+        raise TypeError("Input must be a numpy array or torch.Tensor.")
 
-            # Create meshgrid for new points
-            x_grid, y_grid, z_grid = np.meshgrid(x_new, y_new, z_new, indexing='ij')
+    # Move to the target device
+    field = field.to(device)
 
-            # Interpolate values
-            points = np.stack((x_grid.flatten(), y_grid.flatten(), z_grid.flatten()), axis=-1)
-            smoothed_field = interpolator(points).reshape(x_grid.shape)
+    # Add batch and channel dimensions (required by torch.interpolate)
+    if len(factor) == 3:
+        if field.dim() != 3:
+            raise ValueError("Expected 3D field.")
+        field = field.unsqueeze(0).unsqueeze(0)  # (1, 1, D, H, W)
 
-            return smoothed_field
+        # Calculate new shape
+        new_shape = [
+            field.shape[2] // factor[0],
+            field.shape[3] // factor[1],
+            field.shape[4] // factor[2]
+        ]
 
-        elif len(factor) == 4:
-            # Create new grid for 4D field
-            x = np.arange(field.shape[0])
-            y = np.arange(field.shape[1])
-            z = np.arange(field.shape[2])
-            w = np.arange(field.shape[3])
+        # Trilinear interpolation
+        downsampled = torch.nn.functional.interpolate(
+            field,
+            size=new_shape,
+            mode='trilinear',
+            align_corners=True
+        )
+        downsampled = downsampled.squeeze(0).squeeze(0)  # Remove batch/channel dims
 
-            # Create interpolating function
-            interpolator = RegularGridInterpolator((x, y, z, w), field)
+    elif len(factor) == 4:
+        if field.dim() != 4:
+            raise ValueError("Expected 4D field.")
+        field = field.unsqueeze(0).unsqueeze(0)  # (1, 1, T, D, H, W)
 
-            # Create new coarser grid points
-            x_new = np.linspace(0, field.shape[0] - 1, field.shape[0] // factor[0])
-            y_new = np.linspace(0, field.shape[1] - 1, field.shape[1] // factor[1])
-            z_new = np.linspace(0, field.shape[2] - 1, field.shape[2] // factor[2])
-            w_new = np.linspace(0, field.shape[3] - 1, field.shape[3] // factor[3])
+        new_shape = [
+            field.shape[2] // factor[0],
+            field.shape[3] // factor[1],
+            field.shape[4] // factor[2],
+            field.shape[5] // factor[3]
+        ]
 
-            # Create meshgrid for new points
-            x_grid, y_grid, z_grid, w_grid = np.meshgrid(x_new, y_new, z_new, w_new, indexing='ij')
+        # Tetra-linear interpolation
+        downsampled = torch.nn.functional.interpolate(
+            field,
+            size=new_shape,
+            mode='trilinear',  # PyTorch uses 'trilinear' for both 3D and 4D
+            align_corners=True
+        )
+        downsampled = downsampled.squeeze(0).squeeze(0)
 
-            # Interpolate values
-            points = np.stack((x_grid.flatten(), y_grid.flatten(), z_grid.flatten(), w_grid.flatten()), axis=-1)
-            smoothed_field = interpolator(points).reshape(x_grid.shape)
+    else:
+        raise ValueError("Unsupported dimension. Only 3D and 4D fields are supported.")
 
-            return smoothed_field
+    # Convert back to numpy if input was numpy
+    if isinstance(field, np.ndarray):
+        return downsampled.cpu().numpy()
+    else:
+        return downsampled
 
-        else:
-            raise ValueError("Invalid dimension for downsampling. Supported dimensions are: 3D, 4D.")
-
-    except Exception as e:
-        print(f"Error in interpolate_reshape_field method: {e}")
-        raise
 
 def CPU_hilbert(signal, axis=0):
     """
