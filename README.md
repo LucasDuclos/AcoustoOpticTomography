@@ -11,17 +11,14 @@ AOT-BioMaps is a Python library designed for tomographic reconstruction in acous
 ## Installation
 
 ### CPU Installation
+
 ```bash
 pip install --upgrade aot-biomaps
-```
-or
-```bash
-pip install --upgrade aot-biomaps[cpu]
 ```
 
 ### GPU Installation
 ```bash
-pip install --upgrade aot-biomaps[gpu]
+pip install --upgrade aot-biomaps
 pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-\$(python -c "import torch; print(torch.__version__)")+\$(python -c "import torch; print(''.join(torch.__version__.split('+')[1:]))").html
 ```
 **Note:** Ensure CUDA is available on your machine.
