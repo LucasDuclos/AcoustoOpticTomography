@@ -11,6 +11,9 @@ To check the latest version of the library, follow this link:  [AOT-biomaps on P
 
 ## Installation
 
+[Installation](./Doc/Installation.md)
+
+
 ### CPU Installation
 
 ```bash
