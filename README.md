@@ -5,7 +5,9 @@
 
 ## Overview
 AOT-BioMaps is a Python library designed for tomographic reconstruction in acousto-optic imaging. It supports both simulation and experimental data processing, offering a range of reconstruction algorithms (analytical, algebraic, and Bayesian) optimized for CPU and GPU environments.
-To check the latest version of the library, follow this link:  [AOT-biomaps on PyPI](https://pypi.org/project/AOT-biomaps/)
+To check the latest version of the library, go to the [PyPI page](https://pypi.org/project/AOT-biomaps/).
+
+For physical explanations, feel free to check the [explanation page](./Doc/Explanations.md).
 
 ---
 
