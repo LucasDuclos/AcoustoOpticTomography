@@ -1,4 +1,6 @@
 import warnings
+import torch
+
 # ACOUSTIC
 from .AOT_Acoustic._mainAcoustic import *
 from .AOT_Acoustic.AcousticEnums import *
@@ -38,7 +40,7 @@ from .AOT_Recon.AOT_PotentialFunctions.RelativeDifferences import *
 from .Config import config
 from .Settings import *
 
-__version__ = '2.9.29'
+__version__ = '2.9.50'
 __process__ = config.get_process()  # Initialise avec la valeur actuelle de config
 
 def initialize(process=None):
@@ -52,6 +54,31 @@ def initialize(process=None):
     Raises:
         ValueError: Si `process` n'est pas 'cpu' ou 'gpu'.
     """
+
+    ##### Setup to ensure libsz.so.2 is found by subprocesses #####
+
+    # Get the active Conda environment path
+    conda_prefix = os.environ.get('CONDA_PREFIX', '')
+    if not conda_prefix:
+        raise RuntimeError("CONDA_PREFIX not set. Activate your Conda environment first.")
+
+    # Path to libsz.so.2 in the active environment
+    libsz_path = os.path.join(conda_prefix, 'lib', 'libsz.so.2')
+
+    # Add the Conda library path to LD_LIBRARY_PATH to ensure the subprocess can find libsz.so.2
+    if 'LD_LIBRARY_PATH' in os.environ:
+        os.environ['LD_LIBRARY_PATH'] = f"{os.path.join(conda_prefix, 'lib')}:{os.environ['LD_LIBRARY_PATH']}"
+    else:
+        os.environ['LD_LIBRARY_PATH'] = os.path.join(conda_prefix, 'lib')
+
+    # Load the library globally to make it available for the current Python process
+    try:
+        ctypes.CDLL(libsz_path, mode=ctypes.RTLD_GLOBAL)
+    except OSError as e:
+        raise RuntimeError(f"Failed to load libsz.so.2 from {libsz_path}. Install it with: conda install -c conda-forge libaec")
+    
+    ###############################################################
+
     global __process__
 
     if process is not None:
@@ -63,7 +90,6 @@ def initialize(process=None):
     # Vérifications et warnings si nécessaire
     if __process__ == 'gpu':
         try:
-            import torch
             if not torch.cuda.is_available():
                 warnings.warn("GPU requested but PyTorch cannot access it. Falling back to CPU.", UserWarning)
                 config.set_process('cpu')
@@ -77,6 +103,27 @@ def initialize(process=None):
 
 # Initialisation automatique (silencieuse)
 initialize()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

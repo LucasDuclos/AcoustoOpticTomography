@@ -161,79 +161,83 @@ def calculate_envelope_squared(field, isGPU):
     """
     Calculate the analytic envelope of the acoustic field using either CPU or GPU with PyTorch.
     Parameters:
-    - field: Input acoustic field.
-    - isGPU (bool): If True, use GPU for computation. Otherwise, use CPU.
+        - field: Input acoustic field (numpy.ndarray or torch.Tensor).
+        - isGPU (bool): If True, use GPU for computation. Otherwise, use CPU.
     Returns:
-    - envelope (numpy.ndarray): The squared analytic envelope of the acoustic field.
+        - envelope (numpy.ndarray): The squared analytic envelope of the acoustic field.
     """
     try:
         if field is None:
             raise ValueError("Acoustic field is not generated. Please generate the field first.")
 
+        # Convert input to tensor (handle both numpy arrays and tensors)
+        if isinstance(field, np.ndarray):
+            acoustic_field = torch.from_numpy(field).to(dtype=torch.float32)
+        else:
+            acoustic_field = field.detach().clone().to(dtype=torch.float32)
+
+        # Handle GPU/CPU transfer
         if isGPU:
-            # Check GPU memory
-            if torch.cuda.is_available():
-                free_memory = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)
-                required_memory = field.nbytes
-                if free_memory < required_memory:
-                    print(f"GPU memory insufficient {required_memory / (1024 ** 2)} MB, Free GPU memory: {free_memory / (1024 ** 2)} MB, falling back to CPU.")
-                    isGPU = False
-                    acoustic_field = torch.tensor(field, dtype=torch.float32)
-                else:
-                    acoustic_field = torch.tensor(field, dtype=torch.float32).cuda()
-            else:
+            if not torch.cuda.is_available():
                 print("CUDA is not available, falling back to CPU.")
                 isGPU = False
-                acoustic_field = torch.tensor(field, dtype=torch.float32)
-        else:
-            acoustic_field = torch.tensor(field, dtype=torch.float32)
+            else:
+                # Check GPU memory
+                free_memory = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)
+                required_memory = acoustic_field.numel() * acoustic_field.element_size()
+                if free_memory < required_memory:
+                    print(f"GPU memory insufficient ({required_memory / (1024 ** 2):.2f} MB required, {free_memory / (1024 ** 2):.2f} MB free), falling back to CPU.")
+                    isGPU = False
+                else:
+                    acoustic_field = acoustic_field.cuda()
 
         if len(acoustic_field.shape) not in [3, 4]:
             raise ValueError("Input acoustic field must be a 3D or 4D array.")
 
-        def process_slice(slice_index, isGPU):
+        def process_slice(slice_index):
             """Calculate the envelope for a given slice of the acoustic field."""
             slice_data = acoustic_field[slice_index]
 
-            if isGPU:
-                # Use GPU_hilbert for GPU computation
-                envelope_slice = torch.abs(GPU_hilbert(slice_data, axis=0))**2
-            else:
-                # Move to CPU for CPU computation
-                slice_data = slice_data.cpu()
-                envelope_slice = torch.tensor(np.abs(CPU_hilbert(slice_data.numpy(), axis=0))**2, dtype=torch.float32)
-
             if len(acoustic_field.shape) == 3:
-                return envelope_slice
-            elif len(acoustic_field.shape) == 4:
-                envelope = torch.zeros_like(slice_data)
-                for y in range(slice_data.shape[1]):
-                    for z in range(slice_data.shape[2]):
-                        if isGPU:
-                            envelope[:, y, z] = torch.abs(GPU_hilbert(slice_data[:, y, z], axis=0))**2
-                        else:
-                            envelope[:, y, z] = torch.tensor(np.abs(CPU_hilbert(slice_data[:, y, z].cpu().numpy(), axis=0))**2, dtype=torch.float32)
-                return envelope
+                if isGPU:
+                    return torch.abs(GPU_hilbert(slice_data, axis=0))**2
+                else:
+                    return torch.from_numpy(np.abs(CPU_hilbert(slice_data.cpu().numpy(), axis=0))**2).to(dtype=torch.float32)
 
-        # Determine the number of slices to process in parallel
+            elif len(acoustic_field.shape) == 4:
+                if isGPU:
+                    return torch.stack([
+                        torch.abs(GPU_hilbert(slice_data[:, y, z], axis=0))**2
+                        for y in range(slice_data.shape[1])
+                        for z in range(slice_data.shape[2])
+                    ]).reshape(slice_data.shape[1], slice_data.shape[2], -1).permute(2, 0, 1)
+                else:
+                    envelope = torch.zeros_like(slice_data)
+                    for y in range(slice_data.shape[1]):
+                        for z in range(slice_data.shape[2]):
+                            envelope[:, y, z] = torch.from_numpy(
+                                np.abs(CPU_hilbert(slice_data[:, y, z].cpu().numpy(), axis=0))**2
+                            )
+                    return envelope
+
+        # Process slices
         num_slices = acoustic_field.shape[0]
         slice_indices = range(num_slices)
 
         if isGPU:
-            # Use GPU directly without multithreading
-            envelopes = [process_slice(slice_index, isGPU) for slice_index in slice_indices]
+            envelopes = [process_slice(i) for i in slice_indices]
         else:
-            # Use ThreadPoolExecutor to parallelize the computation on CPU
             with ThreadPoolExecutor() as executor:
-                envelopes = list(executor.map(lambda index: process_slice(index, isGPU), slice_indices))
+                envelopes = list(executor.map(process_slice, slice_indices))
 
-        # Combine the results into a single array
+        # Combine results
         envelope = torch.stack(envelopes, axis=0)
-        return envelope.numpy() if not isGPU else envelope.cpu().numpy()
+        return envelope.cpu().numpy() if isGPU else envelope.numpy()
 
     except Exception as e:
         print(f"Error in calculate_envelope_squared method: {e}")
         raise
+
 
 def getPattern(pathFile):
     """

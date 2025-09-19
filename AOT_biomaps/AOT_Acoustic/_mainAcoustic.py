@@ -1,7 +1,7 @@
 import AOT_biomaps.Settings
 from AOT_biomaps.Config import config
 from AOT_biomaps.AOT_Acoustic.AcousticTools import calculate_envelope_squared, CPU_hilbert, loadmat
-
+from IPython.display import HTML
 import h5py
 import os
 import numpy as np
@@ -381,7 +381,7 @@ class AcousticField(ABC):
                 ax.set_title(f"t = {frame / self.params['f_AQ'] * 1000:.2f} ms", fontsize=10)
                 return [im]  # Return a list of artists that were modified
 
-            interval = desired_duration_ms / self.AcousticFields.shape[0]
+            interval = desired_duration_ms / self.field.shape[0]
 
             # Create animation
             ani = animation.FuncAnimation(
@@ -404,11 +404,30 @@ class AcousticField(ABC):
 
             plt.close(fig)
 
-            return ani
+            return HTML(ani.to_jshtml())
         except Exception as e:
             print(f"Error creating animation: {e}")
             return None
 
+    def show(self):
+        """
+        Display the string representation of the AcousticField object.
+        """
+        try:
+            if self.field is None:  
+                raise ValueError("Field data is not available. Please generate or load the field first.")
+            if self.field.min() < 0:
+                raise ValueError("Calculation of the envelope has not been performed. Please generate the envelope first.")
+            plt.figure(figsize=(10, 6))
+            plt.imshow(self.field.max(axis=0), extent=(self.params['Xrange'][0]*1000, self.params['Xrange'][-1]*1000, self.params['Zrange'][-1]*1000, self.params['Zrange'][0]*1000), aspect='equal', cmap='jet', vmin=0, vmax=self.field.max()*0.7)
+            plt.colorbar(label='Envelope Amplitude')
+            plt.title('Maximum Intensity Projection of Acoustic Field Envelope')
+            plt.xlabel('X (mm)')
+            plt.ylabel('Z (mm)')
+            plt.show()
+        except Exception as e:
+            print(f"Error in show method: {e}")
+            raise
 
     ## PRIVATE METHODS ##
 

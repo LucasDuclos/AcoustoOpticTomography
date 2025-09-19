@@ -20,7 +20,7 @@ from math import ceil
 class StructuredWave(AcousticField):
 
     class PatternParams:
-        def __init__(self, space_0, space_1, move_head_0_2tail, move_tail_1_2head):
+        def __init__(self, space_0, space_1, move_head_0_2tail, move_tail_1_2head, len_hex):
             """
             Initialize the PatternParams object with given parameters.
 
@@ -35,11 +35,11 @@ class StructuredWave(AcousticField):
             self.move_head_0_2tail = move_head_0_2tail
             self.move_tail_1_2head = move_tail_1_2head
             self.activeList = None
-            self.len_hex = None
+            self.len_hex = len_hex
 
         def __str__(self):
             """Return a string representation of the PatternParams object."""
-            pass
+            return f"PatternParams(space_0={self.space_0}, space_1={self.space_1}, move_head_0_2tail={self.move_head_0_2tail}, move_tail_1_2head={self.move_tail_1_2head}, len_hex={self.len_hex})"
 
         def generate_pattern(self):
             """
@@ -119,11 +119,11 @@ class StructuredWave(AcousticField):
             self.waveType = WaveType.StructuredWave
             self.kgrid.setTime(int(self.kgrid.Nt*1.5),self.kgrid.dt) # Extend the time grid to allow for delays
             if space_0 is not None and space_1 is not None and move_head_0_2tail is not None and move_tail_1_2head is not None and angle_deg is not None:
-                self.pattern = self.PatternParams(space_0, space_1, move_head_0_2tail, move_tail_1_2head)
+                self.pattern = self.PatternParams(space_0, space_1, move_head_0_2tail, move_tail_1_2head, self.params['num_elements'] // 4)
                 self.angle = angle_deg
                 self.pattern.activeList = self.pattern.generate_pattern()
             elif fileName is not None:
-                self.pattern = self.PatternParams(0,0,0,0)
+                self.pattern = self.PatternParams(0,0,0,0,self.params['num_elements'] // 4)
                 self.pattern.space_0, self.pattern.space_1 = detect_space_0_and_space_1(fileName.split('_')[0])
                 self.angle = getAngle(fileName)
                 self.pattern.activeList = fileName.split('_')[0]
@@ -341,10 +341,9 @@ class StructuredWave(AcousticField):
         try:
             active_list = np.array([int(char) for char in ''.join(f"{int(self.pattern.activeList[i:i+2], 16):08b}" for i in range(0, len(self.pattern.activeList), 2))])
 
-            element_width_meters = self.params['element_width']
             dx = self.params['dx']
-            if dx >=  element_width_meters:
-                dx = element_width_meters / 2 # Ensure dx is at least twice the element width
+            if dx >=  self.params['element_width']:
+                dx = self.params['element_width'] / 2 # Ensure dx is at least twice the element width
                 Nx = int(round((self.params['Xrange'][1] - self.params['Xrange'][0]) / dx))
                 Nz = int(round((self.params['Zrange'][1] - self.params['Zrange'][0]) / dx))
             else:
@@ -362,7 +361,7 @@ class StructuredWave(AcousticField):
             kgrid = kWaveGrid([Nx, Nz], [dx, dx])
             kgrid.setTime(Nt=self.kgrid.Nt, dt=1 / self.params['f_AQ'])
 
-            element_width_grid_points = int(round(element_width_meters / dx))
+            element_width_grid_points = int(round(self.params['element_width'] / dx))
 
             # Calculate the spacing between elements
             total_elements_width = self.params['num_elements'] * element_width_grid_points
@@ -373,14 +372,11 @@ class StructuredWave(AcousticField):
 
             activeListGrid = np.zeros(total_elements_width, dtype=int)
 
-            # Place active transducers in the mask and count active elements
-            active_indices = []
             current_position = center_index - (total_elements_width + (self.params['num_elements'] - 1) * spacing) // 2
             for i in range(self.params['num_elements']):
                 if active_list[i] == 1:
                     x_pos = current_position
                     source.p_mask[x_pos:x_pos + element_width_grid_points, 0] = 1
-                    active_indices.append(i)
                     start_idx = i * element_width_grid_points
                     end_idx = start_idx + element_width_grid_points
                     activeListGrid[start_idx:end_idx] = 1
@@ -438,6 +434,8 @@ class StructuredWave(AcousticField):
             
             if factorT != 1 or factorX != 1 or factorZ != 1:
                 return reshape_field(data, [factorT, factorX, factorZ])
+            else:
+                return data
         except Exception as e:
             raise RuntimeError(f"Error generating 2D acoustic field: {e}")
         
@@ -480,14 +478,11 @@ class StructuredWave(AcousticField):
 
             activeListGrid = np.zeros(total_elements_width, dtype=int)
 
-            # Place active transducers in the mask and count active elements
-            active_indices = []
             current_position = center_index - (total_elements_width + (self.params['num_elements'] - 1) * spacing) // 2
             for i in range(self.params['num_elements']):
                 if active_list[i] == 1:
                     x_pos = current_position
                     source.p_mask[x_pos:x_pos + element_width_grid_points,self.params['Ny'] // 2, 0] = 1
-                    active_indices.append(i)
                     start_idx = i * element_width_grid_points
                     end_idx = start_idx + element_width_grid_points
                     activeListGrid[start_idx:end_idx] = 1

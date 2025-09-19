@@ -3,7 +3,7 @@ from .AcousticEnums import WaveType
 
 
 class PlaneWave(StructuredWave):
-    def __init__(self, angle, space_0 = 0, space_1 = 192, move_head_0_2tail = 0, move_tail_1_2head = 0, **kwargs):
+    def __init__(self, angle_deg, **kwargs):
         """
         Initialize the PlaneWave object.
 
@@ -12,7 +12,7 @@ class PlaneWave(StructuredWave):
             **kwargs: Additional keyword arguments.
         """
         try:
-            super().__init__(angle, space_0, space_1, move_head_0_2tail, move_tail_1_2head, **kwargs)
+            super().__init__(angle_deg=angle_deg, fileName=None, space_0=0, space_1=192, move_head_0_2tail=0, move_tail_1_2head=0, **kwargs)
             self.waveType = WaveType.PlaneWave
         except Exception as e:
             print(f"Error initializing PlaneWave: {e}")
