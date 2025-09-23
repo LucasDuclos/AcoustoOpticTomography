@@ -1,20 +1,11 @@
 from AOT_biomaps.Config import config
 from ._mainAcoustic import AcousticField
 from .AcousticEnums import WaveType
-from .AcousticTools import next_power_of_2, reshape_field, detect_space_0_and_space_1, getAngle
+from .AcousticTools import detect_space_0_and_space_1, getAngle
 
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from kwave.kgrid import kWaveGrid
-from kwave.ksource import kSource
-from kwave.ksensor import kSensor
-from kwave.kspaceFirstOrder3D import kspaceFirstOrder3D
-from kwave.kspaceFirstOrder2D import kspaceFirstOrder2D
-from kwave.options.simulation_options import SimulationOptions
-from kwave.options.simulation_execution_options import SimulationExecutionOptions
-from tempfile import gettempdir
-from math import ceil
 
 
 class StructuredWave(AcousticField):
@@ -327,222 +318,75 @@ class StructuredWave(AcousticField):
         except Exception as e:
             print(f"Error saving HDR/IMG files: {e}")
     
-    def _generate_2Dacoustic_field_KWAVE(self, isGPU=True if config.get_process() == 'gpu' else False, show_log=True):
+    def _SetUpSource(self, source, Nx, dx, factorT):
         """
-        Generate a 2D acoustic field using k-Wave.
-
-        Args:
-            isGPU (bool): Flag indicating whether to use GPU for simulation.
-            show_log (bool): Flag indicating whether to show simulation logs.
-
-        Returns:
-            ndarray: Simulated acoustic field data.
+        Set up source for both 2D and 3D structured waves.
         """
-        try:
-            active_list = np.array([int(char) for char in ''.join(f"{int(self.pattern.activeList[i:i+2], 16):08b}" for i in range(0, len(self.pattern.activeList), 2))])
+        active_list = np.array([int(char) for char in ''.join(f"{int(self.pattern.activeList[i:i+2], 16):08b}" for i in range(0, len(self.pattern.activeList), 2))])
+        element_width_grid_points = int(round(self.params['element_width'] / dx))
 
-            dx = self.params['dx']
-            if dx >=  self.params['element_width']:
-                dx = self.params['element_width'] / 2 # Ensure dx is at least twice the element width
-                Nx = int(round((self.params['Xrange'][1] - self.params['Xrange'][0]) / dx))
-                Nz = int(round((self.params['Zrange'][1] - self.params['Zrange'][0]) / dx))
-            else:
-                Nx = self.params['Nx']
-                Nz = self.params['Nz']
-
-            factorT = ceil(self.params['f_AQ'] / self.params['f_saving'])
-            factorX = ceil(Nx / self.params['Nx'])
-            factorZ = ceil(Nz / self.params['Nz'])
-            
-            # Probe mask: aligned in the XZ plane
-            source = kSource()
-            source.p_mask = np.zeros((Nx, Nz))
-
-            kgrid = kWaveGrid([Nx, Nz], [dx, dx])
-            kgrid.setTime(Nt=self.kgrid.Nt, dt=1 / self.params['f_AQ'])
-
+        if source.p_mask.ndim == 2:
             element_width_grid_points = int(round(self.params['element_width'] / dx))
-
-            # Calculate the spacing between elements
             total_elements_width = self.params['num_elements'] * element_width_grid_points
-            remaining_space = Nx - total_elements_width
-            spacing = remaining_space // (self.params['num_elements'] + 1)
 
+            # Vérifier que les éléments rentrent dans le grid
+            if total_elements_width > Nx:
+                raise ValueError(f"La largeur totale des éléments ({total_elements_width}) dépasse Nx ({Nx}).")
+
+            remaining_space = Nx - total_elements_width
+            if remaining_space < 0:
+                raise ValueError(f"Pas assez d'espace pour placer les éléments: total_elements_width ({total_elements_width}) > Nx ({Nx}).")
+
+            spacing = remaining_space // (self.params['num_elements'] + 1)
             center_index = np.argmin(np.abs(np.linspace(self.params['Xrange'][0], self.params['Xrange'][1], Nx)))
 
             activeListGrid = np.zeros(total_elements_width, dtype=int)
-
             current_position = center_index - (total_elements_width + (self.params['num_elements'] - 1) * spacing) // 2
+
+            # Placement des éléments actifs
             for i in range(self.params['num_elements']):
                 if active_list[i] == 1:
-                    x_pos = current_position
-                    source.p_mask[x_pos:x_pos + element_width_grid_points, 0] = 1
+                    x_pos = max(0, current_position)  # Éviter les indices négatifs
+                    x_end = x_pos + element_width_grid_points
+                    if x_end > Nx:
+                        x_end = Nx  # Limiter à Nx
+                    source.p_mask[x_pos:x_end,0] = 1
+
                     start_idx = i * element_width_grid_points
                     end_idx = start_idx + element_width_grid_points
+                    if end_idx > total_elements_width:
+                        end_idx = total_elements_width
                     activeListGrid[start_idx:end_idx] = 1
-                current_position += element_width_grid_points + spacing
-            source.p_mask = source.p_mask.astype(int)
 
+                current_position += element_width_grid_points + spacing
+
+            # Chargement des signaux retardés
             if factorT != 1:
                 delayedSignal = self._apply_delay(dx=dx)
             else:
                 delayedSignal = self.delayedSignal
-                    
-            # Ensure source.p matches the number of active elements
-            source.p = delayedSignal[activeListGrid == 1, :]
 
-            # Define sensors to observe acoustic fields
-            sensor = kSensor()
-            sensor.mask = np.ones((Nx, Nz))
+            # Vérification de la taille de delayedSignal
+            num_active_elements = np.sum(activeListGrid == 1)
+            if delayedSignal.shape[0] < num_active_elements:
+                raise ValueError(f"delayedSignal a une taille insuffisante: {delayedSignal.shape[0]} < {num_active_elements}.")
 
-            # Calculate the next power of 2 for the total grid size including PML
-            total_size_x = next_power_of_2(Nx)  # Assuming initial PML size is 20
-            total_size_z = next_power_of_2(Nz)
+            # Assigner source.p
+            source.p =  float(self.params['voltage']) * float(self.params['sensitivity']) * delayedSignal[activeListGrid == 1, :]
 
-            # Calculate the required PML size
-            pml_x_size = (total_size_x - Nx)//2
-            pml_z_size = (total_size_z - Nz)//2
 
-            # Simulation options with adjusted PML sizes
+        elif source.p_mask.ndim == 3:
+            # --- 3D ---
+            center_index_x = Nx // 2
+            center_index_y = self.params['Ny'] // 2
+            spacing = (Nx - self.params['num_elements'] * element_width_grid_points) // (self.params['num_elements'] + 1)
+            current_position = center_index_x - (self.params['num_elements'] * element_width_grid_points + (self.params['num_elements'] - 1) * spacing) // 2
 
-            simulation_options = SimulationOptions(
-                pml_inside=False,
-                pml_size=[pml_x_size,pml_z_size],
-                use_sg=False,
-                save_to_disk=True,
-                input_filename=os.path.join(gettempdir(), "KwaveIN.h5"),
-                output_filename=os.path.join(gettempdir(), "KwaveOUT.h5")
-            )
-
-            execution_options = SimulationExecutionOptions(
-                is_gpu_simulation=config.get_process() == 'gpu' and isGPU,
-                device_num=config.bestGPU,
-                show_sim_log=show_log
-            )
-
-            # Run simulation with padded grid
-            sensor_data = kspaceFirstOrder2D(
-                kgrid=kgrid,
-                medium=self.medium,
-                source=source,
-                sensor=sensor,
-                simulation_options=simulation_options,
-                execution_options=execution_options,
-            )
-
-            data = sensor_data['p'].reshape(kgrid.Nt, Nz, Nx)
-            
-            if factorT != 1 or factorX != 1 or factorZ != 1:
-                return reshape_field(data, [factorT, factorX, factorZ])
-            else:
-                return data
-        except Exception as e:
-            raise RuntimeError(f"Error generating 2D acoustic field: {e}")
-        
-    def _generate_3Dacoustic_field_KWAVE(self, isGPU=True if config.get_process() == 'gpu' else False, show_log = True):
-        try:
-            active_list = np.array([int(char) for char in ''.join(f"{int(self.pattern.activeList[i:i+2], 16):08b}" for i in range(0, len(self.pattern.activeList), 2))])
-
-            element_width_meters = self.params['element_width']
-            dx = self.params['dx']
-            if dx >=  element_width_meters:
-                dx = element_width_meters / 2 # Ensure dx is at least twice the element width
-                Nx = int(round((self.params['Xrange'][1] - self.params['Xrange'][0]) / dx))
-                Ny = int(round((self.params['Yrange'][1] - self.params['Yrange'][0]) / dx))
-                Nz = int(round((self.params['Zrange'][1] - self.params['Zrange'][0]) / dx))
-            else:
-                Nx = self.params['Nx']
-                Ny = self.params['Ny']  
-                Nz = self.params['Nz']
-
-            factorT = ceil(self.params['f_AQ'] / self.params['f_saving'])
-            factorX = ceil(Nx / self.params['Nx'])
-            factorY = ceil(Ny / self.params['Ny'])
-            factorZ = ceil(Nz / self.params['Nz'])
-            
-            # Probe mask: aligned in the XZ plane
-            source = kSource()
-            source.p_mask = np.zeros((Nx, Ny, Nz))
-
-            kgrid = kWaveGrid([Nx, Ny, Nz], [dx, dx, dx])
-            kgrid.setTime(Nt=self.kgrid.Nt, dt=1 / self.params['f_AQ'])
-
-            element_width_grid_points = int(round(element_width_meters / dx))
-
-            # Calculate the spacing between elements
-            total_elements_width = self.params['num_elements'] * element_width_grid_points
-            remaining_space = Nx - total_elements_width
-            spacing = remaining_space // (self.params['num_elements'] + 1)
-
-            center_index = np.argmin(np.abs(np.linspace(self.params['Xrange'][0], self.params['Xrange'][1], Nx)))
-
-            activeListGrid = np.zeros(total_elements_width, dtype=int)
-
-            current_position = center_index - (total_elements_width + (self.params['num_elements'] - 1) * spacing) // 2
             for i in range(self.params['num_elements']):
                 if active_list[i] == 1:
                     x_pos = current_position
-                    source.p_mask[x_pos:x_pos + element_width_grid_points,self.params['Ny'] // 2, 0] = 1
-                    start_idx = i * element_width_grid_points
-                    end_idx = start_idx + element_width_grid_points
-                    activeListGrid[start_idx:end_idx] = 1
+                    source.p_mask[x_pos:x_pos + element_width_grid_points, center_index_y, 0] = 1
                 current_position += element_width_grid_points + spacing
-            source.p_mask = source.p_mask.astype(int)
 
-            if factorT != 1:
-                delayedSignal = self._apply_delay(dx=dx)
-            else:
-                delayedSignal = self.delayedSignal
-                    
-            # Ensure source.p matches the number of active elements
-            source.p = delayedSignal[activeListGrid == 1, :]
-
-            # Define sensors to observe acoustic fields
-            sensor = kSensor()
-            sensor.mask = np.ones((Nx, Ny, Nz))
-
-            # Calculate the next power of 2 for the total grid size including PML
-            total_size_x = next_power_of_2(Nx) 
-            total_size_y = next_power_of_2(Ny)
-            total_size_z = next_power_of_2(Nz)
-            
-
-            # Calculate the required PML size
-            pml_x_size = (total_size_x - Nx)//2
-            pml_y_size = (total_size_y - Ny)//2
-            pml_z_size = (total_size_z - Nz)//2
-
-            # Simulation options with adjusted PML sizes
-
-            simulation_options = SimulationOptions(
-                pml_inside=False,
-                pml_size=[pml_x_size,pml_y_size, pml_z_size],
-                use_sg=False,
-                save_to_disk=True,
-                input_filename=os.path.join(gettempdir(), "KwaveIN.h5"),
-                output_filename=os.path.join(gettempdir(), "KwaveOUT.h5")
-            )
-
-            execution_options = SimulationExecutionOptions(
-                is_gpu_simulation=config.get_process() == 'gpu' and isGPU,
-                device_num=config.bestGPU,
-                show_sim_log=show_log
-            )
-
-            # Run simulation with padded grid
-            sensor_data = kspaceFirstOrder3D(
-                kgrid=kgrid,
-                medium=self.medium,
-                source=source,
-                sensor=sensor,
-                simulation_options=simulation_options,
-                execution_options=execution_options,
-            )
-
-            data = sensor_data['p'].reshape(kgrid.Nt, Nz, Ny, Nx)
-            
-            if factorT != 1 or factorX != 1 or factorZ != 1:
-                return reshape_field(data, [factorT, factorZ, factorY, factorX])
-        except Exception as e:
-            raise RuntimeError(f"Error generating 2D acoustic field: {e}")
-    
+            delayed_signals = self._apply_delay()
+            source.p =  float(self.params['voltage']) * float(self.params['sensitivity']) * delayed_signals.T

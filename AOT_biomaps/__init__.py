@@ -1,6 +1,48 @@
+import os
 import warnings
 import torch
+import ctypes
+import platform
 
+# --- Configuration de l'environnement pour libsz.so.2 ---
+def _configure_libsz_environment():
+    """Configure l'environnement pour trouver libsz.so.2."""
+    conda_prefix = os.environ.get('CONDA_PREFIX', '')
+    if not conda_prefix:
+        raise RuntimeError("CONDA_PREFIX not set. Activate your Conda environment first.")
+
+    if platform.system() == 'Windows':
+        libsz_name = 'libsz.dll'
+        env_var = 'PATH'
+        lib_path = os.path.join(conda_prefix, 'Library', 'bin')
+    else:  # Linux/Mac
+        libsz_name = 'libsz.so.2'
+        env_var = 'LD_LIBRARY_PATH'
+        lib_path = os.path.join(conda_prefix, 'lib')
+
+    libsz_path = os.path.join(lib_path, libsz_name)
+    if not os.path.exists(libsz_path):
+        raise RuntimeError(
+            f"{libsz_name} not found at {libsz_path}. "
+            f"Install it with: conda install -c conda-forge libaec"
+        )
+
+    # Charge la bibliothèque pour le processus courant
+    try:
+        ctypes.CDLL(libsz_path, mode=ctypes.RTLD_GLOBAL)
+    except OSError as e:
+        raise RuntimeError(f"Failed to load {libsz_name}: {e}")
+
+    # Met à jour LD_LIBRARY_PATH pour le processus courant ET tous les sous-processus
+    if env_var in os.environ:
+        os.environ[env_var] = f"{lib_path}{os.pathsep}{os.environ[env_var]}"
+    else:
+        os.environ[env_var] = lib_path
+
+
+_configure_libsz_environment()
+
+# --- Imports normaux ---
 # ACOUSTIC
 from .AOT_Acoustic._mainAcoustic import *
 from .AOT_Acoustic.AcousticEnums import *
@@ -40,92 +82,33 @@ from .AOT_Recon.AOT_PotentialFunctions.RelativeDifferences import *
 from .Config import config
 from .Settings import *
 
-__version__ = '2.9.50'
-__process__ = config.get_process()  # Initialise avec la valeur actuelle de config
+__version__ = '2.9.69'
+__process__ = config.get_process()
 
 def initialize(process=None):
     """
     Initialise ou modifie le backend de calcul (GPU/CPU).
-
     Args:
         process (str, optional): 'gpu' pour forcer le GPU, 'cpu' pour forcer le CPU.
-                                 Si None, utilise la configuration actuelle.
-
     Raises:
         ValueError: Si `process` n'est pas 'cpu' ou 'gpu'.
     """
-
-    ##### Setup to ensure libsz.so.2 is found by subprocesses #####
-
-    # Get the active Conda environment path
-    conda_prefix = os.environ.get('CONDA_PREFIX', '')
-    if not conda_prefix:
-        raise RuntimeError("CONDA_PREFIX not set. Activate your Conda environment first.")
-
-    # Path to libsz.so.2 in the active environment
-    libsz_path = os.path.join(conda_prefix, 'lib', 'libsz.so.2')
-
-    # Add the Conda library path to LD_LIBRARY_PATH to ensure the subprocess can find libsz.so.2
-    if 'LD_LIBRARY_PATH' in os.environ:
-        os.environ['LD_LIBRARY_PATH'] = f"{os.path.join(conda_prefix, 'lib')}:{os.environ['LD_LIBRARY_PATH']}"
-    else:
-        os.environ['LD_LIBRARY_PATH'] = os.path.join(conda_prefix, 'lib')
-
-    # Load the library globally to make it available for the current Python process
-    try:
-        ctypes.CDLL(libsz_path, mode=ctypes.RTLD_GLOBAL)
-    except OSError as e:
-        raise RuntimeError(f"Failed to load libsz.so.2 from {libsz_path}. Install it with: conda install -c conda-forge libaec")
-    
-    ###############################################################
-
     global __process__
-
     if process is not None:
         if process not in ['cpu', 'gpu']:
             raise ValueError("process must be 'cpu' or 'gpu'")
         config.set_process(process)
         __process__ = process
 
-    # Vérifications et warnings si nécessaire
     if __process__ == 'gpu':
         try:
             if not torch.cuda.is_available():
                 warnings.warn("GPU requested but PyTorch cannot access it. Falling back to CPU.", UserWarning)
                 config.set_process('cpu')
                 __process__ = 'cpu'
-        except ImportError:
-            warnings.warn("PyTorch not installed. Falling back to CPU.", UserWarning)
+        except Exception as e:
+            warnings.warn(f"PyTorch GPU check failed: {e}. Falling back to CPU.", UserWarning)
             config.set_process('cpu')
             __process__ = 'cpu'
 
     return __process__
-
-# Initialisation automatique (silencieuse)
-initialize()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

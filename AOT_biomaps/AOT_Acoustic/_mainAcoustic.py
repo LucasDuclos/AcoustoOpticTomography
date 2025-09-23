@@ -1,18 +1,29 @@
 import AOT_biomaps.Settings
 from AOT_biomaps.Config import config
 from AOT_biomaps.AOT_Acoustic.AcousticTools import calculate_envelope_squared, CPU_hilbert, loadmat
+from .AcousticTools import next_power_of_2, reshape_field
+from .AcousticEnums import TypeSim, Dim, FormatSave, WaveType
+
 from IPython.display import HTML
 import h5py
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from math import ceil
 from kwave.kgrid import kWaveGrid
 from kwave.kmedium import kWaveMedium
 from kwave.utils.signals import tone_burst
+from kwave.ksource import kSource
+from kwave.ksensor import kSensor
+from kwave.kspaceFirstOrder3D import kspaceFirstOrder3D
+from kwave.kspaceFirstOrder2D import kspaceFirstOrder2D
+from kwave.options.simulation_options import SimulationOptions
+from kwave.options.simulation_execution_options import SimulationExecutionOptions
+
+from tempfile import gettempdir
+from math import ceil
 from abc import ABC, abstractmethod
-from .AcousticEnums import TypeSim, Dim, FormatSave, WaveType
+
 
 
 ####### ABSTRACT CLASS #######
@@ -69,6 +80,8 @@ class AcousticField(ABC):
 
             self.params = {
                 'c0': params.acoustic['c0'],
+                'voltage': params.acoustic['voltage'],
+                'sensitivity': params.acoustic['sensitivity'],
                 'Foc': params.acoustic['Foc'],
                 'N_piezoFocal': params.acoustic['N_piezoFocal'],
                 'f_US': int(float(params.acoustic['f_US'])),
@@ -217,12 +230,12 @@ class AcousticField(ABC):
             elif self.params['typeSim'] == TypeSim.KWAVE.value:
                 if self.params["dim"] == Dim.D2.value:
                     try:
-                        field = self._generate_2Dacoustic_field_KWAVE(isGpu, show_log)
+                        field = self._generate_acoustic_field_KWAVE_2D(isGpu, show_log)
                     except Exception as e:
                         raise RuntimeError(f"Failed to generate 2D acoustic field: {e}")
                     self.field = calculate_envelope_squared(field, isGpu)
                 elif self.params["dim"] == Dim.D3.value:
-                    field = self._generate_3Dacoustic_field_KWAVE(isGpu, show_log)
+                    field = self._generate_acoustic_field_KWAVE_3D(isGpu, show_log)
                     self.field = calculate_envelope_squared(field, isGpu)
             elif self.params['typeSim'] == TypeSim.HYDRO.value:
                 raise ValueError("Cannot generate field for Hydrophone simulation, load exciting acquisitions.")
@@ -409,18 +422,49 @@ class AcousticField(ABC):
             print(f"Error creating animation: {e}")
             return None
 
-    def show(self):
+    def show(self, use_dB=False, reference=1e6,Vmax=None):
         """
-        Display the string representation of the AcousticField object.
+        Display the maximum intensity projection of the acoustic field envelope.
+
+        Parameters:
+        - use_dB (bool): If True, display in dB relative to the reference pressure.
+        - reference (float): Reference pressure in Pa for dB calculation (default: 1 MPa).
         """
         try:
-            if self.field is None:  
+            if self.field is None:
                 raise ValueError("Field data is not available. Please generate or load the field first.")
             if self.field.min() < 0:
                 raise ValueError("Calculation of the envelope has not been performed. Please generate the envelope first.")
+
+            # Convertir l'enveloppe au carré en amplitude (Pa) en prenant la racine carrée
+            envelope_amplitude = np.sqrt(self.field)
+
+            if use_dB:
+                # Convertir en dB re reference (Pa)
+                envelope_dB = 20 * np.log10(envelope_amplitude / reference)
+                data_to_show = envelope_dB
+                unit_label = f'dB re {reference / 1e6} MPa'
+                if Vmax is not None:
+                    vmax = Vmax
+                else:
+                    vmax = 0
+
+            else:
+                # Convertir en MPa
+                envelope_amplitude_mpa = envelope_amplitude / 1e6
+                data_to_show = envelope_amplitude_mpa
+                unit_label = 'MPa'
+                if Vmax is not None:
+                    vmax = Vmax
+                else:
+                    vmax = 0.85*np.max(envelope_amplitude_mpa)
+
             plt.figure(figsize=(10, 6))
-            plt.imshow(self.field.max(axis=0), extent=(self.params['Xrange'][0]*1000, self.params['Xrange'][-1]*1000, self.params['Zrange'][-1]*1000, self.params['Zrange'][0]*1000), aspect='equal', cmap='jet', vmin=0, vmax=self.field.max()*0.7)
-            plt.colorbar(label='Envelope Amplitude')
+            plt.imshow(data_to_show.max(axis=0),
+                    extent=(self.params['Xrange'][0] * 1000, self.params['Xrange'][1] * 1000,
+                            self.params['Zrange'][1] * 1000, self.params['Zrange'][0] * 1000),
+                    aspect='equal', cmap='jet', vmin=0, vmax=vmax)
+            plt.colorbar(label=f'Envelope Amplitude ({unit_label})')
             plt.title('Maximum Intensity Projection of Acoustic Field Envelope')
             plt.xlabel('X (mm)')
             plt.ylabel('Z (mm)')
@@ -428,6 +472,7 @@ class AcousticField(ABC):
         except Exception as e:
             print(f"Error in show method: {e}")
             raise
+
 
     ## PRIVATE METHODS ##
 
@@ -449,19 +494,156 @@ class AcousticField(ABC):
             print(f"Error in __generate_burst_signal method: {e}")
             raise
 
-    @abstractmethod
-    def _generate_2Dacoustic_field_KWAVE(self, isGpu):
+    def _generate_acoustic_field_KWAVE_2D(self, isGPU=True if config.get_process() == 'gpu' else False, show_log=True):
         """
-        Generate a 2D acoustic field using k-Wave simulation.
-        Must be implemented in subclasses.
+        Base function to generate a 2D acoustic field using k-Wave.
+        Handles common setup, simulation, and post-processing.
         """
-        pass
+        try:
+            # --- 1. Grid setup ---
+            dx = self.params['dx']
+            if dx >= self.params['element_width']:
+                dx = self.params['element_width'] / 2
+                Nx = int(round((self.params['Xrange'][1] - self.params['Xrange'][0]) / dx))
+                Nz = int(round((self.params['Zrange'][1] - self.params['Zrange'][0]) / dx))
+            else:
+                Nx = self.params['Nx']
+                Nz = self.params['Nz']
 
-    @abstractmethod
-    def _generate_3Dacoustic_field_KWAVE(self, isGpu):
+            # --- 2. Time and space factors ---
+            factorT = int(np.ceil(self.params['f_AQ'] / self.params['f_saving']))
+            factorX = int(np.ceil(Nx / self.params['Nx']))
+            factorZ = int(np.ceil(Nz / self.params['Nz']))
+
+            # --- 3. Grid and source initialization ---
+            kgrid = kWaveGrid([Nx, Nz], [dx, dx])
+            kgrid.setTime(self.kgrid.Nt, 1 / self.params['f_AQ'])
+
+            print(f"Grid size: Nx={Nx}, Nz={Nz}, dx={dx*1000:.3f} mm, dt={kgrid.dt*1e9:.3f} ns, Nt={kgrid.Nt}, f_AQ={self.params['f_AQ']/1e6:.2f} MHz")
+
+            source = kSource()
+            source.p_mask = np.zeros((Nx, Nz))
+
+            # --- 4. Sensor setup ---
+            sensor = kSensor()
+            sensor.mask = np.ones((Nx, Nz))
+
+            # --- 5. PML setup ---
+            total_size_x = next_power_of_2(Nx)
+            total_size_z = next_power_of_2(Nz)
+            pml_x_size = (total_size_x - Nx) // 2
+            pml_z_size = (total_size_z - Nz) // 2
+
+            # --- 6. Simulation options ---
+            simulation_options = SimulationOptions(
+                pml_inside=False,
+                pml_size=[pml_x_size, pml_z_size],
+                use_sg=False,
+                save_to_disk=True,
+                input_filename=os.path.join(gettempdir(), "KwaveIN.h5"),
+                output_filename=os.path.join(gettempdir(), "KwaveOUT.h5")
+            )
+
+            execution_options = SimulationExecutionOptions(
+                is_gpu_simulation=config.get_process() == 'gpu' and isGPU,
+                device_num=config.bestGPU,
+                show_sim_log=show_log
+            )
+
+            # --- 7. Call specialized function to set up source.p_mask and source.p ---
+            self._SetUpSource(source, Nx, dx, factorT)
+
+            # --- 8. Run simulation ---
+            sensor_data = kspaceFirstOrder2D(
+                kgrid=kgrid,
+                medium=self.medium,
+                source=source,
+                sensor=sensor,
+                simulation_options=simulation_options,
+                execution_options=execution_options,
+            )
+
+            # --- 9. Post-process results ---
+            data = sensor_data['p'].reshape(kgrid.Nt, Nz, Nx)
+            if factorT != 1 or factorX != 1 or factorZ != 1:
+                return reshape_field(data, [factorT, factorX, factorZ])
+            else:
+                return data
+            
+        except Exception as e:
+            print(f"Error generating 2D acoustic field: {e}")
+            return None
+    
+    def _generate_acoustic_field_KWAVE_3D(self, isGPU=True, show_log=True):
         """
-        Generate a 3D acoustic field using k-Wave simulation.
-        Must be implemented in subclasses.
+        Generate a 3D acoustic field using k-Wave.
+        """
+        try:
+            # --- 1. Grid setup (common) ---
+            dx = self.params['dx']
+            if dx >= self.params['element_width']:
+                dx = self.params['element_width'] / 2
+                Nx = int(round((self.params['Xrange'][1] - self.params['Xrange'][0]) / dx))
+                Nz = int(round((self.params['Zrange'][1] - self.params['Zrange'][0]) / dx))
+            else:
+                Nx = self.params['Nx']
+                Nz = self.params['Nz']
+
+            # --- 2. Time and space factors (common) ---
+            factorT = int(np.ceil(self.params['f_AQ'] / self.params['f_saving']))
+            factorX = int(np.ceil(Nx / self.params['Nx']))
+            factorZ = int(np.ceil(Nz / self.params['Nz']))
+
+            kgrid = kWaveGrid([Nx, Nz], [dx, dx])
+            kgrid.setTime(self.kgrid.Nt, 1 / self.params['f_AQ'])
+
+            source = kSource()
+            source.p_mask = np.zeros((self.params['Nx'], self.params['Ny'], self.params['Nz']))
+
+            # Appel à la méthode spécialisée
+            self._SetUpSource(source, self.params['Nx'], self.params['dx'], factorT)  # factorT=1 pour simplifier
+
+            sensor = kSensor()
+            sensor.mask = np.ones((self.params['Nx'], self.params['Ny'], self.params['Nz']))
+
+            simulation_options = SimulationOptions(
+                pml_inside=False,
+                pml_auto=True,
+                use_sg=False,
+                save_to_disk=True,
+                input_filename=os.path.join(gettempdir(), "KwaveIN.h5"),
+                output_filename=os.path.join(gettempdir(), "KwaveOUT.h5")
+            )
+
+            execution_options = SimulationExecutionOptions(
+                is_gpu_simulation=config.get_process() == 'gpu' and isGPU,
+                device_num=config.bestGPU,
+                show_sim_log=show_log
+            )
+
+            sensor_data = kspaceFirstOrder3D(
+                kgrid=kgrid,
+                medium=self.medium,
+                source=source,
+                sensor=sensor,
+                simulation_options=simulation_options,
+                execution_options=execution_options,
+            )
+
+            data = sensor_data['p'].reshape(kgrid.Nt, Nz, Nx)
+            if factorT != 1 or factorX != 1 or factorZ != 1:
+                return reshape_field(data, [factorT, factorX, factorZ])
+            else:
+                return data
+
+        except Exception as e:
+            print(f"Error generating 3D acoustic field: {e}")
+            return None
+        
+    @abstractmethod
+    def _SetUpSource(self, source, Nx, dx, factorT):
+        """
+        Abstract method: each subclass must implement its own source setup.
         """
         pass
 
