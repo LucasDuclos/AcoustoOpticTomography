@@ -219,5 +219,8 @@ The indices of saved iterations are also recorded for later reference.
 
 ## **12. References**
 
-- [Boyd, S., & Vandenberghe, L. (2004). *Convex Optimization*. Cambridge University Press.](https://web.stanford.edu/~boyd/cvxbook/)
-- [Nocedal, J., & Wright, S. J. (2006). *Numerical Optimization*. Springer.](https://link.springer.com/book/10.1007/978-0-387-40065-5)
+- [[1] Hestenes, M. R., & Stiefel, E. (1952).
+*Methods of Conjugate Gradients for Solving Linear Systems*.
+National Bureau of Standards Report **2951**.
+US Government Printing Office.](https://www.stat.uchicago.edu/~lekheng/courses/302/classics/hestenes-stiefel.pdf)
+
