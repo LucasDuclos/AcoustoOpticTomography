@@ -1,6 +1,6 @@
 import AOT_biomaps.Settings
 from AOT_biomaps.Config import config
-from AOT_biomaps.AOT_Acoustic.AcousticTools import calculate_envelope_squared, CPU_hilbert, loadmat
+from AOT_biomaps.AOT_Acoustic.AcousticTools import calculate_envelope_squared, loadmat
 from .AcousticTools import next_power_of_2, reshape_field
 from .AcousticEnums import TypeSim, Dim, FormatSave, WaveType
 
@@ -233,10 +233,10 @@ class AcousticField(ABC):
                         field = self._generate_acoustic_field_KWAVE_2D(isGpu, show_log)
                     except Exception as e:
                         raise RuntimeError(f"Failed to generate 2D acoustic field: {e}")
-                    self.field = calculate_envelope_squared(field, isGpu)
+                    self.field = calculate_envelope_squared(field)
                 elif self.params["dim"] == Dim.D3.value:
                     field = self._generate_acoustic_field_KWAVE_3D(isGpu, show_log)
-                    self.field = calculate_envelope_squared(field, isGpu)
+                    self.field = calculate_envelope_squared(field)
             elif self.params['typeSim'] == TypeSim.HYDRO.value:
                 raise ValueError("Cannot generate field for Hydrophone simulation, load exciting acquisitions.")
             else:
@@ -518,8 +518,6 @@ class AcousticField(ABC):
             # --- 3. Grid and source initialization ---
             kgrid = kWaveGrid([Nx, Nz], [dx, dx])
             kgrid.setTime(self.kgrid.Nt, 1 / self.params['f_AQ'])
-
-            print(f"Grid size: Nx={Nx}, Nz={Nz}, dx={dx*1000:.3f} mm, dt={kgrid.dt*1e9:.3f} ns, Nt={kgrid.Nt}, f_AQ={self.params['f_AQ']/1e6:.2f} MHz")
 
             source = kSource()
             source.p_mask = np.zeros((Nx, Nz))

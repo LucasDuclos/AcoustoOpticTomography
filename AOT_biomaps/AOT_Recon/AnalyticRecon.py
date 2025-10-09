@@ -21,6 +21,9 @@ class AnalyticRecon(Recon):
             self._analyticReconPython(withTumor)
         else:
             raise ValueError(f"Unknown analytic reconstruction type: {processType}")
+        
+    def checkExistingFile(self, withTumor=True, overwrite=False):
+        raise NotImplementedError("checkExistingFile method is not implemented yet.")
 
     def _analyticReconPython(self,withTumor):
         """

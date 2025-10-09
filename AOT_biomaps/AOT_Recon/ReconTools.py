@@ -2,6 +2,7 @@ import os
 import torch
 import numpy as np
 from numba import njit, prange
+from torch_sparse import coalesce
 import torch.nn.functional as F
 
 def load_recon(hdr_path):
@@ -187,145 +188,75 @@ def _backward_projection(SMatrix, e_p, c_p):
                     total += SMatrix[_t, _z, _x, _n] * e_p[_t, _n]
             c_p[_z, _x] = total
 
-@njit
-def _build_adjacency_sparse_CPU(Z, X,corner = (0.5-np.sqrt(2)/4)/np.sqrt(2),face = 0.5-np.sqrt(2)/4):
-    rows = []
-    cols = []
-    weights = []
 
+def _build_adjacency_sparse(Z, X, device, corner=(0.5 - np.sqrt(2) / 4) / np.sqrt(2), face=0.5 - np.sqrt(2) / 4,dtype=torch.float32):
+    rows, cols, weights = [], [], []
     for z in range(Z):
         for x in range(X):
             j = z * X + x
-            for dz in [-1, 0, 1]:
-                for dx in [-1, 0, 1]:
-                    if dz == 0 and dx == 0:
-                        continue
-                    nz, nx = z + dz, x + dx
-                    if 0 <= nz < Z and 0 <= nx < X:
-                        k = nz * X + nx
-                        weight = corner if abs(dz) + abs(dx) == 2 else face
-                        rows.append(j)
-                        cols.append(k)
-                        weights.append(weight)
-
-    index = (np.array(rows), np.array(cols))
-    values = np.array(weights, dtype=np.float32)
-    return index, values 
-
-def _build_adjacency_sparse_GPU(Z, X, device, corner=(0.5 - np.sqrt(2) / 4) / np.sqrt(2), face=0.5 - np.sqrt(2) / 4):
-    weight_dict = {}
-
-    for z in range(Z):
-        for x in range(X):
-            j = z * X + x
-            for dz in [-1, 0, 1]:
-                for dx in [-1, 0, 1]:
-                    if dz == 0 and dx == 0:
-                        continue
-                    nz, nx = z + dz, x + dx
-                    if 0 <= nz < Z and 0 <= nx < X:
-                        k = nz * X + nx
-                        weight = corner if abs(dz) + abs(dx) == 2 else face
-                        if (j, k) in weight_dict:
-                            weight_dict[(j, k)] += weight
-                        else:
-                            weight_dict[(j, k)] = weight
-
-    rows = []
-    cols = []
-    weights = []
-    for (j, k), weight in weight_dict.items():
-        rows.append(j)
-        cols.append(k)
-        weights.append(weight)
-
+            for dz, dx in [(-1, -1), (-1, 0), (-1, 1),
+                           (0, -1),           (0, 1),
+                           (1, -1),   (1, 0), (1, 1)]:
+                nz, nx = z + dz, x + dx
+                if 0 <= nz < Z and 0 <= nx < X:
+                    k = nz * X + nx
+                    weight = corner if abs(dz) + abs(dx) == 2 else face
+                    rows.append(j)
+                    cols.append(k)
+                    weights.append(weight)
     index = torch.tensor([rows, cols], dtype=torch.long, device=device)
-    values = torch.tensor(weights, dtype=torch.float32, device=device)
-
+    values = torch.tensor(weights, dtype=dtype, device=device)
+    index, values = coalesce(index, values, m=Z*X, n=Z*X)
     return index, values
 
 
-
-def power_method(P, PT, data, Z, X, n_it=10, isGPU=False):
-    x = PT(data)
-    x = x.reshape(Z, X)
+def power_method(P, PT, data, Z, X, n_it=10):
+    x = torch.randn(Z * X, device=data.device)
+    x = x / torch.norm(x)
     for _ in range(n_it):
-        grad = gradient_gpu(x) if isGPU else gradient_cpu(x)
-        div = div_gpu(grad) if isGPU else div_cpu(grad)
-        x = PT(P(x.ravel())) - div.ravel()
-        s = torch.sqrt(torch.sum(x**2))
-        x /= s
-        x = x.reshape(Z, X)
-    return torch.sqrt(s)
+        Ax = P(x)
+        ATax = PT(Ax)
+        x = ATax / torch.norm(ATax)
+    ATax = PT(P(x))
+    return torch.sqrt(torch.dot(x, ATax))
 
 def proj_l2(p, alpha):
-    norm = torch.sqrt(torch.sum(p**2, dim=0, keepdim=True))
-    return p * alpha / torch.max(norm, torch.tensor(alpha, device=p.device))
+    if alpha <= 0:
+        return torch.zeros_like(p)
+    norm = torch.sqrt(torch.sum(p**2, dim=0, keepdim=True) + 1e-12)
+    return p * torch.min(norm, torch.tensor(alpha, device=p.device)) / (norm + 1e-12)
+
+def gradient(x):
+    grad_x = torch.zeros_like(x)
+    grad_y = torch.zeros_like(x)
+    grad_x[:, :-1] = x[:, 1:] - x[:, :-1]  # Gradient horizontal
+    grad_y[:-1, :] = x[1:, :] - x[:-1, :]   # Gradient vertical
+    return torch.stack((grad_x, grad_y), dim=0)
+
+def div(x):
+    if x.dim() == 3:
+        x = x.unsqueeze(0)  # Ajoute une dimension batch si nécessaire
+
+    gx = x[:, 0, :, :]  # Gradient horizontal (shape: [1, H, W] ou [H, W])
+    gy = x[:, 1, :, :]  # Gradient vertical   (shape: [1, H, W] ou [H, W])
+
+    # Divergence du gradient horizontal (gx)
+    div_x = torch.zeros_like(gx)
+    div_x[:, :, 1:] += gx[:, :, :-1]  # Contribution positive (gauche)
+    div_x[:, :, :-1] -= gx[:, :, :-1] # Contribution négative (droite)
+
+    # Divergence du gradient vertical (gy)
+    div_y = torch.zeros_like(gy)
+    div_y[:, 1:, :] += gy[:, :-1, :]  # Contribution positive (haut)
+    div_y[:, :-1, :] -= gy[:, :-1, :] # Contribution négative (bas)
+
+    return -(div_x + div_y)
 
 def norm2sq(x):
     return torch.sum(x**2)
 
 def norm1(x):
     return torch.sum(torch.abs(x))
-
-def gradient_cpu(x):
-    grad_x = torch.zeros_like(x)
-    grad_y = torch.zeros_like(x)
-
-    grad_x[:-1, :] = x[1:, :] - x[:-1, :]
-    grad_y[:, :-1] = x[:, 1:] - x[:, :-1]
-
-    return torch.stack((grad_x, grad_y), dim=0)
-
-def div_cpu(x):
-    if x.dim() == 3:
-        x = x.unsqueeze(0)  # Devient [1, 2, H, W]
-
-    gx = x[:, 0:1, :, :]  # gradient horizontal
-    gy = x[:, 1:2, :, :]  # gradient vertical
-
-    # Définition des noyaux de divergence
-    kernel_x = torch.tensor([[[[1.0], [-1.0]]]], dtype=torch.float32)
-    kernel_y = torch.tensor([[[[1.0, -1.0]]]], dtype=torch.float32)
-
-    # Appliquer la convolution
-    div_x = F.conv2d(gx, kernel_x, padding=(1, 0))
-    div_y = F.conv2d(gy, kernel_y, padding=(0, 1))
-
-    # Rogner pour avoir la même taille (H, W)
-    H, W = x.shape[2:]
-    div_x = div_x[:, :, :H, :]
-    div_y = div_y[:, :, :, :W]
-
-    return -(div_x + div_y).squeeze()
-
-def gradient_gpu(x):
-    grad_x = torch.zeros_like(x)
-    grad_y = torch.zeros_like(x)
-    grad_x[:-1, :] = x[1:, :] - x[:-1, :]
-    grad_y[:, :-1] = x[:, 1:] - x[:, :-1]
-    return torch.stack((grad_x, grad_y), dim=0)
-
-def div_gpu(x):
-    if x.dim() == 3:
-        x = x.unsqueeze(0)  # Devient [1, 2, H, W]
-    gx = x[:, 0:1, :, :]  # gradient horizontal
-    gy = x[:, 1:2, :, :]  # gradient vertical
-
-    # Définition des noyaux de divergence
-    kernel_x = torch.tensor([[[[1.0], [-1.0]]]], dtype=torch.float32, device=x.device)
-    kernel_y = torch.tensor([[[[1.0, -1.0]]]], dtype=torch.float32, device=x.device)
-
-    # Appliquer la convolution
-    div_x = F.conv2d(gx, kernel_x, padding=(1, 0))
-    div_y = F.conv2d(gy, kernel_y, padding=(0, 1))
-
-    # Rogner pour avoir la même taille (H, W)
-    H, W = x.shape[2:]
-    div_x = div_x[:, :, :H, :]
-    div_y = div_y[:, :, :, :W]
-
-    return -(div_x + div_y).squeeze()
 
 def KL_divergence(Ax, y):
     return torch.sum(Ax - y * torch.log(Ax + 1e-10))

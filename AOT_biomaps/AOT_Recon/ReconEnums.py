@@ -60,6 +60,30 @@ class OptimizerType(Enum):
     This optimizer is compatible with both histogram and list-mode data.
     This optimizer is compatible with both emission and transmission data.
     """
+    CP_TV = 'CP_TV'
+    """
+    This optimizer implements the Chambolle-Pock algorithm for total variation regularization.
+    It is suitable for problems where the objective function includes a total variation term.
+    It is particularly effective for preserving edges while reducing noise in the reconstructed image.
+    """ 
+    CP_KL = 'CP_KL'
+    """
+    This optimizer implements the Kullback-Leibler divergence for regularization.
+    It is suitable for problems where the objective function includes a Kullback-Leibler divergence term.
+    """
+    LS = 'LS'
+    """
+    This optimizer implements the standard Landweber algorithm for least-squares optimization.
+    With transmission data, it uses the log-converted model to derive the update.
+    Be aware that the relaxation parameter is not automatically set, so it often requires some
+    trials and errors to find an optimal setting. Also, remember that this algorithm is particularly
+    slow to converge.
+    Options (in order when provided as a list):
+    - Initial image value: Sets the uniform voxel value for the initial image.
+    - Relaxation factor: Sets the relaxation factor applied to the update.
+    - Non-negativity constraint: 0 if no constraint or 1 in order to apply the constraint during the image update.
+    This optimizer is only compatible with histogram data, and with both emission and transmission data.
+    """
     MLTR = 'MLTR'
     """
     This optimizer is a version of the MLTR algorithm implemented from equation 16 of the paper from K. Van Slambrouck and J. Nuyts:

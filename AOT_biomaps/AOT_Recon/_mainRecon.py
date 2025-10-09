@@ -18,6 +18,7 @@ class Recon(ABC):
         self.saveDir = saveDir
         self.MSE = None
         self.SSIM = None
+        self.CRC = None
 
         self.isGPU = isGPU
         self.isMultiGPU = isMultiGPU
@@ -30,38 +31,93 @@ class Recon(ABC):
     def run(self,withTumor = True):
         pass
 
-    def calculateCRC(self,iteration,ROI_mask = None):
+    def save(self, withTumor=True, overwrite=False):
         """
-        Computes the Contrast Recovery Coefficient (CRC) for a given ROI.
+        Save the reconstruction results (reconPhantom is with tumor, reconLaser is without tumor) and indices of the saved recon results, in numpy format.
+
+        Args:
+            withTumor (bool): If True, saves reconPhantom. If False, saves reconLaser. Default is True.
+            overwrite (bool): If False, does not save if the file already exists. Default is False.
+
+        Warnings:
+            reconPhantom and reconLaser are lists of 2D numpy arrays, each array corresponding to one iteration.
         """
-        if self.reconType is ReconType.Analytic:
-            raise TypeError(f"Impossible to calculate CRC with analytical reconstruction")
-        elif self.reconType is None:
+        should_save, filepath = self.checkExistingFile(withTumor, overwrite)
+        if not should_save:
+            return
+
+        if withTumor:
+            if not self.reconPhantom or len(self.reconPhantom) == 0:
+                raise ValueError("Reconstructed phantom is empty. Run reconstruction first.")
+            np.save(filepath, np.array(self.reconPhantom))
+        else:
+            if not self.reconLaser or len(self.reconLaser) == 0:
+                raise ValueError("Reconstructed laser is empty. Run reconstruction first.")
+            np.save(filepath, np.array(self.reconLaser))
+
+        print(f"Reconstruction results saved to {os.path.dirname(filepath)}")
+
+    @abstractmethod
+    def checkExistingFile(self, withTumor=True, overwrite=False):
+        pass
+
+    def calculateCRC(self, use_ROI=True):
+        """
+        Computes the Contrast Recovery Coefficient (CRC) for all ROIs combined or globally.
+        For analytic reconstruction: returns a single CRC value.
+        For iterative reconstruction: returns a list of CRC values (one per iteration).
+        If iteration is specified, returns CRC for that specific iteration only.
+
+        :param iteration: Specific iteration index (optional). If None, computes for all iterations.
+        :param use_ROI: If True, computes CRC for all ROIs combined. If False, computes global CRC.
+        :return: CRC value or list of CRC values.
+        """
+        if self.reconType is None:
             raise ValueError("Run reconstruction first")
-        
+
         if self.reconLaser is None or self.reconLaser == []:
             raise ValueError("Reconstructed laser is empty. Run reconstruction first.")
-        if isinstance(self.Laser,list) and len(self.Laser) == 1:
-            raise ValueError("Reconstructed Image without tumor is a single frame. Run reconstruction with isSavingEachIteration=True to get a sequence of frames.")
         if self.reconPhantom is None or self.reconPhantom == []:
             raise ValueError("Reconstructed phantom is empty. Run reconstruction first.")
-        if isinstance(self.reconPhantom, list) and len(self.reconPhantom) == 1:
-            raise ValueError("Reconstructed Image with tumor is a single frame. Run reconstruction with isSavingEachIteration=True to get a sequence of frames.")
-        
+
+        # Handle empty reconstructions
         if self.reconLaser is None or self.reconLaser == []:
             print("Reconstructed laser is empty. Running reconstruction without tumor...")
-            self.run(withTumor = False, isSavingEachIteration=True)
-        if ROI_mask is not None:
-            recon_ratio = np.mean(self.reconPhantom[iteration][ROI_mask]) / np.mean(self.reconLaser[iteration][ROI_mask])
-            lambda_ratio = np.mean(self.experiment.OpticImage.phantom[ROI_mask]) / np.mean(self.experiment.OpticImage.laser[ROI_mask]) 
+            self.run(withTumor=False, isSavingEachIteration=True)
+
+        # Get the ROI mask(s) from the phantom if needed
+        if use_ROI:
+            self.experiment.OpticImage.find_ROI()
+            global_mask = np.logical_or.reduce(self.experiment.OpticImage.maskList)
+
+        # Analytic reconstruction case
+        if self.reconType is ReconType.Analytic:
+            if use_ROI:
+                recon_ratio = np.mean(self.reconPhantom[global_mask]) / np.mean(self.reconLaser[global_mask])
+                lambda_ratio = np.mean(self.experiment.OpticImage.phantom[global_mask]) / np.mean(self.experiment.OpticImage.laser.intensity[global_mask])
+            else:
+                recon_ratio = np.mean(self.reconPhantom) / np.mean(self.reconLaser)
+                lambda_ratio = np.mean(self.experiment.OpticImage.phantom) / np.mean(self.experiment.OpticImage.laser.intensity)
+
+            self.CRC =(recon_ratio - 1) / (lambda_ratio - 1)
+
+        # Iterative reconstruction case
         else:
-            recon_ratio = np.mean(self.reconPhantom[iteration]) / np.mean(self.reconLaser[iteration])
-            lambda_ratio = np.mean(self.experiment.OpticImage.phantom) / np.mean(self.experiment.OpticImage.laser)
-        
-        # Compute CRC
-        CRC = (recon_ratio - 1) / (lambda_ratio - 1)
-        return CRC
-    
+            iterations = range(len(self.reconPhantom))
+
+            crc_list = []
+            for it in iterations:
+                if use_ROI:
+                    recon_ratio = np.mean(self.reconPhantom[it][global_mask]) / np.mean(self.reconLaser[it][global_mask])
+                    lambda_ratio = np.mean(self.experiment.OpticImage.phantom[global_mask]) / np.mean(self.experiment.OpticImage.laser.intensity[global_mask])
+                else:
+                    recon_ratio = np.mean(self.reconPhantom[it]) / np.mean(self.reconLaser[it])
+                    lambda_ratio = np.mean(self.experiment.OpticImage.phantom) / np.mean(self.experiment.OpticImage.laser.intensity)
+
+                crc_list.append((recon_ratio - 1) / (lambda_ratio - 1))
+
+            self.CRC = crc_list
+
     def calculateMSE(self):
         """
         Calculate the Mean Squared Error (MSE) of the reconstruction.
@@ -104,6 +160,8 @@ class Recon(ABC):
                 self.SSIM.append(ssim_value)
  
     def show(self, withTumor=True, savePath=None):
+        fig, axs = plt.subplots(1, 2, figsize=(20, 10))
+
         if withTumor:
             if self.reconPhantom is None or self.reconPhantom == []:
                 raise ValueError("Reconstructed phantom with tumor is empty. Run reconstruction first.")
@@ -111,16 +169,43 @@ class Recon(ABC):
                 image = self.reconPhantom[-1]
             else:
                 image = self.reconPhantom
-            plt.figure(figsize=(20, 10))
-            plt.subplot(1, 2, 1)
-            plt.imshow(self.experiment.OpticImage.phantom, cmap='hot', vmin=0, vmax=np.max(self.experiment.OpticImage.phantom), extent=(self.experiment.params.general['Xrange'][0],self.experiment.params.general['Xrange'][1], self.experiment.params.general['Zrange'][1], self.experiment.params.general['Zrange'][0]))
-            plt.title("Phantom with tumor")
-            plt.colorbar()
-            plt.subplot(1, 2, 2)
-            plt.imshow(image, cmap='hot', vmin=0, vmax=np.max(image), extent=(self.experiment.params.general['Xrange'][0],self.experiment.params.general['Xrange'][1], self.experiment.params.general['Zrange'][1], self.experiment.params.general['Zrange'][0]))
-            plt.title("Reconstructed phantom with tumor")
-            plt.colorbar()
-            plt.show()
+            # Phantom original
+            im0 = axs[0].imshow(
+                self.experiment.OpticImage.phantom,
+                cmap='hot',
+                vmin=0,
+                vmax=1,
+                extent=(
+                    self.experiment.params.general['Xrange'][0],
+                    self.experiment.params.general['Xrange'][1],
+                    self.experiment.params.general['Zrange'][1],
+                    self.experiment.params.general['Zrange'][0]
+                ),
+                aspect='equal'  
+            )
+            axs[0].set_title("Phantom with tumor")
+            axs[0].set_xlabel("x (mm)", fontsize=12)
+            axs[0].set_ylabel("z (mm)", fontsize=12)
+            axs[0].tick_params(axis='both', which='major', labelsize=8)
+            # Phantom reconstruit
+            im1 = axs[1].imshow(
+                image,
+                cmap='hot',
+                vmin=0,
+                vmax=1,
+                extent=(
+                    self.experiment.params.general['Xrange'][0],
+                    self.experiment.params.general['Xrange'][1],
+                    self.experiment.params.general['Zrange'][1],
+                    self.experiment.params.general['Zrange'][0]
+                ),
+                aspect='equal'  
+            )
+            axs[1].set_title("Reconstructed phantom with tumor")
+            axs[1].set_xlabel("x (mm)", fontsize=12)
+            axs[1].set_ylabel("z (mm)", fontsize=12)
+            axs[1].tick_params(axis='both', which='major', labelsize=8)
+            axs[1].tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
         else:
             if self.reconLaser is None or self.reconLaser == []:
                 raise ValueError("Reconstructed laser without tumor is empty. Run reconstruction first.")
@@ -128,22 +213,61 @@ class Recon(ABC):
                 image = self.reconLaser[-1]
             else:
                 image = self.reconLaser
-            plt.figure(figsize=(20, 10))
-            plt.subplot(1, 2, 1)
-            plt.imshow(self.experiment.OpticImage.laser, cmap='hot', vmin=0, vmax=np.max(self.experiment.OpticImage.laser), extent=(self.experiment.params.general['Xrange'][0],self.experiment.params.general['Xrange'][1], self.experiment.params.general['Zrange'][1], self.experiment.params.general['Zrange'][0]))
-            plt.title("Laser without tumor")
-            plt.colorbar()
-            plt.subplot(1, 2, 2)
-            plt.imshow(image, cmap='hot', vmin=0, vmax=np.max(image), extent=(self.experiment.params.general['Xrange'][0],self.experiment.params.general['Xrange'][1], self.experiment.params.general['Zrange'][1], self.experiment.params.general['Zrange'][0]))
-            plt.title("Reconstructed laser without tumor")
-            plt.colorbar()
-            plt.show()
-        
+            # Laser original
+            im0 = axs[0].imshow(
+                self.experiment.OpticImage.laser.intensity,
+                cmap='hot',
+                vmin=0,
+                vmax=np.max(self.experiment.OpticImage.laser.intensity),
+                extent=(
+                    self.experiment.params.general['Xrange'][0],
+                    self.experiment.params.general['Xrange'][1],
+                    self.experiment.params.general['Zrange'][1],
+                    self.experiment.params.general['Zrange'][0]
+                ),
+                aspect='equal'  
+            )
+            axs[0].set_title("Laser without tumor")
+            axs[0].set_xlabel("x (mm)", fontsize=12)
+            axs[0].set_ylabel("z (mm)", fontsize=12)
+            axs[0].tick_params(axis='both', which='major', labelsize=8)
+            # Laser reconstruit
+            im1 = axs[1].imshow(
+                image,
+                cmap='hot',
+                vmin=0,
+                vmax=np.max(self.experiment.OpticImage.laser.intensity),
+                extent=(
+                    self.experiment.params.general['Xrange'][0],
+                    self.experiment.params.general['Xrange'][1],
+                    self.experiment.params.general['Zrange'][1],
+                    self.experiment.params.general['Zrange'][0]
+                ),
+                aspect='equal'
+            )
+            axs[1].set_title("Reconstructed laser without tumor")
+            axs[1].set_xlabel("x (mm)", fontsize=12)
+            axs[1].set_ylabel("z (mm)", fontsize=12)
+            axs[1].tick_params(axis='both', which='major', labelsize=8)
+            axs[1].tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
+
+        # Colorbar commune
+        fig.subplots_adjust(bottom=0.2)
+        cbar_ax = fig.add_axes([0.25, 0.08, 0.5, 0.03])
+        cbar = fig.colorbar(im1, cax=cbar_ax, orientation='horizontal')
+        cbar.set_label('Normalized Intensity', fontsize=12)
+        cbar.ax.tick_params(labelsize=8)
+
+        plt.subplots_adjust(wspace=0.3)
+
         if savePath is not None:
             if not os.path.exists(savePath):
                 os.makedirs(savePath)
             if withTumor:
-                plt.savefig(os.path.join(savePath, 'recon_with_tumor.png'))
+                plt.savefig(os.path.join(savePath, 'recon_with_tumor.png'), dpi=300, bbox_inches='tight')
             else:
-                plt.savefig(os.path.join(savePath, 'recon_without_tumor.png'))
+                plt.savefig(os.path.join(savePath, 'recon_without_tumor.png'), dpi=300, bbox_inches='tight')
+
+        plt.show()
+
 

@@ -6,11 +6,14 @@ from AOT_biomaps.AOT_Acoustic.StructuredWave import StructuredWave
 from abc import ABC, abstractmethod
 import os
 import numpy as np
+import torch
+import torch.nn.functional as F
 from tqdm import trange
 from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib as mpl
+import copy
 
 class Experiment(ABC):
     def __init__(self, params, acousticType=WaveType.StructuredWave, formatSave=FormatSave.HDR_IMG):
@@ -29,6 +32,10 @@ class Experiment(ABC):
         if type(self.params) != Params:
             raise TypeError("params must be an instance of the Params class")
 
+    def copy(self):
+        """Retourne une copie profonde de l'objet."""
+        return copy.deepcopy(self)
+    
     def generatePhantom(self):
         """
         Generate the phantom for the experiment.
@@ -68,6 +75,84 @@ class Experiment(ABC):
             if field.field.shape[0] < max_sample:
                 raise ValueError(f"Field {field.getName_field()} has an invalid shape: {field.field.shape}. Expected shape to be at least ({max_sample},).")
             self.AcousticFields[i].field = field.field[min_sample:max_sample, :, :]
+
+    def addNoise(self, noiseType='gaussian', noiseLvl=0.1, withTumor=True):
+        """
+        Ajoute du bruit (gaussien ou poisson) au signal AO sélectionné.
+
+        Args:
+            noiseType (str): Type de bruit à ajouter ('gaussian' ou 'poisson').
+            noiseLvl (float): Niveau de bruit (écart-type pour le bruit gaussien, facteur multiplicatif pour le bruit de Poisson).
+            withTumor (bool): Si True, ajoute le bruit au signal avec tumeur, sinon au signal sans tumeur.
+        """
+        if withTumor and self.AOsignal_withTumor is None:
+            raise ValueError("AO signal with tumor is not generated. Please generate it first.")
+        if not withTumor and self.AOsignal_withoutTumor is None:
+            raise ValueError("AO signal without tumor is not generated. Please generate it first.")
+
+        if withTumor:
+            AOsignals = self.AOsignal_withTumor
+        else:
+            AOsignals = self.AOsignal_withoutTumor
+        
+        noiseSignals = np.zeros_like(AOsignals)
+        for i in trange(AOsignals.shape[1], desc=f"Adding {noiseType} noise to AO signal {'with' if withTumor else 'without'} tumor"):
+            AOsignal = AOsignals[:, i]
+            if noiseType.lower() == 'gaussian':
+                noise = np.random.normal(0, noiseLvl*np.max(AOsignal), AOsignal.shape)
+                noisy_signal = AOsignal + noise
+            elif noiseType.lower() == 'poisson':
+                # Pour le bruit de Poisson, on utilise souvent un facteur multiplicatif
+                # car le bruit de Poisson est proportionnel à la racine carrée du signal.
+                # Ici, on multiplie le signal par un facteur aléatoire centré autour de 1.
+                noise = np.random.poisson(noiseLvl * np.abs(AOsignal)) / (noiseLvl * np.abs(AOsignal).max())
+                noisy_signal = AOsignal * noise
+            else:
+                raise ValueError("noiseType must be either 'gaussian' or 'poisson'.")
+            noisy_signal = np.clip(noisy_signal, a_min=0, a_max=None)  # Assurer que le signal reste non négatif
+            noiseSignals[:, i] = noisy_signal
+        return noiseSignals
+
+
+    def reduceDims(self, mode='avg'):
+        """
+        Réduit les dimensions T, X, Z d'un numpy array (T, X, Z) par 2 en utilisant une convolution.
+        Retourne un numpy array et met à jour les paramètres numériques.
+        """
+        for i in trange(len(self.AcousticFields),
+                        desc="Downsampling Acoustic Fields (T, X, Z → T//2, X//2, Z//2)"):
+            # Conversion en tenseur PyTorch
+            field = self.AcousticFields[i].field
+            if not isinstance(field, torch.Tensor):
+                field = torch.from_numpy(field)
+
+            # Vérification de la forme (doit être 3D : T, X, Z)
+            if field.dim() != 3:
+                raise ValueError(f"Forme non supportée : {field.shape}. Attendu (T, X, Z).")
+
+            # Ajout des dimensions pour conv3d : (1, 1, T, X, Z)
+            x = field.unsqueeze(0).unsqueeze(0)
+
+            # Réduction par convolution 3D
+            if mode == 'avg':
+                x_down = F.avg_pool3d(x, kernel_size=(2, 2, 2), stride=(2, 2, 2))
+            else:  # mode == 'max'
+                x_down = F.max_pool3d(x, kernel_size=(2, 2, 2), stride=(2, 2, 2))
+
+            # Conversion en numpy array et suppression des dimensions ajoutées
+            self.AcousticFields[i].field = x_down.squeeze(0).squeeze(0).cpu().numpy()
+
+        # Fonction utilitaire pour convertir et mettre à jour un paramètre
+        def convert_and_update(param_dict, key, operation):
+            if key in param_dict:
+                if isinstance(param_dict[key], str):
+                    param_dict[key] = float(param_dict[key])
+                param_dict[key] = operation(param_dict[key])
+
+        # Mise à jour des paramètres
+        convert_and_update(self.params.acoustic, 'f_saving', lambda x: x / 2)
+        for param in ['dx', 'dy', 'dz']:
+            convert_and_update(self.params.general, param, lambda x: x * 2)
 
     def saveAcousticFields(self, save_directory):
         progress_bar = trange(len(self.AcousticFields), desc="Saving Acoustic Fields")
@@ -187,7 +272,7 @@ class Experiment(ABC):
             self.AOsignal_withoutTumor = AOsignal
 
     @staticmethod
-    def _load_AOSignal(cdh_file):
+    def _loadAOSignal(cdh_file):
         with open(cdh_file, "r") as file:
             cdh_content = file.readlines()
 
@@ -207,43 +292,39 @@ class Experiment(ABC):
 
         return AOsignal_matrix
 
-    def _saveAOsignals_Castor(self, save_directory, withTumor=True):
+    def saveAOsignals_Castor(self, save_directory, withTumor=True):
         if withTumor:
+            AO_signal = self.AOsignal_withTumor
             cdf_location = os.path.join(save_directory, "AOSignals_withTumor.cdf")
             cdh_location = os.path.join(save_directory, "AOSignals_withTumor.cdh")
         else:
+            AO_signal = self.AOsignal_withoutTumor
             cdf_location = os.path.join(save_directory, "AOSignals_withoutTumor.cdf")
             cdh_location = os.path.join(save_directory, "AOSignals_withoutTumor.cdh")
 
         info_location = os.path.join(save_directory, "info.txt")
-        nScan = self.AOsignal.shape[1]
+        nScan = AO_signal.shape[1]
 
         with open(cdf_location, "wb") as fileID:
-            for j in range(self.AOsignal.shape[1]):
-                active_list = self.AcousticFields[j].pattern.activeList
-                angle = self.AcousticFields[j].angle
-                active_list_str = ''.join(map(str, active_list))
-                nb_padded_zeros = (4 - len(active_list_str) % 4) % 4
-                active_list_str += '0' * nb_padded_zeros
-                active_list_hex = ''.join([hex(int(active_list_str[i:i+4], 2))[2:] for i in range(0, len(active_list_str), 4)])
-
+            for j in range(AO_signal.shape[1]):
+                active_list_hex = self.AcousticFields[j].pattern.activeList
                 for i in range(0, len(active_list_hex), 2):
-                    byte_value = int(active_list_hex[i:i + 2], 16)
+                    byte_value = int(active_list_hex[i:i+2], 16)
                     fileID.write(byte_value.to_bytes(1, byteorder='big'))
-
+                angle = self.AcousticFields[j].angle
                 fileID.write(np.int8(angle).tobytes())
-                fileID.write(self.AOsignal[:, j].astype(np.float32).tobytes())
+                fileID.write(AO_signal[:, j].astype(np.float32).tobytes())
 
         header_content = (
-            f"Data filename: AOSignals.cdf\n"
+            f"Data filename: {'AOSignals_withTumor.cdf' if withTumor else 'AOSignals_withoutTumor.cdf'}\n"
             f"Number of events: {nScan}\n"
-            f"Number of acquisitions per event: {self.AOsignal.shape[1]}\n"
+            f"Number of acquisitions per event: {AO_signal.shape[1]}\n"
             f"Start time (s): 0\n"
             f"Duration (s): 1\n"
             f"Acquisition frequency (Hz): {1/self.AcousticFields[0].kgrid.dt}\n"
             f"Data mode: histogram\n"
             f"Data type: AOT\n"
-            f"Number of US transducers: {self.params['num_elements']}"
+            f"Number of US transducers: {self.params.acoustic['num_elements']}"
         )
 
         with open(cdh_location, "w") as fileID:
@@ -255,7 +336,7 @@ class Experiment(ABC):
 
         print(f"Fichiers .cdf, .cdh et info.txt sauvegardés dans {save_directory}")
 
-    def show_AOsignal(self, withTumor=True, save_dir=None, wave_name=None):
+    def showAOsignal(self, withTumor=True, save_dir=None, wave_name=None):
         if withTumor and self.AOsignal_withTumor is None:
             raise ValueError("AO signal with tumor is not generated. Please generate it first.")
         if not withTumor and self.AOsignal_withoutTumor is None:
@@ -391,6 +472,18 @@ class Experiment(ABC):
         plt.close(fig)
         return ani
 
+    def showPhantom(self, withROI=False):
+        """
+        Displays the optical phantom with absorbers.
+        """
+        try:
+            if withROI:
+                self.OpticImage.show_ROI()
+            else:
+                self.OpticImage.show_phantom()
+        except Exception as e:
+            raise RuntimeError(f"Error plotting phantom: {e}")
+        
     @abstractmethod
     def check(self):
         """

@@ -2,7 +2,6 @@ from ._mainExperiment import Experiment
 from AOT_biomaps.AOT_Acoustic.AcousticEnums import WaveType
 from AOT_biomaps.AOT_Acoustic.StructuredWave import StructuredWave
 from AOT_biomaps.Config import config
-
 import os
 import psutil
 import numpy as np
@@ -10,24 +9,23 @@ import matplotlib.pyplot as plt
 from tqdm import trange
 
 class Tomography(Experiment):
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        
+        self.patterns = None
+
     # PUBLIC METHODS
-        
     def check(self):
         """
         Check if the experiment is correctly initialized.
         """
         if self.TypeAcoustic is None or self.TypeAcoustic.value == WaveType.FocusedWave.value:
-           return False, "acousticType must be provided and cannot be FocusedWave for Tomography experiment"
+            return False, "acousticType must be provided and cannot be FocusedWave for Tomography experiment"
         if self.AcousticFields is None:
-           return False, "AcousticFields is not initialized. Please generate the system matrix first."
+            return False, "AcousticFields is not initialized. Please generate the system matrix first."
         if self.AOsignal_withTumor is None:
-            return False, "AOsignal with tumor is not initialized. Please generate the AO signal with tumor first."   
+            return False, "AOsignal with tumor is not initialized. Please generate the AO signal with tumor first."
         if self.AOsignal_withoutTumor is None:
-            return False, "AOsignal without tumor is not initialized. Please generate the AO signal without tumor first." 
+            return False, "AOsignal without tumor is not initialized. Please generate the AO signal without tumor first."
         if self.OpticImage is None:
             return False, "OpticImage is not initialized. Please generate the optic image first."
         if self.AOsignal_withoutTumor.shape != self.AOsignal_withTumor.shape:
@@ -47,22 +45,19 @@ class Tomography(Experiment):
             return False, "OpticImage laser and phantom must have the same shape."
         if self.OpticImage.phantom.shape[0] != self.AcousticFields[0].field.shape[1] or self.OpticImage.phantom.shape[1] != self.AcousticFields[0].field.shape[2]:
             return False, f"OpticImage phantom shape {self.OpticImage.phantom.shape} does not match AcousticFields shape {self.AcousticFields[0].field.shape[1:]}."
-        
         return True, "Experiment is correctly initialized."
 
-    def generateAcousticFields(self, fieldDataPath = None, show_log = True):
+    def generateAcousticFields(self, fieldDataPath=None, show_log=True):
         """
         Generate the acoustic fields for simulation.
-
         Args:
             fieldDataPath: Path to save the generated fields.
-            fieldParamPath: Path to the field parameters file.
-
+            show_log: Whether to show progress logs.
         Returns:
             systemMatrix: A numpy array of the generated fields.
         """
         if self.TypeAcoustic.value == WaveType.StructuredWave.value:
-            self.AcousticFields = self._generateAcousticFields_STRUCT_CPU(fieldDataPath,show_log)
+            self.AcousticFields = self._generateAcousticFields_STRUCT_CPU(fieldDataPath, show_log)
         else:
             raise ValueError("Unsupported wave type.")
 
@@ -70,7 +65,7 @@ class Tomography(Experiment):
         if self.AcousticFields is None:
             raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
 
-        # Collect entries as a list of tuples
+        # Collect and sort entries
         entries = []
         for field in self.AcousticFields:
             if field.waveType != WaveType.StructuredWave:
@@ -78,107 +73,122 @@ class Tomography(Experiment):
             pattern = field.pattern
             entries.append((
                 (pattern.space_0, pattern.space_1, pattern.move_head_0_2tail, pattern.move_tail_1_2head),
-                pattern.activeList,  # hex_str
+                pattern.activeList,
                 field.angle
             ))
 
-        # Sort entries (same logic as before)
-        entries.sort(
-            key=lambda x: (
-                -(x[0][0] + x[0][1]),  # Total length descending
-                -max(x[0][0], x[0][1]), # Max(space_0, space_1) descending
-                -x[0][0],              # space_0 descending
-                -x[0][2],              # move_head_0_2tail descending
-                x[0][3]                # move_tail_1_2head ascending
-            )
-        )
+        entries.sort(key=lambda x: (
+            -(x[0][0] + x[0][1]),
+            -max(x[0][0], x[0][1]),
+            -x[0][0],
+            -x[0][2],
+            x[0][3]
+        ))
 
-        # Extract data without Pandas
+        # Extract data
         hex_list = [hex_str for _, hex_str, _ in entries]
         angle_list = [angle for _, _, angle in entries]
-        space_data = [t for t, _, _ in entries]  # List of (space_0, space_1, move_head_0_2tail, move_tail_1_2head)
 
-        # Convert hex strings to binary columns (NumPy)
         def hex_string_to_binary_column(hex_str):
             bits = ''.join(f'{int(c, 16):04b}' for c in hex_str)
             return np.array([int(b) for b in bits], dtype=np.uint8).reshape(-1, 1)
 
         bit_columns = [hex_string_to_binary_column(h) for h in hex_list]
         image = np.hstack(bit_columns)
-        height = image.shape[0]
+        print(image)  # Doit être un tableau de 1 partout
 
-        # Plot
-        _, ax = plt.subplots(figsize=(12, 10))
-        ax.imshow(image, cmap='gray', aspect='auto')
-        ax.set_title("Scan configuration", fontsize='large')
-        ax.set_xlabel("Wave", fontsize='medium')
-        ax.set_ylabel("Transducer activation", fontsize='medium')
+        height, width = image.shape
 
-        # Plot angle markers
-        angle_min = -20.2
-        angle_max = 20.2
+        # Create figure with compact size
+        fig, ax = plt.subplots(figsize=(5, 4))
+        plt.subplots_adjust(left=0.1, right=0.95, top=0.9, bottom=0.2)
+
+        # Plot binary pattern
+        im = ax.imshow(image, cmap='binary', aspect='auto', interpolation='none', vmin=0, vmax=1)
+
+        ax.set_title("Scan Configuration", fontsize=12, pad=10, weight='bold')
+        ax.set_xlabel("Wave Index", fontsize=10, labelpad=8)
+        ax.set_ylabel("Transducer Activation", fontsize=10, labelpad=8)
+        yticks_positions = np.arange(0, height)  # Positions des ticks (0 à 191)
+        yticks_labels = np.arange(1, height + 1)  # Labels de 1 à 192
+
+        ax.set_yticks(yticks_positions)
+        ax.set_yticklabels(yticks_labels, fontsize=8)
+        # Plot angle markers (bigger and bolder)
+        angle_min, angle_max = -20.2, 20.2
         center = height / 2
         scale = height / (angle_max - angle_min)
         for i, angle in enumerate(angle_list):
             y = round(center - angle * scale)
             if 0 <= y < height:
-                ax.plot(i, y - 0.5, 'r.', markersize=5)
+                ax.plot(i, y - 0.5, 'ro', markersize=4, alpha=0.7)  # Points rouges plus gros
 
         ax.set_ylim(height - 0.5, -0.5)
 
-        # Twin axis for angle labels
+        # Twin axis for angles (with larger font)
         ax2 = ax.twinx()
         ax2.set_ylim(ax.get_ylim())
-        yticks_angle = np.linspace(20, -20, 9)
+        yticks_angle = np.linspace(20, -20, 5)  # 5 ticks pour plus de détails
         yticks_pos = np.interp(yticks_angle, [angle_min, angle_max], [height - 0.5, -0.5])
         ax2.set_yticks(yticks_pos)
-        ax2.set_yticklabels([f"{a:.1f}°" for a in yticks_angle])
-        ax2.set_ylabel("Angle [degree]", fontsize='medium', color='r')
-        ax2.tick_params(axis='y', colors='r')
+        ax2.set_yticklabels([f"{a:.1f}°" for a in yticks_angle], fontsize=9, color='r')
+        ax2.set_ylabel("Angle [°]", fontsize=11, color='r', labelpad=10)
+        ax2.tick_params(axis='y', colors='r', labelsize=9, width=1.5, length=5)
 
+        # Make axes thicker
+        ax.spines['left'].set_linewidth(1.5)
+        ax.spines['bottom'].set_linewidth(1.5)
+        ax2.spines['right'].set_linewidth(1.5)
+
+        # Add grid (thicker lines)
+        ax.grid(True, linestyle='--', alpha=0.4, color='gray', linewidth=0.5)
+        ax.set_xticks(np.linspace(0, width-1, 6))  # Plus de ticks sur l'axe x
+        ax.set_yticks(np.linspace(0, height-1, 6))  # Plus de ticks sur l'axe y
+        ax.tick_params(axis='both', which='both', labelsize=8, width=1.5, length=4)
+
+        plt.tight_layout()
         plt.show()
-     
-    def plot_angle_frequency_distribution(patterns, num_elements=192):
-        """
-        Plots the distribution of angles and spatial frequencies from a list of patterns.
-        Args:
-            patterns (list): List of strings in the format "hex_angle".
-            num_elements (int): Number of elements in each pattern (default is 192).
-        """
-        freq_bins = [2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 192]
+
+    def plot_angle_frequency_distribution(self):
+        if self.patterns is None:
+            raise ValueError("patterns is not initialized. Please load or generate the active list first.")
+
+        num_elements = self.params.acoustic['num_elements']
+        divs = sorted([d for d in range(2, num_elements + 1) if num_elements % d == 0 and d % 2 == 0])
+        if num_elements not in divs:
+            divs.append(num_elements)
+        divs.sort()
 
         angles = []
         freqs = []
 
-        for p in patterns:
-            hex_part, angle_str = p.split('_')
+        for p in self.patterns:
+            # Extraire la chaîne "hexa_XXX" depuis le dictionnaire
+            file_name = p["fileName"]
+            hex_part, angle_str = file_name.split('_')  # Split sur le dictionnaire corrigé
+
             # Récupérer l'angle
             sign = -1 if angle_str[0] == '1' else 1
             angle = sign * int(angle_str[1:])
             angles.append(angle)
 
-            # Récupérer fréquence spatiale
+            # Récupérer la fréquence spatiale
             bits = np.array([int(b) for b in bin(int(hex_part, 16))[2:].zfill(num_elements)])
-
-            # Cas spécial : pattern "192 on" (tous les bits à 1)
-            if np.all(bits == 1):
-                freqs.append(192)
+            if np.all(bits == 1):  # Cas "tous activés"
+                freqs.append(num_elements)
                 continue
 
-            # Chercher la plus petite taille de bloc divisant num_elements
-            for block_size in freq_bins:
+            for block_size in divs:
                 half_block = block_size // 2
-                block = np.array([0]*half_block + [1]*half_block)
+                block = np.array([0] * half_block + [1] * half_block)
                 reps = num_elements // block_size
                 pattern_check = np.tile(block, reps)
                 if any(np.array_equal(np.roll(pattern_check, shift), bits) for shift in range(block_size)):
                     freqs.append(block_size)
                     break
             else:
-                # Si aucun bloc n'est trouvé (ne devrait pas arriver si les patterns sont valides)
                 freqs.append(None)
 
-        # Filtrer les valeurs None (si un pattern n'a pas de fréquence détectée)
         freqs = [f for f in freqs if f is not None]
 
         # Plot
@@ -192,13 +202,15 @@ class Tomography(Experiment):
         axes[0].set_xticks(np.arange(-20, 21, 2))
 
         # Histogramme des fréquences spatiales
-        # Ajouter 193 pour inclure 192 dans le dernier bin
-        bins = np.append(freq_bins, 193)
-        axes[1].hist(freqs, bins=bins, color='salmon', edgecolor='black', rwidth=0.8)
-        axes[1].set_xscale('log')
-        axes[1].set_xticks(freq_bins)
-        axes[1].set_xticklabels(freq_bins)
-        axes[1].set_xlabel("Taille du bloc / fréquence spatiale")
+        unique_freqs, freq_counts = np.unique(freqs, return_counts=True)
+        x_pos = np.arange(len(divs))
+        for freq, count in zip(unique_freqs, freq_counts):
+            idx = divs.index(freq)
+            axes[1].bar(x_pos[idx], count, color='salmon', edgecolor='black', width=0.8)
+
+        axes[1].set_xticks(x_pos)
+        axes[1].set_xticklabels(divs)
+        axes[1].set_xlabel("Taille du bloc (fréquence spatiale)")
         axes[1].set_ylabel("Nombre de patterns")
         axes[1].set_title("Distribution des fréquences spatiales")
 
@@ -208,28 +220,22 @@ class Tomography(Experiment):
     def loadActiveList(self, fieldParamPath):
         if not os.path.exists(fieldParamPath):
             raise FileNotFoundError(f"Field parameter file {fieldParamPath} not found.")
-        
-        patternList = []
-
+        patterns = []
         with open(fieldParamPath, 'r') as file:
             lines = file.readlines()
             for line in lines:
                 line = line.strip()
                 if not line:
-                    continue  # skip empty lines
-
-                # 🔍 Tentative de lecture comme string type fileName
-                if "_" in line and all(c in "0123456789abcdefABCDEF" for c in line.split("_")[0]):
-                    patternList.append({"fileName": line})
                     continue
-
-                # 🔍 Sinon, tentative de parsing classique
+                if "_" in line and all(c in "0123456789abcdefABCDEF" for c in line.split("_")[0]):
+                    patterns.append({"fileName": line})
+                    continue
                 try:
                     parsed = eval(line, {"__builtins__": None})
                     if isinstance(parsed, tuple) and len(parsed) == 2:
                         coords, angles = parsed
                         for angle in angles:
-                            patternList.append({
+                            patterns.append({
                                 "space_0": coords[0],
                                 "space_1": coords[1],
                                 "move_head_0_2tail": coords[2],
@@ -240,145 +246,159 @@ class Tomography(Experiment):
                         raise ValueError("Ligne inattendue (pas un tuple de deux éléments)")
                 except Exception as e:
                     print(f"Erreur de parsing sur la ligne : {line}\n{e}")
-        self.patternList = patternList
+        self.patterns = patterns
 
-    def generateActiveList(self,N):
+    def saveActiveList(self, filePath):
+        """
+        Sauvegarde la liste des patterns dans un fichier texte.
+        Args:
+            filePath (str): Chemin du fichier de sortie.
+        """
+        with open(filePath, 'w') as file:
+            for pattern in self.patterns:
+                if "fileName" in pattern:
+                    # Cas 1 : Pattern simple (format "hexa_XXX")
+                    file.write(f"{pattern['fileName']}\n")
+                else:
+                    # Cas 2 : Pattern avec paramètres (format tuple)
+                    coords = (
+                        pattern["space_0"],
+                        pattern["space_1"],
+                        pattern["move_head_0_2tail"],
+                        pattern["move_tail_1_2head"]
+                    )
+                    angles = [pattern["angle"]]  # Supposons que chaque pattern a un seul angle
+                    line = f"({coords}, {angles})\n"
+                    file.write(line)
+
+    def generateActiveList(self, N):
         """
         Génère une liste de patterns d'activation équilibrés et réguliers.
-
         Args:
             N (int): Nombre de patterns à générer.
-
         Returns:
             list: Liste de strings au format "hex_angle".
         """
         if N < 1:
             raise ValueError("N must be a positive integer.")
-        patterns = self._generate_patterns(N)
-        if not self._check_patterns(patterns):
+        self.patterns = self._generate_patterns(N)
+        if not self._check_patterns(self.patterns):
             raise ValueError("Generated patterns failed validation.")
-        return patterns
 
-    def _generate_patterns(N, num_elements=192):
+    def _generate_patterns(self, N):
         def format_angle(a):
             return f"{'1' if a < 0 else '0'}{abs(a):02d}"
 
         def bits_to_hex(bits):
             bit_string = ''.join(str(b) for b in bits)
-            return f"{int(bit_string, 2):0{num_elements//4}x}"
+            bit_string = bit_string.zfill(len(bits))
+            hex_string = ''.join([f"{int(bit_string[i:i+4], 2):x}" for i in range(0, len(bit_string), 4)])
+            return hex_string
 
-        # 1. Générer le pattern "192 on" pour tous les angles
-        all_on_bits = np.ones(num_elements, dtype=int)
-        all_on_hex = bits_to_hex(all_on_bits)
-        all_on_pairs = [f"{all_on_hex}_{format_angle(angle)}" for angle in range(-20, 21)]
-
-        # 2. Initialiser results avec ces paires
-        results = set(all_on_pairs)
-
-        # 3. Calculer combien de patterns équilibrés il reste à générer
-        remaining_N = N - len(all_on_pairs)
-        if remaining_N <= 0:
-            # Si N <= 41 (nombre d'angles), on retourne juste les "192 on"
-            return list(results)[:N]
-
-        # 4. Générer les autres patterns équilibrés
-        divs = [2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96]  # On exclut 192
+        num_elements = self.params.acoustic['num_elements']
         angle_choices = list(range(-20, 21))
-        nb_freq = len(divs)
-        max_per_block = int(np.ceil(remaining_N / nb_freq))
 
-        for block_size in divs:
-            half_block = block_size // 2
-            block = np.array([0]*half_block + [1]*half_block)
-            reps = num_elements // block_size
-            base_pattern = np.tile(block, reps)
+        # 1. Trouver TOUS les diviseurs PAIRS de num_elements (y compris num_elements)
+        divs = [d for d in range(2, num_elements + 1) if num_elements % d == 0 and d % 2 == 0]
+        if not divs:
+            print(f"Aucun diviseur pair trouvé pour num_elements = {num_elements}")
+            return []
 
-            n_shifts = 1 if block_size == num_elements else block_size
-            all_shifted = [np.roll(base_pattern, shift) for shift in range(n_shifts)]
-            np.random.shuffle(all_shifted)
+        # 2. Utiliser un ensemble pour suivre les patterns uniques
+        unique_patterns = set()
 
-            count = 0
-            for pattern_bits in all_shifted:
-                available_angles = angle_choices.copy()
-                np.random.shuffle(available_angles)
+        # 3. Générer jusqu'à N patterns uniques
+        while len(unique_patterns) < N:
+            # Tirer un diviseur aléatoire (y compris num_elements)
+            block_size = np.random.choice(divs)
 
-                for angle in available_angles:
-                    hex_pattern = bits_to_hex(pattern_bits)
-                    pair = f"{hex_pattern}_{format_angle(angle)}"
-                    if pair not in results:
-                        results.add(pair)
-                        count += 1
-                        if count >= max_per_block:
-                            break
-                if count >= max_per_block:
-                    break
+            if block_size == num_elements:
+                # Cas spécial : pattern "tous activés"
+                pattern_bits = np.ones(num_elements, dtype=int)
+            else:
+                # Cas général : pattern équilibré
+                half_block = block_size // 2
+                block = np.array([0] * half_block + [1] * half_block)
+                reps = num_elements // block_size
+                base_pattern = np.tile(block, reps)
+                # Tirer un décalage aléatoire
+                shift = np.random.randint(0, block_size)
+                pattern_bits = np.roll(base_pattern, shift)
 
-        # 5. Compléter si nécessaire
-        results = list(results)
-        if len(results) < N:
-            extra_needed = N - len(results)
-            results += list(np.random.choice(results, extra_needed, replace=False))
+            # Convertir en hex et choisir un angle aléatoire
+            hex_pattern = bits_to_hex(pattern_bits)
+            angle = np.random.choice(angle_choices)
+            pair = f"{hex_pattern}_{format_angle(angle)}"
 
-        np.random.shuffle(results)
-        return results[:N]
+            # Ajouter à l'ensemble (les doublons sont automatiquement ignorés)
+            unique_patterns.add(pair)
 
-    def _check_patterns(patterns, num_elements=192):
-        for p in patterns:
-            hex_part = p.split('_')[0]
+        # 4. Convertir en liste de dictionnaires avec la clé "fileName"
+        patterns = [{"fileName": pair} for pair in unique_patterns]
+
+        # 5. Retourner exactement N patterns (on a déjà vérifié la taille avec while)
+        return patterns[:N]  # Par sécurité, même si len(unique_patterns) == N
+
+    def _check_patterns(self, patterns):
+        # 1. Vérifier les doublons (basé sur "fileName")
+        file_names = [p["fileName"] for p in patterns]
+        if len(file_names) != len(set(file_names)):
+            # Trouver les doublons
+            from collections import Counter
+            file_counts = Counter(file_names)
+            duplicates = [fn for fn, count in file_counts.items() if count > 1]
+            for dup in duplicates:
+                print(f"Erreur : Doublon détecté pour {dup}")
+            return False
+
+        # 2. Vérifier chaque pattern individuellement
+        num_elements = self.params.acoustic['num_elements']
+        for pattern in patterns:
+            hex_part, angle_str = pattern["fileName"].split('_')
             bits = np.array([int(b) for b in bin(int(hex_part, 16))[2:].zfill(num_elements)])
 
-            # Vérifier longueur
+            # Vérifier la longueur
             if len(bits) != num_elements:
-                print(f"Erreur longueur: {p}")
+                print(f"Erreur longueur: {pattern['fileName']}")
                 return False
 
-            # Cas spécial : pattern "192 on"
+            # Cas spécial : pattern "tous activés"
             if np.all(bits == 1):
                 continue
 
-            # Vérifier équilibre 0/1 (sauf pour "all on")
+            # Vérifier l'équilibre 0/1
             if np.sum(bits) != num_elements // 2:
-                print(f"Erreur équilibre 0/1: {p}")
+                print(f"Erreur équilibre 0/1: {pattern['fileName']}")
                 return False
 
-            # Vérifier régularité (sauf pour "all on")
+            # Vérifier la régularité
             valid = False
-            for block_size in range(2, num_elements+1, 2):
-                if num_elements % block_size != 0:
-                    continue
+            divs = [d for d in range(2, num_elements + 1) if num_elements % d == 0 and d % 2 == 0]
+            for block_size in divs:
                 half_block = block_size // 2
-                block = np.array([0]*half_block + [1]*half_block)
+                block = np.array([0] * half_block + [1] * half_block)
                 reps = num_elements // block_size
                 expected_pattern = np.tile(block, reps)
                 if any(np.array_equal(np.roll(expected_pattern, shift), bits) for shift in range(block_size)):
                     valid = True
                     break
             if not valid:
-                print(f"Erreur régularité: {p}")
+                print(f"Erreur régularité: {pattern['fileName']}")
                 return False
 
         return True
 
-
     # PRIVATE METHODS
-
-    def _generateAcousticFields_STRUCT_CPU(self,fieldDataPath =None, show_log=False):
-        
-        if self.patternList is None:
-            raise ValueError("patternList is not initialized. Please load or generate the active list first.")
-        
+    def _generateAcousticFields_STRUCT_CPU(self, fieldDataPath=None, show_log=False):
+        if self.patterns is None:
+            raise ValueError("patterns is not initialized. Please load or generate the active list first.")
         listAcousticFields = []
-
-        progress_bar = trange(0, len(self.patternList), desc="Generating acoustic fields")
-
+        progress_bar = trange(0, len(self.patterns), desc="Generating acoustic fields")
         for i in progress_bar:
             memory = psutil.virtual_memory()
-            pattern = self.patternList[i]
-
-            # Cas 1 : format avec fileName (hex_angle)
+            pattern = self.patterns[i]
             if "fileName" in pattern:
-                AcousticField = StructuredWave(fileName=pattern["fileName"],params=self.params)
-            # Cas 2 : format structuré classique
+                AcousticField = StructuredWave(fileName=pattern["fileName"], params=self.params)
             else:
                 AcousticField = StructuredWave(
                     angle_deg=pattern["angle"],
@@ -388,37 +408,28 @@ class Tomography(Experiment):
                     move_tail_1_2head=pattern["move_tail_1_2head"],
                     params=self.params
                 )
-
-            # Déterminer chemin de sauvegarde
             if fieldDataPath is None:
                 pathField = None
             else:
                 pathField = os.path.join(fieldDataPath, AcousticField.getName_field() + self.FormatSave.value)
-
-            # Charger ou générer
             if pathField is not None and os.path.exists(pathField):
-                progress_bar.set_postfix_str(f"Loading field - {AcousticField.getName_field()} -- Memory used :{memory.percent}%")
+                progress_bar.set_postfix_str(f"Loading field - {AcousticField.getName_field()} -- Memory used: {memory.percent}%")
                 try:
                     AcousticField.load_field(fieldDataPath, self.FormatSave)
                 except:
-                    progress_bar.set_postfix_str(f"Error loading field -> Generating field - {AcousticField.getName_field()} -- Memory used :{memory.percent}% ---- processing on {config.get_process().upper()} ----")
+                    progress_bar.set_postfix_str(f"Error loading field -> Generating field - {AcousticField.getName_field()} -- Memory used: {memory.percent}% ---- processing on {config.get_process().upper()} ----")
                     AcousticField.generate_field(show_log=show_log)
                     if not os.path.exists(pathField):
-                        progress_bar.set_postfix_str(f"Saving field - {AcousticField.getName_field()} -- Memory used :{memory.percent}%")
+                        progress_bar.set_postfix_str(f"Saving field - {AcousticField.getName_field()} -- Memory used: {memory.percent}%")
                         os.makedirs(os.path.dirname(pathField), exist_ok=True)
                         AcousticField.save_field(fieldDataPath)
-
             elif pathField is None or not os.path.exists(pathField):
-                progress_bar.set_postfix_str(f"Generating field - {AcousticField.getName_field()} -- Memory used :{memory.percent}% ---- processing on {config.get_process().upper()} ----")
+                progress_bar.set_postfix_str(f"Generating field - {AcousticField.getName_field()} -- Memory used: {memory.percent}% ---- processing on {config.get_process().upper()} ----")
                 AcousticField.generate_field(show_log=show_log)
                 if pathField is not None and not os.path.exists(pathField):
-                    progress_bar.set_postfix_str(f"Saving field - {AcousticField.getName_field()} -- Memory used :{memory.percent}%")
+                    progress_bar.set_postfix_str(f"Saving field - {AcousticField.getName_field()} -- Memory used: {memory.percent}%")
                     os.makedirs(os.path.dirname(pathField), exist_ok=True)
                     AcousticField.save_field(fieldDataPath)
-
             listAcousticFields.append(AcousticField)
             progress_bar.set_postfix_str("")
-
         return listAcousticFields
-
-
