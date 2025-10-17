@@ -59,6 +59,12 @@ Commençons par le code le plus simple, le MLEM, il nécessite pas de réglage d
 
 Le MLEM codé par kaiyuan présente des problème de stabilité numérique.
 
+Avec ondes planes, les paramètres des émissions sont détaillés ci-dessous (angles et structurations)
+
+<img width="700" height="300" alt="image" src="https://github.com/user-attachments/assets/8095e9e5-4274-430f-b6fe-991fea16d280" />
+
+Les résultats sont les suivants
+
 <img width="500" height="900" alt="image" src="https://github.com/user-attachments/assets/6ecc849d-cb37-4984-9bbe-aeac68075684" />
 
 Figure 3: Reconstruction MLEM avec Kwave et aot-biomaps, pour différentes itérations.
