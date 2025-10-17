@@ -1,6 +1,6 @@
 # Journal de bord thèse
 
-## 15 octobre 2025
+## 15 Octobre 2025
 
 Je suis allé à Langevin réalisé des manips avec François sur leur montage photoréfractif.
 J'ai ramené un bloc de PVA relativement épais (penser à demander à François les dimensions exactes). Nous avons insérer dedans une gaine de cable électrique. Sur l'échographe on remarque quelle ne perturbe pas trop la propagation des US.
@@ -61,7 +61,18 @@ Le MLEM codé par kaiyuan présente des problème de stabilité numérique.
 
 <img width="500" height="900" alt="image" src="https://github.com/user-attachments/assets/6ecc849d-cb37-4984-9bbe-aeac68075684" />
 
+Figure 3: Reconstruction MLEM avec Kwave et aot-biomaps, pour différentes itérations.
+---
+
 On voit rapidement sur les reconstructions, plus on augmente le nombre d'itération et plus l'algo est instable. Claude dit que c'est sans doute à cause d'un seuil au dénominateur trop faible. 
 J'ai prévu de comparer les résultats depuis CASTor
+
 ---
----
+## 20 Octobre 2025
+
+À faire:
+- afficher les résultats avec CASToR et kwave.
+- Mettre à jour dans la librairie le chargement des reconstructions.
+- Mettre à jour dans la librairie le reconstruction CASToR.
+- 
+
