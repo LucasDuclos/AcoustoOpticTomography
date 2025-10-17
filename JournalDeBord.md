@@ -1,28 +1,34 @@
 # Journal de bord thèse
 
-### 15 octobre 2025
+## 15 octobre 2025
 
 Je suis allé à Langevin réalisé des manips avec François sur leur montage photoréfractif.
 J'ai ramené un bloc de PVA relativement épais (penser à demander à François les dimensions exactes). Nous avons insérer dedans une gaine de cable électrique. Sur l'échographe on remarque quelle ne perturbe pas trop la propagation des US.
 
 **Remarque:**
-La sonde SL10-2 de l'aixplorer est abimé au centre on voit une ombre qui part du milieu de la sonde.
+La sonde SL10-2 de l'aixplorer est abimée au centre on voit une ombre qui part du milieu de la sonde.
 
 Comme il me l'avait indiqué, l' amplitude des signaux Acousto-optique en onde plane est nettement supérieure à celle des ondes structurées.
 Grosse différence entre le montage à Langevin et celui d'Orsay, François utilise une fribre optique avec un zoom à l'extrémité qui lui permet de régler la taille du faisceau à l'entré de l'objet et d'illuminé de manière homogène le fantôme.
 
 <img width="2082" height="580" alt="image" src="https://github.com/user-attachments/assets/36fbb4fb-4693-4f62-a1bd-231587e94aba" />
 
+Figure 1: Reconstruction expérimentale d'un fantôme de PVA avec inclusion. À gauche: OF, au milieu: OP, à droite OS. 
+---
 De mon point de vu, la gaine en caoutchouc est trop grosse, mal positionné vis à vis du laser. 
 
-----
-----
 
-### 17 Octobre 2025
+----
+## 17 Octobre 2025
+
+#### Analyse des signaux AO acquis le 15 octobre 2025
 
 Après analyse des signaux AO acquis lors de la manip à Langevin, 
 
 <img width="300" height="300" alt="image" src="https://github.com/user-attachments/assets/46c83b69-0412-4ec4-9211-b8f3a50c957d" />
+
+Figure 2: Signaux acousto-optique issus de trois acquisitions différentes.
+---
 
 On se rend compte que les mêmes emissions acoustiques, onde plane 0° et onde structurée (tous les piezos allumés donc revient à une onde plane) à 0°, ne donne pas les mêmes amplitudes et niveau de bruit.
 
@@ -45,9 +51,17 @@ Avec :
 - Écart-type OS (signal 20) : 0.0195 mV
 - Écart-type OP (signal 20) : 0.0266 mV
 - Différence de bruit : 36.25 % entre le signal AO en OP et en OS
-
 ---
+### Reconstructions à partir des données expérimentales.
+
+Je rencontre beaucoup de soucis avec les algos implémentés par Kaiyuan. Les hyper paramètres sont très sensibles et le faible nombre d'itérations avant divergence complique leur réglage.
+Commençons par le code le plus simple, le MLEM, il nécessite pas de réglage d'hyperparamètres.
 
 Le MLEM codé par kaiyuan présente des problème de stabilité numérique.
 
 <img width="500" height="900" alt="image" src="https://github.com/user-attachments/assets/6ecc849d-cb37-4984-9bbe-aeac68075684" />
+
+On voit rapidement sur les reconstructions, plus on augmente le nombre d'itération et plus l'algo est instable. Claude dit que c'est sans doute à cause d'un seuil au dénominateur trop faible. 
+J'ai prévu de comparer les résultats depuis CASTor
+---
+---
