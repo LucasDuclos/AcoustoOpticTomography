@@ -94,12 +94,18 @@ En ondes planes
 avec field2:
 <img width="1445" height="1136" alt="image" src="https://github.com/user-attachments/assets/c5bdd04c-fdbd-405b-84ff-07ce05fb5876" />
 
+![recon_field2](https://github.com/user-attachments/assets/a05ecf46-74c5-4a68-99b5-90e167e2d071)
 
-![recon_field2-ezgif com-speed](https://github.com/user-attachments/assets/36cc09ee-1284-4069-ab62-7c558b26dc0d)
 
 avec kwave:
 <img width="1445" height="1136" alt="image" src="https://github.com/user-attachments/assets/3508d349-2014-458a-8e36-e3a09a4da28c" />
 
-![recon_kwave-ezgif com-speed](https://github.com/user-attachments/assets/30c331d7-d995-4513-bda0-22fc22f40e18)
+![recon_kwave](https://github.com/user-attachments/assets/2ef47a12-41fb-4a99-b8ac-aacccb1bd12b)
 
 CASToR ressort les mêmes résultats.
+
+Kwave reconstruit mieux:
+
+<img width="1574" height="574" alt="image" src="https://github.com/user-attachments/assets/c240261f-0fc4-4bfb-ad4b-33d6f82a7057" />
+
+A mon avis il y a un soucis dans le 
