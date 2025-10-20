@@ -109,3 +109,6 @@ Kwave reconstruit mieux:
 <img width="1574" height="574" alt="image" src="https://github.com/user-attachments/assets/c240261f-0fc4-4bfb-ad4b-33d6f82a7057" />
 
 A mon avis il y a un soucis dans le 
+
+<img width="423" height="455" alt="image" src="https://github.com/user-attachments/assets/2d5da029-0157-4472-95c7-e8d6264e3e3b" />
+
