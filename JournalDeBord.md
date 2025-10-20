@@ -80,5 +80,26 @@ J'ai prévu de comparer les résultats depuis CASTor
 - afficher les résultats avec CASToR et kwave.
 - Mettre à jour dans la librairie le chargement des reconstructions.
 - Mettre à jour dans la librairie le reconstruction CASToR.
-- 
 
+---
+J'ai pas mal galérer sur le code du chargement des signaux AO au niveau de la librairie. Maintenant les reconstructions kwave et field2 marchent sur CASToR et AOT_biomaps.
+
+J'ai modifié le code de Kaiyuan, il n'avait pas mis comme dans CASToR un seuil pour le dénominateur (il avait rajouté un torch.tiny au valeur au numérateur pour éviter la division par 0). Même avec ça, on visualisait des aberations dans la reconstruction. J'ai donc établi un seuil de 1e-2 au dénominateur pour éliminer complétement les artefacts lié à la reconstruction.
+
+<img width="1014" height="570" alt="image" src="https://github.com/user-attachments/assets/bee191b3-1c5c-4a46-8b46-3fcb81a5ab2b" />
+
+
+En ondes planes 
+
+avec field2:
+<img width="1445" height="1136" alt="image" src="https://github.com/user-attachments/assets/c5bdd04c-fdbd-405b-84ff-07ce05fb5876" />
+
+
+![recon_field2-ezgif com-speed](https://github.com/user-attachments/assets/36cc09ee-1284-4069-ab62-7c558b26dc0d)
+
+avec kwave:
+<img width="1445" height="1136" alt="image" src="https://github.com/user-attachments/assets/3508d349-2014-458a-8e36-e3a09a4da28c" />
+
+![recon_kwave-ezgif com-speed](https://github.com/user-attachments/assets/30c331d7-d995-4513-bda0-22fc22f40e18)
+
+CASToR ressort les mêmes résultats.
