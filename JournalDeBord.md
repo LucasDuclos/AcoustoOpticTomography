@@ -108,7 +108,14 @@ Kwave reconstruit mieux:
 
 <img width="1574" height="574" alt="image" src="https://github.com/user-attachments/assets/c240261f-0fc4-4bfb-ad4b-33d6f82a7057" />
 
-A mon avis il y a un soucis dans le 
-
 <img width="423" height="455" alt="image" src="https://github.com/user-attachments/assets/2d5da029-0157-4472-95c7-e8d6264e3e3b" />
+
+---
+## 21 Octobre 2025
+
+Comme expliqué dans la figure 2 du 17 octobre, les signaux acousto-optiques mesurés en onde structurées ne sont pas convaincants. J'ai prévu de refaire des manips cette après midi à Orsay. 
+
+Manip:
+J'ai placé la fibre optique en sortie du beamsplitter. J'ai placé une lentille de 50 mm de focal entre ma fibre et le cube pour minimiser le diamètre du faisceau à l'entrée de la fibre. J'ai au mieux après alignement 11.8% d'éfficacité. On s'en contentera.
+
 
