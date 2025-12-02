@@ -118,4 +118,38 @@ Comme expliqué dans la figure 2 du 17 octobre, les signaux acousto-optiques mes
 Manip:
 J'ai placé la fibre optique en sortie du beamsplitter. J'ai placé une lentille de 50 mm de focal entre ma fibre et le cube pour minimiser le diamètre du faisceau à l'entrée de la fibre. J'ai au mieux après alignement 11.8% d'éfficacité. On s'en contentera.
 
+## 02 Décembre 2025
+
+François est venu au laboratoire le mois dernier pour bien paramétrer le montage optique. Normalement tout fonctionne maintenant.
+J'ai fait 2 acquisitons.
+Ci dessous, les reconstructions focalisées des fantôme de PVA (fin : 1 cm et épais : 3.5cm)
+<img width="1014" height="416" alt="image" src="https://github.com/user-attachments/assets/d16810a7-ef9b-45d1-b47d-e833936c9f06" />
+
+Pour les reconstructions tomographique j'utilise une implémentation GPU cuda perso pour sparse les matrices systèmes afin de les stocker en mémoire VRAM du GPU. J'ai implémenté un algo GPU Chambolle pock LS-TV-Tikhonov pour reconstruire \lambda avec les matrices sparses. Finalement je suis resté sur uniquement LS-Tikhonov, la TV ne marche pas bien et Tikhonov suffit pour lisser correctement.
+
+<img width="511" height="371" alt="image" src="https://github.com/user-attachments/assets/1011ebf4-b4ad-412f-b96a-7ca332717dc5" />
+
+Voici la reconstruction du fantôme épais avec CP LS-TV. L'image est bien reconstruite mais on voit un artefact (en forme de V) qui induit une accumulation de signal en dehors de la tache. Si je mets à saturation on visualise: 
+
+<img width="626" height="473" alt="image" src="https://github.com/user-attachments/assets/98f0adde-2a25-4c3b-9017-ec131a8da7d1" />
+
+Les deux artefacts sont bien présents. J'ai essayé avec un algo MLEM classique : le bruit est tres présent mais on visualise aussi cet artefact:
+
+<img width="552" height="417" alt="image" src="https://github.com/user-attachments/assets/e928a0ff-d44b-46fa-9c7d-7f9e1bb57b1e" />
+
+Sur des reconstructions simulées avec beaucoup de bruit on n'a pas ces artefacts, ni en MLEM ni en CP. Voici en CP ci dessous:
+
+<img width="858" height="349" alt="image" src="https://github.com/user-attachments/assets/37faf603-a580-45b7-a747-73749a3e9660" />
+
+C'est la même image à gauche et à droite sauf qu'à droite je sature l'échelle de couleur et on voit bien qu'il n'y a pas cette structure en V.
+La structure en V n'est pas induite par l'algo en présence de bruit.
+À mon avis, elle provient:
+  - Soit d'un mauvais alignement entre les données mesurées et la matrice système (retards...) et la je sais pas trop comment vérifier
+  - Soit les paramètres acoustiques de la simulation K-wave ne sont pas réaliste
+  - Soit la simulation K-wave en elle même n'est pas réaliste.
+Je vais comparer avec field2 pour essayer d'y voir plus clair.
+
+
+
+
 
