@@ -149,6 +149,9 @@ La structure en V n'est pas induite par l'algo en présence de bruit.
   - Soit la simulation K-wave en elle même n'est pas réaliste.
 Je vais comparer avec field2 pour essayer d'y voir plus clair.
 
+## 09 Janvier 2025
+
+<img width="984" height="985" alt="image" src="https://github.com/user-attachments/assets/8b3cae6a-e494-4998-a3e5-e894b0e8da78" />
 
 
 
