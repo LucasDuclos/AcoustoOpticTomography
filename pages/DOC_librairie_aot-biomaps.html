@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>AOT_BioMaps - Installation</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            line-height: 1.6;
+            margin: 20px;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        h2 {
+            margin-top: 30px;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 4px solid #3498db;
+        }
+        code {
+            font-family: 'Courier New', monospace;
+            background: #f8f9fa;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        .back-link {
+            display: block;
+            margin: 20px 0;
+            color: #3498db;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .note {
+            background: #fff8e1;
+            padding: 10px 15px;
+            border-left: 4px solid #ffc107;
+            margin: 15px 0;
+            font-size: 0.9em;
+        }
+        hr {
+            border: 0;
+            height: 1px;
+            background: #eee;
+            margin: 25px 0;
+        }
+    </style>
+</head>
+<body>
+    <a href="../README.md" class="back-link">↩ Back to Home Page</a>
+
+    <h1>Installation</h1>
+
+    <h2>CPU Installation</h2>
+    <pre><code class="bash">pip install --upgrade aot-biomaps</code></pre>
+
+    <h2>GPU Installation</h2>
+    <pre><code class="bash">pip install --upgrade aot-biomaps
+pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-$(python -c "import torch; print(torch.__version__)")+$(python -c "import torch; print(''.join(torch.__version__.split('+')[1:]))").html</code></pre>
+
+    <div class="note">
+        <strong>Note:</strong> Ensure CUDA is available on your machine.
+    </div>
+
+    <h2>Verify Installation</h2>
+    <pre><code class="python">import AOT_biomaps
+print(AOT_biomaps.__version__)
+print(AOT_biomaps.__process__)</code></pre>
+    <p>The <code>AOT_biomaps.__process__</code> variable returns the type of process (CPU or GPU) used for computations.</p>
+
+    <hr>
+    <a href="../README.md" class="back-link">↩ Back to Home Page</a>
+</body>
+</html>
