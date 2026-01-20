@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tomographie Acousto-Optique</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            color: #333;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+        .center {
+            text-align: center;
+        }
+        .math {
+            font-size: 1.1em;
+        }
+    </style>
+</head>
+<body>
+    <p>[↩ Back to Home Page](../README.md)</p>
+
+    <h1>Introduction</h1>
+
+    <h2>Formation of an Acousto-Optic Signal</h2>
+
+    <p>As its name suggests, acousto-optic is a bimodal imaging technique that combines acoustics and optics to reconstruct an optical image deep within a scattering medium. This is not possible with standard optical imaging modalities.</p>
+
+    <div class="center">
+        <img src="images/image_AO.png"/>
+    </div>
+
+    <h3>Optical Image \(\lambda\)</h3>
+
+    <p>In a scattering medium, incident light deviates from its path when it encounters particles. Beyond a certain transport length, the incident photon loses memory of its initial direction. The transport length is given by:</p>
+
+    \[
+    l^{*} = \frac{l_s}{1 - g}
+    \]
+
+    <p>where \(l_s\) is the mean distance between scattering events, and \(g\) defines the directionality of the light. When \(g = 1\), light propagates in a straight line. In the case of biological tissues, \(g \approx 0.8 - 0.9\) (technical citation from "l'ingénieur"), the transport length is on the order of millimeters. Beyond this, multiple scattering dominates.</p>
+
+    <p>It then becomes impossible with standard optical imaging modalities to construct an optical image at depth. As a reminder, in acousto-optics, the ambition is to image at depths on the order of a few centimeters despite multiple scattering.</p>
+
+    <p>The solution to the diffusion equation for a point source in an infinite, homogeneous, and isotropic medium is given by:</p>
+
+    \[
+    \Phi(\mathbf{r}, t) = \frac{1}{(4 \pi D t)^{3/2}} \exp \left( -\frac{r^2}{4 D t} \right)
+    \]
+
+    <p>This corresponds to a 3D Gaussian distribution with variance \(2 D t\).</p>
+
+    <p>For the subsequent simulations, we will make the following approximation: our optical image in the \(XZ\) plane at a depth \(Y\) follows a Gaussian distribution.</p>
+
+    <p>The optical image corresponds to the cross-section under the ultrasound probe of the optical properties of the medium. It represents the depth image to be reconstructed. The two black spots of absorption illustrate two tumors (with different properties from healthy cells). The halo centered on the image corresponds to the diffusion spot (assuming a Gaussian beam) under the ultrasound probe.</p>
+
+    <div class="center">
+        <img src="https://github.com/user-attachments/assets/40af3b90-b1ec-4038-83e4-4fec8237534b" alt="Optical Image and FFT"/>
+    </div>
+
+    <h3>System matrix \(A\)</h3>
+
+    <p>The system matrix \(A\) is a fundamental component in tomographic reconstruction, serving as the bridge between the unknown properties of the object and the measured data, enabling the reconstruction of images from indirect measurements.</p>
+
+    <p>In our specific case of acousto-optic tomography, the system matrix \(A\) represents the squared envelope of the acoustic pressure field in the \(XZ\) plane where \(y=0\). This plane corresponds to the region directly beneath the ultrasound probe.</p>
+
+    <div class="center">
+        <img src="https://github.com/user-attachments/assets/e7075b88-2dce-4a35-9c58-85056eebc957" alt="System Matrix A" width="400"/>
+    </div>
+
+    <h3>Acousto-Optic Signal (AO Signal)</h3>
+
+    <p>The optical refractive index \(n\) is proportional to the mass density \(\rho\) to the first order. Thus, as the ultrasonic wave propagates through the medium, it locally alters its refractive index.</p>
+
+    <p>By introducing the adiabatic piezoelectric coefficient:</p>
+
+    \[
+    \mu = \frac{\delta n}{\delta \rho}
+    \]
+
+    <p>This modulation of the refractive index is described by the equation:</p>
+
+    \[
+    n(x, y, z, t) = n_0 + \mu P_m \sin \left( 2 \pi f_{US} t - K_{US} z \right)
+    \]
+
+    <p>Where \(n_0\) is the average refractive index of the medium and \(\Delta n\) is the amplitude of the refractive index modulation.</p>
+
+    <p>Assuming a monochromatic plane light wave, the electric field of the emitted wave is of the form:</p>
+
+    \[
+    E(x, y, z, t) = E_M e^{j \left( 2 \pi f_i t - n K_i z \right)}
+    \]
+
+    <p>With \(E_M\) the amplitude of the electric field, \(f_i\) the frequency of the light, and \(K_i\) the norm of the wave vector in the vacuum given by \(K_i = 2 \pi \frac{f_i}{c}\).</p>
+
+    <p>When the monochromatic plane light wave passes through the acoustic field (of thickness \(e\)) modulated by the ultrasonic wave, it undergoes diffraction due to the periodic variation of the refractive index.</p>
+
+    \[
+    L = n(x, y, z, t) \cdot e
+    \]
+
+    <p>Where \(n(x, y, z, t)\) is the function governing the modification of the refractive index of the medium:</p>
+
+    \[
+    L = n_0 e + \mu P_m \sin \left( 2 \pi f_{US} t - K_{US} y \right) \cdot e
+    \]
+
+    <p>As a reminder, the phase of the light in a given medium is defined by:</p>
+
+    \[
+    \varphi = \frac{2 \pi}{\lambda_0} L_0 = \frac{2 \pi}{\lambda_0} d
+    \]
+
+    <p>Where \(\lambda_0\) is the wavelength of light in a vacuum. And in a vacuum, the optical path \(L_0\) is simply the physical distance \(d\) traveled by the light, as the refractive index of the vacuum is 1.</p>
+
+    <p>When the light wave passes through the acoustic field, the phase of the light wave is directly affected by the variation of the refractive index of the medium and by the variation of the optical path. Indeed,</p>
+
+    \[
+    \delta \varphi = \frac{2 \pi}{\lambda_0} L = \frac{2 \pi}{\lambda_0} n(x, y, z, t) e
+    \]
+
+    <p>Thus,</p>
+
+    \[
+    \varphi(x, y, z, t) = \frac{2 \pi}{\lambda_i} n_0 e + \frac{2 \pi \mu}{\lambda_i} P_m \sin \left( 2 \pi f_{US} t - K_{US} y \right)
+    \]
+
+    <p>Let,</p>
+
+    \[
+    \varphi_0 = \frac{2 \pi n_0 e}{\lambda_i} \text{ and } \delta \varphi = \frac{2 \pi \mu P_m e}{\lambda_i}
+    \]
+
+    <p>The electric field of the light wave exiting the medium traversed by the acoustic field is given by:</p>
+
+    \[
+    E(x, y, z+e, t) = E_M e^{j \left( 2 \pi f_i t - n K_i z \right)} \cdot e^{j \varphi_0} e^{j \delta \varphi \sin \left( 2 \pi f_{US} t - K_{US} y \right)}
+    \]
+
+    <p>Expanding in a second-order Taylor series:</p>
+
+    \[
+    E(x, y+e, z, t) \approx E_M e^{j \varphi_0} \left[ \left( 1 - \frac{\delta \varphi^2}{4} \right) e^{j(2 \pi f_i t - n K_i z)} + \frac{\delta \varphi}{2} \left( e^{j 2 \pi (f_i + f_{US}) t - (n K_i z + K_{US} y)} - e^{j 2 \pi (f_i - f_{US}) t - (n K_i z - K_{US} y)} \right) \right]
+    \]
+
+    <p>Where \(\left( 1 - \frac{\delta \varphi^2}{4} \right) e^{j \left( 2 \pi f_i t - n K_i y \right)}\) corresponds to the main spectral component of the unmodulated light exiting the acoustic field at \(f_i\) with high amplitude \(\left( 1 - \frac{\delta \varphi^2}{4} \right)\), and \(\frac{\delta \varphi}{2} \left( e^{j 2 \pi (f_i + f_{US}) t - (n K_i z + K_{US} y)} - e^{j 2 \pi (f_i - f_{US}) t - (n K_i z - K_{US} y)} \right)\) represents the two spectral components of the light modulated by the acoustic field at \(\pm f_{US}\) with low amplitude \(\left( \pm \frac{\delta \varphi}{2} \right)\) (which depends on \(P_m\)).</p>
+
+    <p>The \(n\)-th order Taylor series expansion would therefore involve the harmonics of the acoustic field \(n f_{US}\), where the amplitudes of the harmonics depend on the thickness of the diffraction regime: thin (Raman-Nath) or thick (Bragg). This is developed in the works of **Citation JM**.</p>
+
+    <p>As you will have understood, it is the two components modulated by the acoustic field that interest us in acousto-optic imaging, since these two components contain the information on the position of the acoustic wavefront.</p>
+
+    <p>Now, it is necessary to make a link between the intensity of the photons marked by the acoustic field passing through the medium and the local intensity of the light in the medium. It is this local intensity that gives us information on the presence or absence of an early tumor.</p>
+
+    \[
+    I_{tagged} \propto \|E_{tagged}\|^{2}
+    \]
+
+    \[
+    I_{tagged} \propto \left| \delta \varphi \cdot E_0 e^{j \varphi_0} \cdot e^{j 2 \pi (f_i t \pm f_{US}) t - (n K_i y + K_{US} Z)} \right|^2
+    \]
+
+    \[
+    I_{tagged} \propto \left| E_{0} \right|^2 \cdot \left| \delta \varphi \right|^2
+    \]
+
+    <p>With \(\delta \varphi \propto P\) and \(P = P_m \sin(2 \pi f_{US} t - K_{US} z)\).</p>
+
+    <p>Thus, if we integrate locally over the entire \(XZ\) plane.</p>
+
+    <p>Once we have determined the proportionality link between the intensity of the tagged photons measured by the photodiode (acousto-optic signal) and the local optical intensity in the \(XZ\) plane, the question arises of how to filter the main component \(f_i\). The latter being of high intensity and its bandwidth covers the components at \(f_i \pm f_{US}\).</p>
+
+    <h2>Detection by Interferometry of Ultrasounds</h2>
+
+    <p><strong>TO BE COMPLETED</strong></p>
+
+    <h3>Digital Holography</h3>
+
+    <p><strong>TO BE COMPLETED</strong></p>
+
+    <h3>Photorefractive Holography</h3>
+
+    <p>Photorefractive holography involves using a photorefractive crystal to capture the interference pattern.</p>
+
+    <h3>Plane Waves</h3>
+
+    <p>The concept of tomography fully comes into its own with the notion of a plane wave.</p>
+
+    <div class="center">
+        <img src="images/gif_plane.gif" alt="Plane Waves" width="400"/>
+    </div>
+
+    <p>By applying a delay law to the piezoelectric elements of our ultrasonic probe, the greater the delays between each neighboring piezoelectric element, the more significant the emission angle of the plane wave.</p>
+
+    <h3>Structured Waves</h3>
+
+    <div class="center">
+        <img src="images/gif_struct.gif" alt="Structured Waves" width="400"/>
+    </div>
+
+    <h3>Mix Waves</h3>
+
+    \[
+    y_{\theta,t} = \sum_{x,z} {[A_{t, z , x, \theta}]}^T \lambda_{x,z}
+    \]
+
+    <h1>Tomographic reconstruction</h1>
+
+    <p>Tomography is a method of image reconstruction based on a set of projections acquired at different emission angles \(\theta\).</p>
+
+    <p>In our case, tomography allows us to reconstruct the light intensity map of the tagged photons in the scattering medium solely from the projections, that is, the acousto-optic signals (\(1D\)) acquired by the photodiode.</p>
+
+    <p>As a reminder, the experimental setup is static; no elements move to acquire different projections. Indeed, the advantage of the method is to send different acoustic waves to obtain different projections.</p>
+
+    <h2>Analytic Reconstruction (FBP)</h2>
+
+    <p>Analytic tomographic reconstruction is the simplest type of reconstruction, based on analytic models of integrals.</p>
+
+    <h3>iRadon Inversion Method</h3>
+
+    <p>The iRadon method is derived using the polar coordinates of the object in the Fourier domain. This method constitutes a generalization of the filtered backprojection (FBP).</p>
+
+    <p>Generalization of the Fourier Slice Theorem:</p>
+
+    <p>For each angle \(\theta\), the acquisition is done by spatially structuring the acoustic field emitted by the US probe. The Fourier decomposition of function \(h_0(x')\) is the sum of a positive constant equal to its average over one period \(\lambda_s\) and harmonic terms of frequency \(f_s\).</p>
+
+    \[
+    h_0(x') \approx \frac{1}{2} + \frac{2}{\pi} \cos(2 \pi f_s x' + \phi)
+    \]
+
+    <p>By performing four distinct measurements with \(\phi = 0, \frac{\pi}{2}, \pi, \frac{3\pi}{2}\), we retrieve the Fourier component of the object along direction \(x'\) using the linear combination:</p>
+
+    \[
+    s(c_s t, \theta, f_s) = \frac{(s_0 - s_\pi) - i(s_{\frac{\pi}{2}} - s_{\frac{3\pi}{2}})}{2 / \pi}
+    \]
+
+    <p>Taking the Fourier transform of the above equation with respect to variable \(c_s t\), we find the following generalized Fourier Slice Theorem (FST) relation:</p>
+
+    \[
+    \mathcal{F}_ {c_s t}(s(c_s t, \theta, f_s)) = \mathcal{F}_{x, z}(I)(f_s \sin \theta + f_s \cos \theta, f_s \cos \theta - f_s \sin \theta)
+    \]
+
+    <p>The integral is then split into two terms \(\int_{\theta=0}^{\pi}\) and \(\int_{\theta=\pi}^{2\pi}\) followed by a change of variable \(\theta \leftarrow \theta - \pi\) on the second term. Making use of the relation \(\tilde{s}(f_s, \theta + \pi, f_s) = \tilde{s}(f_s, \theta, f_s)^*\), and limiting the integration domain to \([-\theta_m, \theta_m]\) as it is performed in FBP, the generalized FBP expression is:</p>
+
+    \[
+    I_{\text{rec}}(x, z) = \int_{-\theta_m}^{\theta_m} 2 \Re\left[\int_{\mathbb{R}^+} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi x' f_s} e^{2 i \pi x' f_s} f_s \mathrm{d} f_s\right] \mathrm{d} \theta + \int_{-\theta_m}^{\theta_m} \int_{-f_s}^{f_s} \tilde{s}(f_s, \theta, 0) e^{2 i \pi z' f_s} f_s \mathrm{d} f_s \mathrm{d} \theta
+    \]
+
+    <h3>iFourier Inversion Method</h3>
+
+    <p>The iFourier method is derived using Cartesian coordinates in the Fourier domain. It is well adapted to the ideal case where US waves are structured for multiple discrete values of \(f_s\) while \(\theta\) is fixed.</p>
+
+    <p>Inverse Fourier Transform:</p>
+
+    <p>We start with the integral, which defines the inverse Fourier transform using the generalized FST relation, and define the rotation operator of angle \(\theta\):</p>
+
+    \[
+    \mathbf{R}_{\theta}:(f_s, f_s) \in \mathbb{R}^2 \rightarrow \begin{cases}
+    f_x(f_s, f_s) = f_s \sin \theta + f_s \cos \theta \\
+    f_z(f_s, f_s) = f_s \cos \theta - f_s \sin \theta
+    \end{cases}
+    \]
+
+    <p>\(\mathbf{R}_{\theta}\) is a unitary operator, and therefore the determinant of its Jacobian matrix is equal to one. This allows a simple change of integration variables in the following expression:</p>
+
+    \[
+    \mathcal{F}_ {f_s, f_s}^{-1}[s(f_s, \theta, f_s)] = \int_{\mathbb{R}^2} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi(x f_x + z f_z)} \mathrm{d} f_x \mathrm{d} f_z = I(x', z')
+    \]
+
+    <p>The inversion formula is therefore:</p>
+
+    \[
+    I_{\text{rec}}(x, z) = \frac{1}{N_{\theta}} \sum_{-\theta_m}^{\theta_m} \left[\int_{\mathbb{R}^2} \tilde{s}(f_s, \theta, f_s) e^{2 i \pi(x' f_x + z' f_z)} \mathrm{d} f_x \mathrm{d} f_z\right]
+    \]
+
+    <h2>Algebraic reconstruction (MLEM)</h2>
+
+    <h2>Bayesian reconstruction (MAP)</h2>
+
+    \[
+    \theta_j^{(p+1)} = \theta_j^{(p)} +
+    \textcolor{blue}{
+    \frac{
+        \theta_j^{(p)}
+    }{
+        \sum_{i=1}^I a_{ij}
+        \textcolor{green}{+} \textcolor{green}{\theta_j^{(p)} \beta \left. \frac{\partial^2 U}{\partial \theta_j^2} \right|_ {\theta_j = \theta_j^{(p)}}}
+    }
+    }
+    \left(
+        {\sum_{i=1}^{I} a_{ij}} \frac{m_i - (\sum_{l=1}^{J} a_{il} \theta_l^{(p)} + b_i)}{\sum_{l=1}^{J} a_{il} \theta_l^{(p)} + b_i}
+        \textcolor{green}{-} \textcolor{green}{\beta \left. \frac{\partial U}{\partial \theta_j} \right|_{\theta_j = \theta_j^{(p)}}}
+    \right)
+    \]
+
+    \[
+    \hat{\boldsymbol{\theta}}_ {\text{MAP}} = \mathop{\arg\max}\limits_{\boldsymbol{\theta} \in \boldsymbol{\Theta}}
+    \left( l(\mathbf{m} \mid \boldsymbol{\theta}) - \beta \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \psi(\theta_k, \theta_j) \right)
+    \]
+
+    \[
+    U(\boldsymbol{\theta}) = \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \boxed{\psi(\theta_k, \theta_j)}
+    \]
+
+    <ul>
+        <li><strong>Quadratic</strong></li>
+    </ul>
+
+    \[
+    \psi_{\text{Quad}} (\theta_k, \theta_j) = \frac{1}{2} \left( \frac{\theta_k - \theta_j}{\sigma} \right)^2
+    \]
+
+    <ul>
+        <li><strong>Huber</strong></li>
+    </ul>
+
+    \[
+      \psi_{\text{Huber}} (\theta_k, \theta_j) =
+      \begin{cases}
+      \delta |\theta_k - \theta_j| - \frac{\delta^2}{2} & \text{if } |\theta_k - \theta_j| > \delta, \\
+      \frac{1}{2} (\theta_k - \theta_j)^2 & \text{if } |\theta_k - \theta_j| \leq \delta.
+      \end{cases}
+    \]
+
+    <ul>
+        <li><strong>Relative difference</strong></li>
+    </ul>
+
+    \[
+        \psi_{\text{RD}} (\theta_k, \theta_j) =
+        \frac{(\theta_k - \theta_j)^2}{(\theta_k + \theta_j) + \gamma |\theta_k - \theta_j|}
+    \]
+
+    \[
+    \hat{\boldsymbol{\theta}}_  {\text{MAP}} = \mathop{\arg\max}\limits_{\boldsymbol{\theta} \in \boldsymbol{\Theta}} \left( l(\mathbf{m} \mid \boldsymbol{\theta}) - \beta \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \boxed{\psi(\theta_k, \theta_j)} \right)
+    \]
+
+    \[
+    \hat{\boldsymbol{\theta}}_ {\text{MAP}}  = \mathop{\arg\max}\limits_{\boldsymbol{\theta} \in \boldsymbol{\Theta}}
+    \left( \sum_{i=1}^I \left( m_i \ln \left( \sum_{j=1}^J a_{ij} \theta_j + b_i \right) - \left( \sum_{j=1}^J a_{ij} \theta_j + b_i \right) - \ln (m_i!) \right) - \beta \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \boxed{\psi(\theta_k, \theta_j)} \right)
+    \]
+
+    \[
+    \hat{\boldsymbol{\theta}}_ {\text{MAP}}  = \mathop{\arg\max}\limits_{\boldsymbol{\theta} \in \boldsymbol{\Theta}}
+    \left( \sum_{i=1}^I \left( m_i \ln \left( \sum_{j=1}^J a_{ij} \theta_j + b_i \right) - \left( \sum_{j=1}^J a_{ij} \theta_j + b_i \right) \right) - \beta \sum_{j=1}^J \sum_{k \in N_j, k > j} \omega_{kj} \boxed{\psi(\theta_k, \theta_j)} \right)
+    \]
+
+    <div class="center">
+        <img src="https://github.com/user-attachments/assets/c01c658d-f438-4b7b-8df7-166e1ff7bc13" alt="Influence of Iteration" width="400"/>
+        <img src="https://github.com/user-attachments/assets/1540cf73-bd87-4546-b7d9-e2e6a6b4b0c2" alt="Influence of Iteration 2" width="400"/>
+    </div>
+</body>
+</html>
