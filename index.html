@@ -1,36 +1,42 @@
+<!DOCTYPE html>
+<html lang="fr">
 <head>
+  <meta charset="UTF-8">
+  <title>Tomographie Acousto-Optique</title>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" id="MathJax-script" async></script>
   <style>
-    /* Style pour le logo en bannière */
-    .header-logo {
-      width: 100%;          /* Largeur pleine page */
-      max-height: 120px;    /* Ajuste la hauteur max */
-      object-fit: contain;  /* Garde les proportions */
-      background: white;    /* Fond blanc (optionnel) */
-      padding: 10px 0;      /* Espacement vertical */
-      margin-bottom: 20px;  /* Espacement sous le logo */
-      display: block;       /* Évite les marges indésirables */
-    }
-    /* Style pour le conteneur du logo (optionnel) */
-    .logo-container {
-      text-align: center;   /* Centre le logo */
-      border-bottom: 1px solid #eee; /* Ligne de séparation */
-    }
+    /* Styles ci-dessus */
+    .header-logo { width: 100%; max-height: 120px; object-fit: contain; background: white; display: block; margin: 0 auto; padding: 10px 0; }
+    .main-title { text-align: center; font-size: 1.8em; margin: 10px 0 15px 0; color: #2c3e50; }
+    nav { background: #f8f9fa; padding: 12px 0; text-align: center; border-bottom: 1px solid #e9ecef; margin-bottom: 25px; }
+    nav a { margin: 0 20px; text-decoration: none; color: #3498db; font-weight: 500; }
+    /* Tes styles existants pour le reste */
+    .center { text-align: center; margin: 20px 0; }
   </style>
 </head>
 
 <body>
-  <!-- Logo en bannière -->
-  <div class="logo-container">
+  <div class="container">
+    <!-- Logo -->
     <img src="images/logo.png" alt="Logo Acousto-Optic Tomography" class="header-logo">
+
+    <!-- Titre -->
+    <h1 class="main-title">Tomographie Acousto-Optique<br><small>Imagerie multimodale pour la caractérisation de tumeurs</small></h1>
+
+    <!-- Menu -->
+    <nav>
+      <a href="index.html">Accueil</a>
+      <a href="reconstruction.html">Reconstruction</a>
+      <a href="detection.html">Détection</a>
+      <a href="simulations.html">Simulations</a>
+    </nav>
+
+    <!-- Contenu existant -->
+    <div class="center">
+      <img src="images/gif_plane.gif" alt="Ondes planes" width="400"/>
+    </div>
+    <p>By applying a delay law to the piezoelectric elements...</p>
+    <!-- Reste de ton HTML -->
   </div>
-
-  <!-- Menu de navigation (exemple) -->
-  <nav>
-    <a href="index.html">Ma thèse</a> |
-    <a href="pages/DOC_librairie_aot-biomaps.html">Librairie AOT_biomaps</a> |
-  </nav>
-
-  <!-- Contenu de la page -->
-  <h1>Titre de la page</h1>
-  ...
 </body>
+</html>
