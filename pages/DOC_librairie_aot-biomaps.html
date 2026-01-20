@@ -91,19 +91,15 @@
             background: #e3f2fd;
         }
 
-        .vertical-menu .back-home {
-            font-size: 0.9em;
-            padding: 10px 25px;
-            color: #666;
-        }
-
         .content {
             padding: 20px;
+            font-family: Arial, sans-serif;
         }
 
         .center {
             text-align: center;
             margin: 20px 0;
+            
         }
     </style>
 </head>
@@ -113,7 +109,6 @@
         <a href="../index.html" class="back-home">↩ Retour à l'accueil</a>
         <a href="DOC_explications_physique.html">My PhD topic</a>
         <a href="DOC_resultats.html">My results</a>
-        <a href="DOC_librairie_aot-biomaps.html">AOT_BioMaps Library</a>
     </div>
 
     <!-- Contenu principal -->
@@ -124,7 +119,8 @@
         <pre><code class="bash">pip install --upgrade aot-biomaps</code></pre>
 
         <h2>GPU Installation</h2>
-        <pre><code class="bash">pip install --upgrade aot-biomaps
+        <pre><code class="bash">
+pip install --upgrade aot-biomaps
 pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-$(python -c "import torch; print(torch.__version__)")+$(python -c "import torch; print(''.join(torch.__version__.split('+')[1:]))").html</code></pre>
 
         <div class="note">
