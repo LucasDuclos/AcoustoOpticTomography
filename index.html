@@ -1,41 +1,95 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Tomographie Acousto-Optique</title>
+  <title>Acousto-Optic Tomography</title>
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" id="MathJax-script" async></script>
   <style>
-    /* Styles ci-dessus */
-    .header-logo { width: 100%; max-height: 220px; object-fit: contain; background: white; display: block; margin: 0 auto; padding: 10px 0; }
-    .main-title { text-align: center; font-size: 1.8em; margin: 10px 0 15px 0; color: #2c3e50; }
-    nav { background: #f8f9fa; padding: 12px 0; text-align: center; border-bottom: 1px solid #e9ecef; margin-bottom: 25px; }
-    nav a { margin: 0 20px; text-decoration: none; color: #3498db; font-weight: 500; }
-    /* Tes styles existants pour le reste */
-    .center { text-align: center; margin: 20px 0; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    .header-logo {
+      width: 100%;
+      max-height: 220px;
+      object-fit: contain;
+      background: white;
+      display: block;
+      margin: 0 auto;
+      padding: 10px 0;
+      text-align: center;
+    }
+
+    .main-title {
+      text-align: center;
+      font-size: 1.8em;
+      margin: 10px 0 15px 0;
+      color: #2c3e50;
+    }
+
+    /* Menu vertical */
+    .vertical-menu {
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      padding: 30px 0;
+      position: fixed;
+      left: 0;
+      top: 0;
+      border-right: 1px solid #e9ecef;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+      z-index: 1000;
+    }
+
+    .vertical-menu a {
+      display: block;
+      padding: 18px 25px;
+      color: #3498db;
+      text-decoration: none;
+      font-size: 1.2em;
+      font-weight: 500;
+      transition: background 0.3s;
+    }
+
+    .vertical-menu a:hover {
+      background: #e3f2fd;
+    }
+
+    /* Contenu principal décalé pour éviter le chevauchement */
+    .content {
+      margin-left: 280px;
+      padding: 20px;
+    }
+
+    .center {
+      text-align: center;
+      margin: 20px 0;
+    }
   </style>
 </head>
 
 <body>
-  <div class="container">
+  <!-- Menu vertical -->
+  <div class="vertical-menu">
+    <a href="pages/DOC_explications_physique.html">My PhD topic</a>
+    <a href="pages/DOC_resultats.html">My results</a>
+    <a href="pages/DOC_librairie_aot-biomaps.html">My AOT_biomaps python library</a>
+  </div>
+
+  <!-- Contenu principal -->
+  <div class="content">
     <!-- Logo -->
-    <img src="images/logo.png" alt="Logo Acousto-Optic Tomography" class="header-logo">
+    <img src="images/logo.png" alt="Acousto-Optic Tomography Logo" class="header-logo">
 
     <!-- Titre -->
-    <h1 class="main-title">>Acousto-Optic Tomography<br><small>Multimodal imaging for tumor characterization</small></h1>
-
-    <!-- Menu -->
-    <nav>
-      <a href="pages/DOC_explications_physique.html">My PhD topic</a>
-      <a href="pages/DOC_resultats.html">My results</a>
-      <a href="pages/DOC_librairie_aot-biomaps.html">My AOT_biomaps python library</a>
-    </nav>
+    <h1 class="main-title">Acousto-Optic Tomography<br><small>Multimodal imaging for tumor characterization</small></h1>
 
     <!-- Contenu existant -->
     <div class="center">
-      <img src="images/gif_plane.gif" alt="Ondes planes" width="400"/>
+      <img src="images/gif_plane.gif" alt="Plane waves" width="400"/>
     </div>
-    <p>By applying a delay law to the piezoelectric elements...</p>
-    <!-- Reste de ton HTML -->
+    <p>By applying a delay law to the piezoelectric elements, we can focus the acoustic wave at a specific point in the medium, enabling high-resolution imaging.</p>
   </div>
 </body>
 </html>
