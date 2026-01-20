@@ -34,6 +34,43 @@
         .math {
             font-size: 1.1em;
         }
+        .vertical-menu {
+      width: 250px;
+      height: 100vh;
+      background: #f8f9fa;
+      padding: 30px 0;
+      position: fixed;
+      left: 0;
+      top: 0;
+      border-right: 1px solid #e9ecef;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+      z-index: 1000;
+    }
+
+    .vertical-menu a {
+      display: block;
+      padding: 18px 25px;
+      color: #3498db;
+      text-decoration: none;
+      font-size: 1.2em;
+      font-weight: 500;
+      transition: background 0.3s;
+    }
+
+    .vertical-menu a:hover {
+      background: #e3f2fd;
+    }
+
+    /* Contenu principal décalé pour éviter le chevauchement */
+    .content {
+      margin-left: 280px;
+      padding: 20px;
+    }
+
+    .center {
+      text-align: center;
+      margin: 20px 0;
+    }
     </style>
 </head>
 <body>
