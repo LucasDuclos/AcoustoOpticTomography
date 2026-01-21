@@ -150,7 +150,8 @@
             <h2>Library Usage</h2>
 
             <h3>Setting Up Parameters</h3>
-            <pre><code>fieldDir = "/path/to/folder/Fieldfolder"
+            <pre><code>
+fieldDir = "/path/to/folder/Fieldfolder"
 paramPath = "/path/to/folder/parameters.yaml"
 systemPath = "/path/to/folder/System_matrixParams.txt"
 param = AOT_biomaps.Settings.Params(paramPath)</code></pre>
@@ -182,13 +183,15 @@ param = AOT_biomaps.Settings.Params(paramPath)</code></pre>
             </ul>
 
             <h3>Simulation Mode</h3>
-            <pre><code>manip = AOT_biomaps.AOT_Experiment.Tomography(params=param)
+            <pre><code>
+manip = AOT_biomaps.AOT_Experiment.Tomography(params=param)
 manip.generatePhantom()
 manip.generateAcousticFields(fieldDataPath, systemPath, show_log=False)
 manip.generateAOsignal(withTumor=True)</code></pre>
 
             <h3>Experimental Mode</h3>
-            <pre><code>manip = AOT_biomaps.AOT_Experiment.Tomography(params=param)
+            <pre><code>
+manip = AOT_biomaps.AOT_Experiment.Tomography(params=param)
 manip.generateAcousticFields(fieldDataPath, systemPath, show_log=False)
 manip.loadAOsignal(withTumor=True)</code></pre>
             <div class="note">
@@ -209,7 +212,8 @@ manip.loadAOsignal(withTumor=True)</code></pre>
 
             <h3>Algebraic Reconstruction</h3>
             <p>The default optimizer is <strong>Maximum Likelihood Estimation Method (ML-EM)</strong>.</p>
-            <pre><code>optimizer = AOT_biomaps.AOT_Reconstruction.OptimizerType.MLEM
+            <pre><code>
+optimizer = AOT_biomaps.AOT_Reconstruction.OptimizerType.MLEM
 recon = AOT_biomaps.AOT_Reconstruction.AlgebraicRecon(
     experiment=manip,
     opti=optimizer,
@@ -232,7 +236,8 @@ recon.run()</code></pre>
                 <li>Quadratic (<code>AOT_biomaps.AOT_Reconstruction.PotentialType.QUADRATIC</code>)</li>
                 <li>Relative Difference (<code>AOT_biomaps.AOT_Reconstruction.PotentialType.RELATIVE_DIFFERENCE</code>)</li>
             </ul>
-            <pre><code>optimizer = AOT_biomaps.AOT_Reconstruction.OptimizerType.PGC
+            <pre><code>
+optimizer = AOT_biomaps.AOT_Reconstruction.OptimizerType.PGC
 potentialFunction = AOT_biomaps.AOT_Reconstruction.PotentialType.HUBER_PIECEWISE
 recon = AOT_biomaps.AOT_Reconstruction.BayesianRecon(
     experiment=manip,
