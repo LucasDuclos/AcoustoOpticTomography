@@ -98,7 +98,7 @@
             <img src="../images/image_AO.png" alt="Acousto-Optic Imaging"/>
         </div>
 
-        <h3>Optical Image \(\lambda\)</h3>
+        <h2>Optical Image \(\lambda\)</h2>
 
         <p>In a scattering medium, incident light deviates from its path when it encounters particles. Beyond a certain transport length, the incident photon loses memory of its initial direction. The transport length is given by:</p>
 
@@ -120,7 +120,761 @@
             <img src="https://github.com/user-attachments/assets/40af3b90-b1ec-4038-83e4-4fec8237534b" alt="Optical Image and FFT"/>
         </div>
 
-        <h3>System matrix \(A\)</h3>
+        <h2>System Matrix \(A\)</h2>
+        The system matrix is a fundamental component in tomographic reconstruction, serving as the bridge between the unknown properties of the object and the measured data, enabling the reconstruction of images from indirect measurements. In Acousto-Optic Tomography (AOT), this system matrix is none other than the squared envelope of the acoustic field. In our case, measuring it directly in a solid medium is impossible. To overcome this issue, the acoustic field is simulated using numerical tools.
+
+        <h3>Acoustic field simulation</h3>
+
+        <h4>Physical model of acoustic wave propagation</h4>
+
+        <h5>Mass conservation</h5>
+            <p>
+            Mass conservation is expressed by the continuity equation, which states that the total mass in a closed system remains constant. For a fixed control volume in a fluid, the change in mass inside the volume must equal the mass flux entering minus the mass flux leaving.
+        </p>
+        <p>
+            Consider a fixed volume \( V \) in space, with a surface \( S \) surrounding this volume. The total mass in \( V \) is given by the integral of the density \( \rho \) over the volume \( V \):
+        </p>
+        <div class="equation">
+            \[ m(t) = \iiint_V \rho(\vec{r}, t) \, dV \]
+        </div>
+        <p>
+            The rate of change of mass in this volume is given by:
+        </p>
+        <div class="equation">
+            \[ \frac{d}{dt}m(t) = \frac{d}{dt} \iiint_V \rho(\vec{r}, t) \, \text{d}V = \iiint_V \frac{\partial \rho(\vec{r}, t)}{\partial t} \, \text{d}V \]
+        </div>
+        <p>
+            Define the mass flux density \( j(\vec{r}, t) \) as the product of the fluid density \( \rho(\vec{r}, t) \) and the fluid velocity \( v(\vec{r}, t) \):
+        </p>
+        <div class="equation">
+            \[ j(\vec{r}, t) = \rho(\vec{r}, t) \cdot v(\vec{r}, t) \]
+        </div>
+        <p>
+            The mass flux through a surface \( S \) is given by the surface integral of the mass flux density \( j(\vec{r}, t) \) over this surface:
+        </p>
+        <div class="equation">
+            \[ \Phi_m = \iint_S j(\vec{r}, t) \cdot \mathbf{n} \, \text{d}S \]
+        </div>
+        <p>
+            where \( \mathbf{n} \) is the unit normal vector to the surface \( S \).
+        </p>
+        <p>
+            Using the divergence theorem, we can convert the surface integral into a volume integral:
+        </p>
+        <div class="equation">
+            \[ \iint_S j(\vec{r}, t) \cdot \mathbf{n} \, dS = \iiint_V \nabla \cdot j(\vec{r}, t) \, \text{d}V \]
+        </div>
+        <p>
+            Equating the rate of change of mass to the net mass flux through the surface, we obtain:
+        </p>
+        <div class="equation">
+            \[ \iiint_V \frac{\partial \rho(\vec{r}, t)}{\partial t} \, \text{d}V = - \iiint_V \nabla \cdot \left[ (\rho(\vec{r}, t) \cdot v(\vec{r}, t)) \right] \, \text{d}V \]
+        </div>
+        <p>
+            Since this equation must hold for any volume \( V \), we can deduce the local mass conservation equation:
+        </p>
+        <div class="equation">
+            \[ \boxed{\frac{\partial \rho(\vec{r}, t)}{\partial t} + \nabla \cdot \left[ (\rho(\vec{r}, t) \cdot v(\vec{r}, t)) \right] = 0} \]
+        </div>
+
+        <h5>Momentum Conservation</h5>
+        <p>
+            The conservation of momentum in a fluid is expressed by the fundamental principle of dynamics applied to a fixed control volume. The total momentum in a volume \( V \) is given by:
+        </p>
+        <div class="equation">
+            \[ \vec{p}(t) = \iiint_V \rho(\vec{r}, t) \, \vec{v}(\vec{r}, t) \, dV \]
+        </div>
+        <p>
+            The time rate of change of momentum in this volume is:
+        </p>
+        <div class="equation">
+            \[ \frac{d}{dt} \vec{p}(t) = \frac{d}{dt} \iiint_V \rho(\vec{r}, t) \, \vec{v}(\vec{r}, t) \, dV = \iiint_V \frac{\partial}{\partial t} \left( \rho(\vec{r}, t) \, \vec{v}(\vec{r}, t) \right) \, dV \]
+        </div>
+        <p>
+            The momentum can also change due to the flux entering or leaving through the surface \( S \) surrounding the volume \( V \). The momentum flux through \( S \) is given by:
+        </p>
+        <div class="equation">
+            \[ \vec{\Phi}_p = \iint_S \rho(\vec{r}, t) \, \vec{v}(\vec{r}, t) \, \left(\vec{v}(\vec{r}, t) \cdot \mathbf{n} \right) \, dS \]
+        </div>
+        <p>
+            where \( \mathbf{n} \) is the outward unit normal vector to the surface.
+        </p>
+        <p>
+            Additionally, the forces applied to the volume can be decomposed into surface forces (exerted by the surrounding fluid), modeled by the stress tensor \( \sigma(\vec{r}, t) \), and external body forces \( \vec{f}(\vec{r}, t) \).
+        </p>
+        <p>
+            The flux of surface forces is written as:
+        </p>
+        <div class="equation">
+            \[ \vec{F}_\text{surface} = \iint_S \sigma(\vec{r}, t) \cdot \mathbf{n} \, dS \]
+        </div>
+        <p>
+            and the body forces as:
+        </p>
+        <div class="equation">
+            \[ \vec{F}_\text{volume} = \iiint_V \vec{f}(\vec{r}, t) \, dV \]
+        </div>
+        <p>
+            Applying the divergence theorem to the surface force, we get:
+        </p>
+        <div class="equation">
+            \[ \iint_S \sigma(\vec{r}, t) \cdot n(\vec{r}) \, dS = \iiint_V \nabla \cdot \sigma(\vec{r}, t) \, dV \]
+        </div>
+        <p>
+            Finally, the conservation of momentum is written by balancing the temporal variation and the flux:
+        </p>
+        <div class="equation">
+            \[ \iiint_V \frac{\partial}{\partial t} \left[ \rho(\vec{r}, t) \cdot \vec{v}(\vec{r}, t) \right] \, dV = - \iint_S \left[ \rho(\vec{r}, t) \cdot \vec{v}(\vec{r}, t) \right] \left( \vec{v}(\vec{r}, t) \cdot n(\vec{r}) \right) dS + \iint_S \sigma(\vec{r}, t) \cdot n(\vec{r}) \, dS + \iiint_V \vec{f}(\vec{r}, t) \, dV \]
+        </div>
+        <p>
+            Or, integrating the first surface integral with the divergence theorem:
+        </p>
+        <div class="equation">
+            \[ \iiint_V \frac{\partial}{\partial t} \left[ \rho(\vec{r}, t) \cdot \vec{v}(\vec{r}, t) \right] \, dV = - \iiint_V \nabla \cdot \left( \left[ \rho(\vec{r}, t) \cdot \vec{v}(\vec{r}, t) \right] \otimes \vec{v} \right) \, dV + \iiint_V \nabla \cdot \sigma(\vec{r}, t) \, dV + \iiint_V \vec{f}(\vec{r}, t) \, dV \]
+        </div>
+        <p>
+            Since this equality holds for any volume \( V \), we obtain the local equation:
+        </p>
+        <div class="equation">
+            \[ \boxed{\frac{\partial}{\partial t} \left[ \rho(\vec{r}, t) \cdot \vec{v}(\vec{r}, t) \right] + \nabla \cdot \left( \left[ \rho(\vec{r}, t) \cdot \vec{v}(\vec{r}, t) \right] \otimes \vec{v}(\vec{r}, t) \right) = \nabla \cdot \sigma(\vec{r}, t) + \vec{f}(\vec{r}, t)} \]
+        </div>
+
+        <h5> Simplified Navier-Stokes Model for Biological Tissues</h5>
+        <p>
+            The Navier-Stokes equations are derived from the principles of mass conservation and momentum conservation, and they include terms to model the effects of viscosity, which are crucial for describing the behavior of real fluids. In the context of acoustic wave propagation in biological tissues, these equations capture the complex interactions between waves and the medium, taking into account the mechanical properties of the tissues.
+        </p>
+        <p>
+            The Navier-Stokes model, defined below, links the equations of mass conservation and momentum conservation:
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{alignedat}{2}
+            & \frac{\partial \rho(\vec{r}, t)}{\partial t} + \nabla \cdot \left[ (\rho(\vec{r}, t) \cdot v(\vec{r}, t)) \right] = 0 \quad &(1)\\
+            & \frac{\partial}{\partial t} \left[ \rho(\vec{r}, t) \cdot \vec{v}(\vec{r}, t) \right] + \nabla \cdot \left( \left[ \rho(\vec{r}, t) \cdot \vec{v}(\vec{r}, t) \right] \otimes \vec{v}(\vec{r}, t) \right) = \nabla \cdot \sigma(\vec{r}, t) + \vec{f}(\vec{r}, t) \quad &(2)
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            Simplifications:
+        </p>
+        <p>
+            We assume the medium is weakly compressible, which is the case for biological tissues (\( \rho(\vec{r}, t) = \rho(\vec{r}) \)). In the case of non-viscous flow, we neglect the effects of viscosity, and the stress tensor simply becomes \( \sigma = -pI \), where \( I \) is the identity tensor. Finally, we assume the external forces \( \vec{f} \) are negligible or zero.
+        </p>
+        <p>
+            With,
+        </p>
+        <div class="equation">
+            \[ \rho(\vec{r}, t) = \rho_0 + \Delta \rho(\vec{r}, t) \]
+        </div>
+        <p>
+            Thus,
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{alignedat}{2}
+            & \frac{\partial \left(\rho_0 + \Delta \rho(\vec{r}, t)\right)}{\partial t} + \nabla \cdot \left[ \left(\rho_0 + \Delta \rho(\vec{r}, t)\right) \cdot v(\vec{r}, t) \right] = 0 \quad & (1) \\
+            & \frac{\partial}{\partial t} \left[ \left(\rho_0 + \Delta \rho(\vec{r}, t)\right) \cdot \vec{v}(\vec{r}, t) \right] + \cancel{\nabla \cdot \left( \left[ \rho(\vec{r}, t) \cdot \vec{v}(\vec{r}, t) \right] \otimes \vec{v}(\vec{r}, t) \right)} = -\nabla \cdot \left(-p(\vec{r}, t)I\right) \quad & (2)
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            Where \( \nabla \cdot \left(-pI\right) = \nabla p \).
+        </p>
+        <p>
+            Expanding the equation and neglecting higher-order terms (products of small perturbations):
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{alignedat}{2}
+            & \frac{\partial \left(\Delta \rho(\vec{r}, t)\right)}{\partial t} + \nabla \cdot \left( \rho_0 \cdot v(\vec{r}, t) + \cancel{\Delta \rho(\vec{r}, t) \cdot v(\vec{r}, t)} \right) = 0 \quad & (1) \\
+            & \frac{\partial}{\partial t} \left( \rho_0 \cdot \vec{v}(\vec{r}, t) + \cancel{\Delta \rho(\vec{r}, t) \cdot \vec{v}(\vec{r}, t)} \right) = - \nabla p(\vec{r}, t) \quad & (2)
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            In conclusion,
+        </p>
+        <div class="equation">
+            \[ \boxed{\left\{ \begin{alignedat}{2}
+            & \frac{\partial \left(\Delta \rho(\vec{r}, t)\right)}{\partial t} + \rho_0 \nabla \cdot v(\vec{r}, t) = 0 \quad & (1) \\
+            & \rho_0 \frac{\partial \vec{v}(\vec{r}, t)}{\partial t} = - \nabla p(\vec{r}, t) \quad & (2)
+            \end{alignedat} \right.} \]
+        </div>
+        <p>
+            This model is the starting point for all acoustic field simulations, regardless of the preferred method.
+        </p>
+
+        <h4> Nonlinear Propagation of Ultrasound in Heterogeneous Media Using a Pseudo-Spectral Method in k-Space (k-Wave)</h4>
+        <p>
+            k-Wave introduces a specific entropy term \( \hat{s} \) to ensure a closed system. In other words, entropy is a thermodynamic parameter that, in k-Wave modeling, helps describe how acoustic energy is dissipated in the medium.
+        </p>
+        <p>
+            The pressure equation thus becomes dependent on the density of the medium and its entropy:
+        </p>
+        <div class="equation">
+            \[ \hat{p} = \hat{p}(\hat{\rho}, \hat{s}) \]
+        </div>
+        <p>
+            where quantities with a hat denote total quantities.
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{alignedat}{2}
+            & \hat{p}(\vec{r}, t) = p_0(\vec{r}) + \Delta p(\vec{r}, t) \\
+            & \hat{\rho}(\vec{r}, t) = \rho_0(\vec{r}) + \Delta \rho(\vec{r}, t) \\
+            & \hat{s}(\vec{r}, t) = s_0(\vec{r}) + \Delta s(\vec{r}, t)
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            Performing a Taylor expansion of \( \hat{p} \) around the ambient state \( (\rho_0, s_0) \) to the second order (nonlinear):
+        </p>
+        <div class="equation">
+            \[ \hat{p}(\hat{\rho}, \hat{s}) = \hat{p}(\rho_0, s_0) + \left(\frac{\partial \hat{p}}{\partial \hat{\rho}}\right)_{s_0} (\hat{\rho} - \rho_0) + \left(\frac{\partial \hat{p}}{\partial \hat{s}}\right)_{\rho_0} (\hat{s} - s_0) + \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho} \partial \hat{s}}\right)_{(\rho_0, s_0)} (\hat{\rho} - \rho_0)(\hat{s} - s_0) + \frac{1}{2} \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho}^2}\right)_{s_0} (\hat{\rho} - \rho_0)^2 + \frac{1}{2} \left(\frac{\partial^2 \hat{p}}{\partial \hat{s}^2}\right)_{\rho_0} (\hat{s} - s_0)^2 \]
+        </div>
+        <p>
+            Or,
+        </p>
+        <div class="equation">
+            \[ p_0 + \Delta p = p_0 + \left(\frac{\partial \hat{p}}{\partial \hat{\rho}}\right)_{s_0} \Delta \rho + \left(\frac{\partial \hat{p}}{\partial \hat{s}}\right)_{\rho_0} \Delta s + \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho} \partial \hat{s}}\right)_{(\rho_0, s_0)} \Delta \rho \Delta s + \frac{1}{2} \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho}^2}\right)_{s_0} (\Delta \rho)^2 + \frac{1}{2} \left(\frac{\partial^2 \hat{p}}{\partial \hat{s}^2}\right)_{\rho_0} (\Delta s)^2 \]
+        </div>
+        <p>
+            Simplifying,
+        </p>
+        <div class="equation">
+            \[ \Delta p = \left(\frac{\partial \hat{p}}{\partial \hat{\rho}}\right)_{s_0} \Delta \rho + \left(\frac{\partial \hat{p}}{\partial \hat{s}}\right)_{\rho_0} \Delta s + \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho} \partial \hat{s}}\right)_{(\rho_0, s_0)} \Delta \rho \Delta s + \frac{1}{2} \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho}^2}\right)_{s_0} (\Delta \rho)^2 + \frac{1}{2} \left(\frac{\partial^2 \hat{p}}{\partial \hat{s}^2}\right)_{\rho_0} (\Delta s)^2 \]
+        </div>
+        <p>
+            The speed of sound at rest \( c_0 \) in a medium is thermodynamically defined by:
+        </p>
+        <div class="equation">
+            \[ c_0^2 = \left(\frac{\partial \hat{p}}{\partial \hat{\rho}}\right)_{s_0} \]
+        </div>
+        <p>
+            We obtain,
+        </p>
+        <div class="equation">
+            \[ \Delta p = c_0^2 \Delta \rho + \left(\frac{\partial \hat{p}}{\partial \hat{s}}\right)_{\rho_0} \Delta s + \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho} \partial \hat{s}}\right)_{(\rho_0, s_0)} \Delta \rho \Delta s + \frac{1}{2} \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho}^2}\right)_{s_0} (\Delta \rho)^2 + \frac{1}{2} \left(\frac{\partial^2 \hat{p}}{\partial \hat{s}^2}\right)_{\rho_0} (\Delta s)^2 \]
+        </div>
+        <p>
+            In the context of weak nonlinear acoustics, entropy variations due to absorption are assumed to be of second order relative to density and pressure perturbations. We therefore neglect quadratic terms in entropy such as \( (\Delta s)^2 \) and \( \Delta \rho \Delta s \). On the other hand, the effects of entropy variation are modeled to the first order by a phenomenological dissipation term.
+        </p>
+        <div class="equation">
+            \[ \Delta p = c_0^2 \Delta \rho + \left(\frac{\partial \hat{p}}{\partial \hat{s}}\right)_{\rho_0} \Delta s + \frac{1}{2} \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho}^2}\right)_{s_0} (\Delta \rho)^2 \]
+        </div>
+        <p>
+            Define \( B/A \) as the nonlinearity parameter of our system with \( A \equiv \rho_0 c_0^2 \) and \( B \equiv \rho_0^2 \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho}^2}\right) \), such that,
+        </p>
+        <div class="equation">
+            \[ \left(\frac{\partial^2 \hat{p}}{\partial \hat{\rho}^2}\right) = \frac{c_0^2}{\rho_0} \frac{B}{A} \]
+        </div>
+        <div class="equation">
+            \[ \Delta p = c_0^2 \Delta \rho + \left(\frac{\partial \hat{p}}{\partial \hat{s}}\right)_{\rho_0} \Delta s + \frac{c_0^2}{2 \rho_0} \frac{B}{A} (\Delta \rho)^2 \]
+        </div>
+        <p>
+            The linear contribution of entropy to pressure, given by the term \( \left(\frac{\partial \hat{p}}{\partial \hat{s}}\right)_{\rho_0} \Delta s \), is preserved. This term is then replaced by a phenomenological expression modeling acoustic absorption in the medium, according to the approach introduced by Blackstock and formalized by Treeby et al.
+        </p>
+        <div class="equation">
+            \[ \left(\frac{\partial \hat{p}}{\partial \hat{s}}\right)_{\rho_0} \Delta s \rightarrow -c_0^2 \mathcal{L} \rho \]
+        </div>
+        <div class="equation">
+            \[ \Delta p = c_0^2 \Delta \rho + \frac{c_0^2}{2 \rho_0} \frac{B}{A} (\Delta \rho)^2 - c_0^2 \mathcal{L} \rho \]
+        </div>
+        <p>
+            where \( \mathcal{L} \) is a loss operator satisfying a power frequency law \( \alpha(f) \propto f^y \). This term allows integrating the dissipative effects observed experimentally in biological tissues, while avoiding the explicit modeling of entropy evolution. It thus plays the role of a viscoelastic damping source directly related to acoustic density.
+        </p>
+        <p>
+            The total change in density is then written as the sum:
+        </p>
+        <ul>
+            <li>of a local variation \( \rho(\vec{r}, t) \),</li>
+            <li>of a geometric term related to particle displacement \( \vec{d} \cdot \nabla \rho_0 \).</li>
+        </ul>
+        <p>
+            We can write that:
+        </p>
+        <div class="equation">
+            \[ \Delta \rho(\vec{r}) = \rho_0(\vec{r}) + \vec{d} \cdot \nabla \rho_0(\vec{r}) \]
+        </div>
+        <p>
+            Thus,
+        </p>
+        <div class="equation">
+            \[ \boxed{\Delta p = c_0^2 \left(\rho_0(\vec{r}) + \vec{d} \cdot \nabla \rho_0(\vec{r})\right) + \frac{c_0^2}{2 \rho_0} \frac{B}{A} \left(\rho_0(\vec{r}) + \vec{d} \cdot \nabla \rho_0(\vec{r})\right)^2 - c_0^2 \mathcal{L} \rho} \]
+        </div>
+
+        <h5> Numerical Resolution of the System in k-Space (Pseudo-Spectral Method)</h5>
+        <p>
+            The nonlinear acoustic system we have obtained couples the local acoustic density \( \rho \), the particle velocity \( \vec{v} \), and the pressure \( p \) through the conservation equations and a nonlinear equation of state integrating a loss term. This system can be solved numerically via a method called pseudo-spectral in k-space, which consists of discretizing the spatial derivatives in Fourier space while maintaining an explicit time scheme in physical space.
+        </p>
+        <p>
+            This choice improves the accuracy of spatial derivatives (thanks to Fourier transforms) while limiting numerical dispersion. This type of method is particularly suited to wave propagation in biological media where phase fidelity and frequency damping are crucial.
+        </p>
+        <p>
+            The system to be solved numerically is:
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{alignedat}{2}
+            & \frac{\partial \vec{v}}{\partial t} = - \frac{1}{\rho_0} \nabla p \\
+            & \frac{\partial \rho}{\partial t} = - \left( \rho_0 + 2 \rho \right) \nabla \cdot \vec{v} - \vec{v} \cdot \nabla \rho_0 \\
+            & p = c_0^2 \left( \rho + \vec{d} \cdot \nabla \rho_0 \right) + \frac{c_0^2}{\rho_0} \frac{B}{2A} \left( \rho + \vec{d} \cdot \nabla \rho_0 \right)^2 - c_0^2 \mathcal{L} \rho
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            where \( \vec{d}(\vec{r}, t) \) is the particle displacement defined by the time integral:
+        </p>
+        <div class="equation">
+            \[ \vec{d}(\vec{r}, t) = \int_{0}^{t} \vec{v}(\vec{r}, \tau) \, d\tau \]
+        </div>
+        <p>
+            and where the loss operator \( \mathcal{L} \) is defined in Fourier space.
+        </p>
+        <p>
+            Spatial derivatives are calculated using discrete Fourier transforms:
+        </p>
+        <div class="equation">
+            \[ \begin{aligned}
+            \nabla f(\vec{r}) &\xrightarrow{\mathcal{F}} i \vec{k} \cdot \tilde{f}(\vec{k}) \\
+            \nabla \cdot \vec{v}(\vec{r}) &\xrightarrow{\mathcal{F}} i \vec{k} \cdot \tilde{\vec{v}}(\vec{k}) \\
+            \nabla^2 f(\vec{r}) &\xrightarrow{\mathcal{F}} -|\vec{k}|^2 \cdot \tilde{f}(\vec{k})
+            \end{aligned} \]
+        </div>
+        <p>
+            with \( \tilde{f}(\vec{k}) \) the Fourier transform of the field \( f(\vec{r}) \). The return to physical space is done by inverse Fourier transform.
+        </p>
+        <p>
+            To limit the numerical dispersion inherent in discretization, a corrective factor \( \kappa(\vec{k}) \) is introduced to modulate the spatial derivatives:
+        </p>
+        <div class="equation">
+            \[ \kappa(\vec{k}) = \text{sinc}\left( \frac{c_0 |\vec{k}| \Delta t}{2} \right) \]
+        </div>
+        <p>
+            This factor is applied to each derivative in Fourier to improve the stability and temporal accuracy of the scheme.
+        </p>
+        <p>
+            The time resolution is carried out by iterating the following steps at each time step \( t_n \):
+        </p>
+        <ol>
+            <li>Calculate the particle velocity:
+            <div class="equation">
+                \[ \vec{v}^{n+1/2} = \vec{v}^{n-1/2} - \frac{\Delta t}{\rho_0} \cdot \kappa(\vec{k}) \cdot \nabla p^n \]
+            </div></li>
+            <li>Update the acoustic density:
+            <div class="equation">
+                \[ \rho^{n+1} = \rho^n - \Delta t \cdot \left[ (\rho_0 + 2 \rho^n) \cdot \kappa(\vec{k}) \cdot \nabla \cdot \vec{v}^{n+1/2} + \vec{v}^{n+1/2} \cdot \nabla \rho_0 \right] \]
+            </div></li>
+            <li>Update the particle displacement:
+            <div class="equation">
+                \[ \vec{d}^{n+1} = \vec{d}^n + \Delta t \cdot \vec{v}^{n+1/2} \]
+            </div></li>
+            <li>Calculate the pressure:
+            <div class="equation">
+                \[ p^{n+1} = c_0^2 \left( \rho^{n+1} + \vec{d}^{n+1} \cdot \nabla \rho_0 \right) + \frac{c_0^2}{\rho_0} \frac{B}{2A} \left( \rho^{n+1} + \vec{d}^{n+1} \cdot \nabla \rho_0 \right)^2 - c_0^2 \cdot \mathcal{L} \rho^{n+1} \]
+            </div></li>
+        </ol>
+        <p>
+            The operator \( \mathcal{L} \) models acoustic dissipation according to a power frequency law of the form \( \alpha(f) = \alpha_0 f^y \). In Fourier space, its application is written:
+        </p>
+        <div class="equation">
+            \[ \mathcal{F}[\mathcal{L} \rho] = \left[ \tau \cdot i \omega |\vec{k}|^{y-2} + \eta \cdot |\vec{k}|^{y-1} \right] \cdot \tilde{\rho}(\vec{k}) \]
+        </div>
+        <p>
+            where the coefficients are defined by:
+        </p>
+        <div class="equation">
+            \[ \begin{aligned}
+            \tau &= -2 \alpha_0 c_0^{y-1} \\
+            \eta &= 2 \alpha_0 c_0^{y} \cdot \tan\left( \frac{\pi y}{2} \right)
+            \end{aligned} \]
+        </div>
+        <p>
+            The application of \( \mathcal{L} \) thus consists of multiplying the Fourier transform of the acoustic density by a frequency operator, then performing an inverse transform.
+        </p>
+        <p>
+            This method combines the spectral precision of spatial derivatives (thanks to FFT), low numerical dispersion, and realistic modeling of acoustic losses. It allows efficient and faithful simulation of ultrasound propagation in heterogeneous biological media.
+        </p>
+
+        <h4>Linear Ultrasound Propagation Model by Superposition of Spherical Waves Based on the Green's Function (Field II)</h4>
+        <p>
+            In his article "A model for the propagation and scattering of ultrasound in tissue", Jørgen Arendt Jensen proposes a linear model for the propagation and scattering of ultrasound in biological tissues. He places himself in a context where ultrasound is used to diagnose anomalies in the soft tissues of the human body. Jensen makes the following assumptions:
+        </p>
+        <ul>
+            <li>The medium is inhomogeneous with variations in density and speed of ultrasound propagation.</li>
+            <li>The variations in pressure and density due to ultrasound are small compared to the average values.</li>
+            <li>The process is adiabatic, without heat conduction or conversion of ultrasonic energy into thermal energy.</li>
+        </ul>
+        <p>
+            The acoustic wave equation is a partial differential equation that describes the propagation of sound waves in a medium. It is derived from the equations of mass conservation and momentum conservation.
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{alignedat}{2}
+            & \frac{\partial \rho(\vec{r}, t)}{\partial t} + \rho_0 \nabla \cdot \vec{v}(\vec{r}, t) = 0 \quad & \text{(1)} \\
+            & \rho_0 \frac{\partial \vec{v}(\vec{r}, t)}{\partial t} = -\nabla p(\vec{r}, t) \quad & \text{(2)}
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            where \( \rho(\vec{r}, t) \) represents the dynamic density fluctuation dependent on time and the medium, and \( \rho_0 \) the average static density of the medium. \( p(\vec{r}, t) \) represents the local dynamic pressure also dependent on time, and \( p_0 \) the average static pressure of the medium.
+        </p>
+        <p>
+            We then introduce the velocity potential \( \psi(\vec{r}, t) \), defined as:
+        </p>
+        <div class="equation">
+            \[ \vec{v}(\vec{r}, t) = \nabla \psi(\vec{r}, t) \]
+        </div>
+        <p>
+            This allows us to rewrite the system:
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{alignedat}{2}
+            & \frac{\partial \rho(\vec{r}, t)}{\partial t} + \rho_0 \nabla^2 \psi(\vec{r}, t) = 0 \quad & \text{(1)} \\
+            & \rho_0 \frac{\partial \nabla \psi(\vec{r}, t)}{\partial t} = - \nabla p(\vec{r}, t) \quad & \text{(2)}
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            We now assume that the fluid is compressible with a linear relationship between pressure and density in a homogeneous medium:
+        </p>
+        <div class="equation">
+            \[ p(\vec{r}, t) = c_0^2 \rho(\vec{r}, t) \]
+        </div>
+        <p>
+            The solution to the homogeneous wave equation defined in the above equation allows us to calculate the incident field \( p_i \) by applying the far-field approximation based on the momentum equation and assuming the regularity of the system.
+        </p>
+        <div class="equation">
+            \[ p_i(\vec{r}, t) = \rho_0 \frac{\partial \psi(\vec{r}, t)}{\partial t} \]
+        </div>
+        <p>
+            The total field, which is the key to our simulation, is defined as the sum of the incident field and the scattered field:
+        </p>
+        <div class="equation">
+            \[ \boxed{p_{\text{total}}(\vec{r}, t) = p_i(\vec{r}, t) + p_s(\vec{r}, t)} \]
+        </div>
+        <p>
+            The calculation of the scattered pressure field, in a weakly inhomogeneous medium (first-order linear approximation), requires taking into account the spatial variations of density \( \rho_0(\vec{r}) \) and celerity \( c_0(\vec{r}) \), intrinsic to the medium and independent of time, as well as the variations of the incident field induced by these weak inhomogeneities of the medium.
+        </p>
+        <p>
+            Starting again from the equation:
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{alignedat}{2}
+            & \nabla \cdot \vec{v}(\vec{r}, t) = -\frac{1}{\rho_0(\vec{r})} \frac{\partial \rho(\vec{r}, t)}{\partial t} \quad & \text{(1)} \\
+            & \frac{\partial \vec{v}(\vec{r}, t)}{\partial t} = -\frac{1}{\rho_0(\vec{r})} \nabla p_{\text{total}}(\vec{r}, t) \quad & \text{(2)}
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            Deriving (1) in the above equation:
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{alignedat}{2}
+            & \nabla \cdot \frac{\partial}{\partial t} \vec{v}(\vec{r}, t) = -\frac{1}{\rho_0(\vec{r})} \frac{\partial^2 \rho(\vec{r}, t)}{\partial t^2} \quad & \text{(1)} \\
+            & \frac{\partial \vec{v}(\vec{r}, t)}{\partial t} = -\frac{1}{\rho_0(\vec{r})} \nabla p_{\text{total}}(\vec{r}, t) \quad & \text{(2)}
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            Or, substituting (1) into (2):
+        </p>
+        <div class="equation">
+            \[ \nabla \cdot \left( \frac{1}{\rho_0(\vec{r})} \nabla p_{\text{total}}(\vec{r}, t) \right) = \frac{1}{\rho_0(\vec{r})} \frac{\partial^2 \rho(\vec{r}, t)}{\partial t^2} \]
+        </div>
+        <p>
+            With the reminder (equation):
+        </p>
+        <div class="equation">
+            \[ \frac{\partial^2 \rho(\vec{r}, t)}{\partial t^2} = \frac{1}{c_0^2(\vec{r})} \frac{\partial^2 p_{\text{total}}(\vec{r}, t)}{\partial t^2} \]
+        </div>
+        <p>
+            Thus, substituting into the above equation:
+        </p>
+        <div class="equation">
+            \[ \boxed{\nabla \cdot \left( \frac{1}{\rho_0(\vec{r})} \nabla p_{\text{total}}(\vec{r}, t) \right) = \frac{1}{\rho_0(\vec{r}) c_0^2(\vec{r})} \frac{\partial^2 p_{\text{total}}(\vec{r}, t)}{\partial t^2}} \]
+        </div>
+        <p>
+            Knowing the equation:
+        </p>
+        <div class="equation">
+            \[ \nabla \cdot \left( \frac{1}{\rho_0(\vec{r})} \nabla \left[ p_i(\vec{r}, t) + p_s(\vec{r}, t) \right] \right) - \frac{1}{\rho_0(\vec{r}) c_0^2(\vec{r})} \frac{\partial^2 \left[ p_i(\vec{r}, t) + p_s(\vec{r}, t) \right]}{\partial t^2} = 0 \]
+        </div>
+        <p>
+            With the assumption that the incident field does not modify the medium (linear approximation):
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{alignedat}{2}
+            & \rho_0(\vec{r}) = \rho_0 + \Delta \rho_0(\vec{r}) \quad & \text{(1)} \\
+            & c_0(\vec{r}) = c_0 + \Delta c_0(\vec{r}) \quad & \text{(2)}
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            Where \( c_0 \) and \( \rho_0 \) are the average values of celerity and density, and \( \Delta \rho_0(\vec{r}) \) and \( \Delta c_0(\vec{r}) \) are their associated spatial variations.
+        </p>
+        <p>
+            In this way, the first-order Taylor series expansion is:
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{aligned}
+            & \frac{1}{\rho_0(\vec{r})} \approx \frac{1}{\rho_0} - \frac{\Delta \rho_0(\vec{r})}{\rho_0^2} \quad & \text{(1)} \\
+            & \frac{1}{c_0^2(\vec{r})} = \frac{1}{(c_0 + \Delta c_0(\vec{r}))^2} \approx \frac{1}{c_0^2} - \frac{2 \Delta c_0(\vec{r})}{c_0^3} \quad & \text{(2)}
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            By separating the contributions of the medium, we attribute the effects of the homogeneous medium to the scattered field \( p_s(\vec{r}, t) \) and the effects of weak inhomogeneities to the incident field \( p_i(\vec{r}, t) \). Using a first-order linear approximation, where the scattered field results from the perturbation of an incident field in a homogeneous medium by weak inhomogeneities, we can write, from the above equation:
+        </p>
+        <div class="equation">
+            \[ \nabla \cdot \left( \frac{1}{\rho_0} \nabla p_s(\vec{r}, t) \right) - \nabla \cdot \left( \frac{\Delta \rho_0(\vec{r})}{\rho_0^2} \nabla p_i(\vec{r}, t) \right) - \frac{1}{\rho_0 c_0^2} \frac{\partial^2 p_s(\vec{r}, t)}{\partial t^2} - \left( -\frac{2 \Delta c_0(\vec{r})}{\rho_0 c_0^3} - \frac{\Delta \rho_0(\vec{r})}{\rho_0^2 c_0^2} + \frac{2 \Delta \rho_0(\vec{r}) \Delta c_0(\vec{r})}{\rho_0^2 c_0^3} \right) \frac{\partial^2 p_i(\vec{r}, t)}{\partial t^2} \approx 0 \]
+        </div>
+        <p>
+            Rearranging the terms, we obtain:
+        </p>
+        <div class="equation">
+            \[ \nabla \cdot \left( \frac{1}{\rho_0} \nabla p_s(\vec{r}, t) \right) - \frac{1}{\rho_0 c_0^2} \frac{\partial^2 p_s(\vec{r}, t)}{\partial t^2} \approx \nabla \cdot \left( \frac{\Delta \rho_0(\vec{r})}{\rho_0^2} \nabla p_i(\vec{r}, t) \right) + \left( -\frac{2 \Delta c_0(\vec{r})}{\rho_0 c_0^3} - \frac{\Delta \rho_0(\vec{r})}{\rho_0^2 c_0^2} + \frac{2 \Delta \rho_0(\vec{r}) \Delta c_0(\vec{r})}{\rho_0^2 c_0^3} \right) \frac{\partial^2 p_i(\vec{r}, t)}{\partial t^2} \]
+        </div>
+        <p>
+            Finally, neglecting the second-order term \( \frac{2 \Delta \rho_0(\vec{r}) \Delta c_0(\vec{r})}{\rho_0^2 c_0^3} \) and knowing that \( \frac{\Delta \rho_0(\vec{r})}{\rho_0^2 c_0^2} \ll \frac{2 \Delta c_0(\vec{r})}{\rho_0 c_0^3} \), considering the effects of the homogeneous medium on \( p_s \) and weakly inhomogeneous on \( p_i \), we obtain:
+        </p>
+        <div class="equation">
+            \[ \nabla^2 p_s(\vec{r}, t) - \frac{1}{c_0^2} \frac{\partial^2 p_s(\vec{r}, t)}{\partial t^2} \approx \frac{1}{\rho_0} \nabla \cdot \left[ \Delta \rho_0(\vec{r}) \nabla p_i(\vec{r}, t) \right] - \frac{2 \Delta c_0(\vec{r})}{c_0^3} \frac{\partial^2 p_i(\vec{r}, t)}{\partial t^2} \]
+        </div>
+        <p>
+            We will group the contributions due to local inhomogeneities of the medium of order 1 only in a term \( S(\vec{r}, t) \) such that:
+        </p>
+        <div class="equation">
+            \[ \boxed{S(\vec{r}, t) \approx \frac{1}{\rho_0} \nabla \left[ \Delta \rho_0(\vec{r}) \right] \cdot \nabla p_i(\vec{r}, t) - \frac{2 \Delta c_0(\vec{r})}{c_0^3} \frac{\partial^2 p_i(\vec{r}, t)}{\partial t^2}} \]
+        </div>
+        <p>
+            Thus, if we consider the scattered pressure field as the result of the interaction of the incident pressure field in a heterogeneous medium, we have:
+        </p>
+        <div class="equation">
+            \[ \boxed{\nabla^2 p_s(\vec{r}, t) - \frac{1}{c_0^2} \frac{\partial^2 p_s(\vec{r}, t)}{\partial t^2} = S(\vec{r}, t)} \]
+        </div>
+        <p>
+            Now let's consider a context with \( N \) piezoelectric elements, sources of ultrasonic emissions.
+        </p>
+        <div class="equation">
+            \[ \boxed{\nabla^2 p_s(\vec{r}, t) - \frac{1}{c_0^2} \frac{\partial^2 p_s(\vec{r}, t)}{\partial t^2} = \sum_{n=1}^{N} S(\vec{r}, t)} \]
+        </div>
+
+        <h5>Resolution by Convolution: Interpretation as Superposition of Spherical Waves (Field II Model)</h5>
+        <p>
+            The equation, representing the linear interaction between the incident field and the weak inhomogeneities of the medium, can be solved analytically using the Green's function associated with the homogeneous acoustic wave problem. This function is given by:
+        </p>
+        <div class="equation">
+            \[ G(\vec{r}', t' \mid \vec{r}, t) = \frac{\delta \left( t - t' - \frac{|\vec{r} - \vec{r}'|}{c_0} \right)}{4 \pi |\vec{r} - \vec{r}'|} \]
+        </div>
+        <p>
+            It represents the impulse response of a unitary point source located at \( \vec{r}' \) observed at \( \vec{r} \), after a delay \( \frac{|\vec{r} - \vec{r}'|}{c_0} \) corresponding to the propagation time in a homogeneous medium of celerity \( c_0 \).
+        </p>
+        <p>
+            Thus, the formal solution of the scattered field \( p_s(\vec{r}, t) \) is written as a spatio-temporal convolution:
+        </p>
+        <div class="equation">
+            \[ p_s(\vec{r}, t) = \iiint_{V'} \int_{\mathbb{R}} S(\vec{r}', t') \cdot G(\vec{r}', t' \mid \vec{r}, t) \, dt' \, d^3 \vec{r}' \]
+        </div>
+        <p>
+            This relation can be interpreted as a superposition of secondary spherical waves emitted by each point \( \vec{r}' \) of the scattering domain. Each of these sources radiates a spherical wave of the form:
+        </p>
+        <div class="equation">
+            \[ \frac{S(\vec{r}', t - |\vec{r} - \vec{r}'|/c_0)}{4 \pi |\vec{r} - \vec{r}'|} \]
+        </div>
+        <p>
+            where \( S(\vec{r}', t') \) groups the effects of local weak inhomogeneities of the medium (density gradient and celerity variation) weighted by the incident field \( p_i \).
+        </p>
+        <p>
+            The total scattered field is thus obtained by summing (or integrating) the contributions of all these secondary sources.
+        </p>
+        <p>
+            This is the basis of the Field II simulator, developed by Jensen and Svendsen. The scattered field is calculated numerically as a discretized sum of these elementary spherical waves, modeling both:
+        </p>
+        <ul>
+            <li>the incident field \( p_i \) produced by an ultrasonic probe (modeled as a set of elementary pistons),</li>
+            <li>and the weak spatial variations of density \( \Delta \rho_0(\vec{r}) \) and celerity \( \Delta c_0(\vec{r}) \) in a medium assumed to be linear.</li>
+        </ul>
+        <p>
+            The scattered pressure field is then given by:
+        </p>
+        <div class="equation">
+            \[ \boxed{p_s(\vec{r}, t) = \iiint_{V'} \int_{\mathbb{R}} \left[ \frac{1}{\rho_0} \nabla \left[ \Delta \rho_0(\vec{r}') \right] \cdot \nabla p_i(\vec{r}', t') - \frac{2 \Delta c_0(\vec{r}')}{c_0^3} \frac{\partial^2 p_i(\vec{r}', t')}{\partial t'^2} \right] \cdot G(\vec{r}', t' \mid \vec{r}, t) \, dt' \, d^3 \vec{r}'} \]
+        </div>
+        <p>
+            This model allows efficient simulation of the backscattered field received by the probe in biological tissues, while taking into account the effects of aperture, focus, and complex geometries of the transducers.
+        </p>
+        <p>
+            Field II numerically solves the equation by applying numerical approximations:
+        </p>
+        <div class="equation">
+            \[ \boxed{p_s(\vec{r}, t) \approx \sum_{i=1}^N \left[ \frac{1}{\rho_0} \nabla \left[ \Delta \rho_0(\vec{r}_i') \right] \cdot \nabla p_i(\vec{r}_i', t') - \frac{2 \Delta c_0(\vec{r}_i')}{c_0^3} \frac{\partial^2 p_i(\vec{r}_i', t')}{\partial t'^2} \right] \cdot \frac{1}{4 \pi |\vec{r} - \vec{r}_i'|}} \]
+        </div>
+
+        <h3>Calculation of the Squared Envelope of the Acoustic Pressure Field</h4>
+
+        <h3>Conditioning of the System Matrix</h5>
+        <p>
+            To analyze the sensitivity of the solution \( \boldsymbol{\lambda} \) to perturbations in \( \mathbf{b} \) and \( \mathbf{A} \), we must consider how small variations in \( \mathbf{b} \) and \( \mathbf{A} \) affect \( \boldsymbol{\lambda} \).
+        </p>
+        <p>
+            If \( \mathbf{b} \) is perturbed by a small vector \( \delta \mathbf{b} \), the perturbed solution \( \boldsymbol{\lambda} + \delta \boldsymbol{\lambda} \) satisfies the equation:
+        </p>
+        <div class="equation">
+            \[ \mathbf{b} + \delta \mathbf{b} = \mathbf{A} \left( \boldsymbol{\lambda} + \delta \boldsymbol{\lambda} \right) + \boldsymbol{\eta} \]
+        </div>
+        <p>
+            Or,
+        </p>
+        <div class="equation">
+            \[ \mathbf{b} + \delta \mathbf{b} = \mathbf{A} \boldsymbol{\lambda} + \mathbf{A} \delta \boldsymbol{\lambda} + \boldsymbol{\eta} \]
+        </div>
+        <p>
+            Subtracting the original equation:
+        </p>
+        <div class="equation">
+            \[ \delta \mathbf{b} = \delta \boldsymbol{\lambda} \cdot \mathbf{A} \]
+        </div>
+        <p>
+            Knowing that:
+        </p>
+        <div class="equation">
+            \[ \left\{ \begin{aligned}
+            & \left\lVert \delta \mathbf{b} \right\lVert_{2} \le \left\lVert \delta \boldsymbol{\lambda} \right\lVert_{2} \cdot \left\lVert \mathbf{A} \right\lVert_{2} \quad & \text{(2)} \\
+            & \left\lVert \delta \boldsymbol{\lambda} \right\lVert_{2} \le \left\lVert \delta \mathbf{b} \right\lVert_{2} \cdot \left\lVert \mathbf{A}^{-1} \right\lVert_{2} \quad & \text{(2)}
+            \end{alignedat} \right. \]
+        </div>
+        <p>
+            The use of the 2-norm is necessary for the rest of the demonstration.
+        </p>
+        <div class="equation">
+            \[ \frac{\left\lVert \delta \boldsymbol{\lambda} \right\lVert_{2}}{\left\lVert \boldsymbol{\lambda} \right\lVert_{2}} \le \frac{\left\lVert \delta \mathbf{b} \right\lVert_{2} \cdot \left\lVert \mathbf{A}^{-1} \right\lVert_{2}}{\left\lVert \boldsymbol{\lambda} \right\lVert_{2}} \]
+        </div>
+        <p>
+            With \( \mathbf{b} = \boldsymbol{\lambda} \mathbf{A} \Rightarrow \frac{1}{\boldsymbol{\lambda}} = \frac{\mathbf{b} y}{\mathbf{A}} \),
+        </p>
+        <div class="equation">
+            \[ \frac{\left\lVert \delta \boldsymbol{\lambda} \right\lVert_{2}}{\left\lVert \boldsymbol{\lambda} \right\lVert_{2}} \le \left\lVert \mathbf{A}^{-1} \right\lVert_{2} \cdot \left\lVert \mathbf{A} \right\lVert_{2} \frac{\left\lVert \delta \mathbf{b} \right\lVert_{2}}{\left\lVert \boldsymbol{\lambda} \right\lVert_{2}} \]
+        </div>
+        <p>
+            Thus,
+        </p>
+        <div class="equation">
+            \[ \boxed{\frac{\left\lVert \delta \boldsymbol{\lambda} \right\lVert_{2}}{\left\lVert \boldsymbol{\lambda} \right\lVert_{2}} \le \kappa \left( \mathbf{A} \right) \cdot \frac{\left\lVert \delta \mathbf{b} \right\lVert_{2}}{\left\lVert \boldsymbol{\lambda} \right\lVert_{2}}} \]
+        </div>
+        <p>
+            Where,
+        </p>
+        <div class="equation">
+            \[ \boxed{\kappa \left( \mathbf{A} \right) = \left\lVert \mathbf{A}^{-1} \right\lVert_{2} \cdot \left\lVert \mathbf{A} \right\lVert_{2}} \]
+        </div>
+        <p>
+            \( \kappa \left( \mathbf{A} \right) \) is a scalar that quantifies the numerical stability of a linear system; it is the conditioning of the system matrix \( \mathbf{A} \). In other words, if \( \kappa \left( \mathbf{A} \right) \) is close to 1, the system matrix is said to be well-conditioned; small perturbations in \( \mathbf{b} \) or \( \mathbf{A} \) result in small perturbations in the solution \( \boldsymbol{\lambda} \). Conversely, a value close to 0 indicates poor conditioning of the matrix \( \mathbf{A} \); small perturbations in \( \mathbf{b} \) or \( \mathbf{A} \) cause large perturbations in the solution \( \boldsymbol{\lambda} \).
+        </p>
+        <p>
+            According to the equation, the conditioning of the system matrix depends on its inverse matrix.
+        </p>
+        <p>
+            However, in our acousto-optic tomographic reconstruction problem, we seek to minimize the number of ultrasonic emissions (and thus the number of projections) \( N \). This implies that the system is underdetermined, meaning the number of available measurements is less than the number of pixels to be reconstructed.
+        </p>
+        <p>
+            If we define the system matrix as:
+        </p>
+        <div class="equation">
+            \[ \mathbf{A} \in \mathbb{R}^{(N \times T) \times (X \times Z)} \]
+        </div>
+        <p>
+            where:
+        </p>
+        <ul>
+            <li>\( N \) is the number of ultrasonic emission positions,</li>
+            <li>\( T \) is the number of time instants or time windows detected per measurement,</li>
+            <li>\( X \times Z \) is the total number of pixels to be reconstructed in the optical image at a depth \( y \in \mathbb{R} \).</li>
+        </ul>
+        <p>
+            Then we generally have:
+        </p>
+        <div class="equation">
+            \[ N \times T \ll X \times Z \]
+        </div>
+        <p>
+            This means that \( \mathbf{A} \) is not square, and in particular, \( \mathbf{A} \) is not invertible. Moreover, there may be an infinite number of vectors \( \boldsymbol{\lambda} \) that satisfy \( \mathbf{A} \boldsymbol{\lambda} = \mathbf{b} \) (or none if \( \mathbf{b} \notin \operatorname{Im}(\mathbf{A}) \)). It is therefore impossible in our case to determine \( \kappa \left( \mathbf{A} \right) \) from the equation.
+        </p>
+        <p>
+            To overcome this problem, the system matrix is decomposed into singular values, resulting in a diagonal matrix of singular values.
+        </p>
+        <div class="equation">
+            \[ \mathbf{A} = \mathbf{U} \, \boldsymbol{\Sigma} \, \mathbf{V}^\top \]
+        </div>
+        <p>
+            with:
+        </p>
+        <ul>
+            <li>\( \mathbf{U} \in \mathbb{R}^{(N T) \times (N T)} \) orthogonal,</li>
+            <li>\( \mathbf{V} \in \mathbb{R}^{(X Z) \times (X Z)} \) orthogonal,</li>
+            <li>\( \mathbf{\Sigma} \in \mathbb{R}^{(N T) \times (X Z)} \) containing the singular values \( \sigma_1 \ge \sigma_2 \ge \dots \ge \sigma_r > 0 \).</li>
+        </ul>
+        <p>
+            The spectral norm (2-norm) of the system matrix is defined by:
+        </p>
+        <div class="equation">
+            \[ \left\lVert \mathbf{A} \right\lVert_{2} = \underset{\left\lVert \boldsymbol{\lambda} \right\lVert_{2} = 1}{\text{sup}} \left\lVert \mathbf{A} \boldsymbol{\lambda} \right\lVert_{2} \]
+        </div>
+        <p>
+            Or,
+        </p>
+        <div class="equation">
+            \[ \left\lVert \mathbf{A} \boldsymbol{\lambda} \right\lVert_{2} = \left\lVert \mathbf{U} \, \mathbf{\Sigma} \, \mathbf{V}^\top \, \boldsymbol{\lambda} \right\lVert_{2} \]
+        </div>
+        <p>
+            By invariance of the 2-norm under orthogonal rotation (since \( \mathbf{U} \) is orthogonal):
+        </p>
+        <div class="equation">
+            \[ \left\lVert \mathbf{A} \boldsymbol{\lambda} \right\lVert_{2} = \left\lVert \mathbf{\Sigma} \, \mathbf{V}^\top \, \boldsymbol{\lambda} \right\lVert_{2} \]
+        </div>
+        <p>
+            We simply note that \( \mathbf{V}^\top \boldsymbol{\lambda} \) is a change of basis of \( \boldsymbol{\lambda} \) in the basis of singular vectors. Since \( \mathbf{V} \) is orthogonal, the norm is preserved:
+        </p>
+        <div class="equation">
+            \[ \left\lVert \mathbf{V}^\top \boldsymbol{\lambda} \right\lVert_{2} = \left\lVert \boldsymbol{\lambda} \right\lVert_{2} = 1 \]
+        </div>
+        <p>
+            Then:
+        </p>
+        <div class="equation">
+            \[ \begin{aligned}
+            \left\lVert \mathbf{A} \right\lVert_2 &= \underset{\left\lVert \boldsymbol{\lambda} \right\lVert_{2} = 1}{\text{sup}} \left\lVert \mathbf{\Sigma} \, \mathbf{V}^\top \, \boldsymbol{\lambda} \right\lVert_{2} \\
+            &= \underset{\left\lVert \boldsymbol{\xi} \right\lVert_{2} = 1}{\text{sup}} \left\lVert \mathbf{\Sigma} \, \boldsymbol{\xi} \right\lVert_{2}
+            \end{aligned} \]
+        </div>
+        <p>
+            with \( \boldsymbol{\xi} = \mathbf{V}^\top \boldsymbol{\lambda} \) (same norm).
+        </p>
+        <p>
+            Since \( \boldsymbol{\Sigma} \) is diagonal, we have:
+        </p>
+        <div class="equation">
+            \[ \begin{aligned}
+            \left\lVert \mathbf{\Sigma} \, \boldsymbol{\xi} \right\lVert_{2}^{2} &= \sum_{i} \sigma_i^2 \xi_i^2 \\
+            &\le \sigma_{\text{max}}^2 \sum_i \xi_i^2 \\
+            &= \boxed{\sigma_{\text{max}}}
+            \end{aligned} \]
+        </div>
+        <p>
+            and equality is achieved for the unit vector aligned in the direction of \( \sigma_{\text{max}} \). Hence:
+        </p>
+        <div class="equation">
+            \[ \boxed{\left\lVert \mathbf{A} \right\lVert_2 = \sigma_{\text{max}}} \]
+        </div>
+        <p>
+            On the other hand, since \( \mathbf{A} \) is not strictly invertible (not square), we use its Moore-Penrose pseudo-inverse.
+        </p>
+        <div class="equation">
+            \[ \mathbf{A}^{+} = \mathbf{V} \, \mathbf{\Sigma}^{+} \, \mathbf{U}^\top \]
+        </div>
+        <p>
+            With this time, \( \mathbf{\Sigma^+} \in \mathbb{R}^{(N T) \times (X Z)} \) containing the singular values \( \sigma_1 \ge \sigma_2 \ge \dots \ge \sigma_r > 0 \) and \( \sigma_i = 0 \) for \( i > r \).
+        </p>
+        <p>
+            Thus, following the same development,
+        </p>
+        <div class="equation">
+            \[ \begin{aligned}
+            \left\lVert \mathbf{A}^{-1} \right\lVert_2 &= \left\lVert \mathbf{V} \, \mathbf{\Sigma}^{-1} \, \mathbf{U}^\top \right\lVert_2 \\
+            &= \left\lVert \mathbf{\Sigma}^{-1} \right\lVert_2 \\
+            &= \underset{i}{\text{max}} \left( \frac{1}{\sigma_i} \right) \\
+            &= \boxed{\frac{1}{\sigma_{\text{min}}}}
+            \end{aligned} \]
+        </div>
+        <p>
+            The conditioning of the matrix \( \kappa \left( \mathbf{A} \right) \) can therefore be written as:
+        </p>
+        <div class="equation">
+            \[ \boxed{\kappa \left( \mathbf{A} \right) = \frac{\sigma_{\text{max}}}{\sigma_{\text{min}}}} \]
+        </div>
 
         <p>The system matrix \(A\) is a fundamental component in tomographic reconstruction, serving as the bridge between the unknown properties of the object and the measured data, enabling the reconstruction of images from indirect measurements.</p>
 
@@ -128,7 +882,7 @@
             <img src="https://github.com/user-attachments/assets/e7075b88-2dce-4a35-9c58-85056eebc957" alt="System Matrix A" width="400"/>
         </div>
 
-        <h3>Acousto-Optic Signal (AO Signal)</h3>
+        <h2>Acousto-Optic Signal (AO Signal)</h2>
 
         <p>The optical refractive index \(n\) is proportional to the mass density \(\rho\) to the first order. Thus, as the ultrasonic wave propagates through the medium, it locally alters its refractive index:</p>
 
