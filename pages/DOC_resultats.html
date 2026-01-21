@@ -116,7 +116,21 @@
     <div class="content">
         <h1>Results</h1>
 
-        <h2>Simulation results</h2>
+        <!-- Sommaire -->
+        <div class="toc">
+            <h3>Table of contents</h3>
+            <ul>
+                <li><a href="#acoustic-simulation">Acoustic field simulations</a></li>
+                <ul>
+                    <li><a href="#hydro-validation">Hydrophone validation</a></li>
+                </ul>
+                <li><a href="#simulation-results">Simulation results</a></li>
+                <li><a href="#experimental-results">Experimental results</a></li>
+            </ul>
+        </div>
+        <h2 id="acoustic-simulation">Acoustic field simulations</h2>
+            <h3 id="hydro-validation">Hydrophone validation</h3>
+        <h2 id="simulation-results">Simulation results</h2>
         Dans un premier temps, nous avons étudié le comportement de nos algorithmes de reconstructions avec des données simulées. Comme expliqué dans cette page (mettre lien), les algorithmes itératifs tente de reconstruire \(\lambda\) à partir de la relation :
         \[
             A = \lambda \times y
@@ -168,6 +182,7 @@
         <div class="center">
             <img src="../images/FWHM.png" alt="profil reconstruction" width="1000"/>
         </div>
+        <h2 id="experimental-results">Experimental results</h2>
     </div>
 </body>
 </html>
