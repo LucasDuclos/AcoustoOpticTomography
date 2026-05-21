@@ -670,11 +670,18 @@ def get_device_memory_info(device=None):
     """
     if device == 'gpu' and CUPY_AVAILABLE:
         try:
-            free = cp.cuda.runtime.memoryGetInfo()[0]
-            total = cp.cuda.runtime.memoryGetInfo()[1]
+            # Use modern CuPy API (compatible with CuPy 12+)
+            free = cp.cuda.runtime.getFreeMem()
+            total = cp.cuda.runtime.getTotalMem()
             return free, total
-        except:
-            return 0, 0
+        except Exception:
+            # Fallback for older CuPy versions
+            try:
+                free = cp.cuda.runtime.memoryGetInfo()[0]
+                total = cp.cuda.runtime.memoryGetInfo()[1]
+                return free, total
+            except Exception:
+                return 0, 0
     else:
         return 0, 0
 

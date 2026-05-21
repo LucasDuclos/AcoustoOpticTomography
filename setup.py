@@ -100,7 +100,7 @@ entry_points = {
 
 setup(
     name='aot-biomaps',
-    version='2.9.520',
+    version='2.9.521',
     packages=find_packages(),
     package_dir={'': '.'},  # Look for packages in current directory
     include_package_data=True,
