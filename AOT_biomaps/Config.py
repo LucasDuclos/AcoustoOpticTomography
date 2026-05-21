@@ -58,8 +58,15 @@ class Config:
             max_memory = 0
             for i in range(self.numGPUs):
                 cp.cuda.runtime.setDevice(i)
-                mem_info = cp.cuda.runtime.memoryInfo()
-                available_memory = mem_info.total - mem_info.used
+                # Use modern CuPy API (12+)
+                try:
+                    free_mem = cp.cuda.runtime.getFreeMem()
+                    total_mem = cp.cuda.runtime.getTotalMem()
+                    available_memory = free_mem
+                except AttributeError:
+                    # Fallback for older CuPy versions
+                    mem_info = cp.cuda.runtime.memoryInfo()
+                    available_memory = mem_info.total - mem_info.used
                 if available_memory > max_memory:
                     max_memory = available_memory
                     best_gpu = i
