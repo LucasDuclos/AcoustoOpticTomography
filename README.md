@@ -154,4 +154,4 @@ Distribué sous la licence MIT. Voir [LICENSE](LICENSE) pour plus d'informations
 
 **Contact** : Pour toute question ou suggestion, n'hésitez pas à ouvrir une issue ou à me contacter directement.
 
-[🐙 GitHub](https://github.com/LucasDuclos/AcoustoOpticTomography) | [📧 Email](mailto:lucas.duclos@email.com)
+[🐙 GitHub](https://github.com/LucasDuclos/AcoustoOpticTomography) | [📧 Email](mailto:lucas.duclos@universite-paris-saclay.fr)
