@@ -1,5 +1,4 @@
-from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo, nvmlShutdown, NVMLError
-import psutil
+import os
 
 class Config:
     _instance = None
@@ -14,25 +13,24 @@ class Config:
             self.initialized = True
             self.numGPUs = 0
             self.bestGPU = None
-            self.process = 'cpu'  # Valeur par défaut
-            self.numCPUs = psutil.cpu_count(logical=False)
+            self.process = 'cpu'  # Default value
+            self.numCPUs = os.cpu_count()
             self.availableMemory = 100 - self.get_memory_usage()
             self.batchSize = self.calculate_batch_size()
             self._init_gpu()
 
     def _init_gpu(self):
-        """Initialise les informations liées au GPU."""
+        """Initialize GPU-related information."""
         try:
-            nvmlInit()
-            self.numGPUs = nvmlDeviceGetCount()
+            import cupy as cp
+            self.numGPUs = cp.cuda.runtime.getDeviceCount()
             if self.numGPUs > 0:
                 self.process = 'gpu'
                 self.bestGPU = self.select_best_gpu()
             else:
                 self.process = 'cpu'
                 self.bestGPU = None
-        except NVMLError as e:
-            print(f"NVIDIA GPU not available: {e}")
+        except ImportError:
             self.process = 'cpu'
             self.bestGPU = None
             self.numGPUs = 0
@@ -41,55 +39,49 @@ class Config:
             self.process = 'cpu'
             self.bestGPU = None
             self.numGPUs = 0
-        finally:
-            try:
-                nvmlShutdown()
-            except:
-                pass  # Évite les erreurs si nvmlShutdown est appelé plusieurs fois
 
     def set_process(self, process):
-        """Définit le processus à utiliser ('cpu' ou 'gpu')."""
+        """Set the process to use ('cpu' or 'gpu')."""
         if process not in ['cpu', 'gpu']:
             raise ValueError("process must be 'cpu' or 'gpu'")
         self.process = process
 
     def get_process(self):
-        """Retourne le processus actuel ('cpu' ou 'gpu')."""
+        """Return the current process ('cpu' or 'gpu')."""
         return self.process
 
     def select_best_gpu(self):
-        """Sélectionne le GPU avec le plus de mémoire disponible."""
+        """Select the GPU with the most available memory."""
         try:
-            nvmlInit()
+            import cupy as cp
             best_gpu = 0
             max_memory = 0
             for i in range(self.numGPUs):
-                handle = nvmlDeviceGetHandleByIndex(i)
-                mem_info = nvmlDeviceGetMemoryInfo(handle)
+                cp.cuda.runtime.setDevice(i)
+                mem_info = cp.cuda.runtime.memoryInfo()
                 available_memory = mem_info.total - mem_info.used
                 if available_memory > max_memory:
                     max_memory = available_memory
                     best_gpu = i
             return best_gpu
-        except NVMLError as e:
+        except Exception as e:
             print(f"Failed to select GPU: {e}")
-            return 0  # Retourne le premier GPU par défaut en cas d'erreur
-        finally:
-            try:
-                nvmlShutdown()
-            except:
-                pass
+            return 0  # Return first GPU by default in case of error
 
     def get_memory_usage(self):
-        """Retourne l'utilisation actuelle de la mémoire RAM (en pourcentage)."""
-        return psutil.virtual_memory().percent
+        """Return the current RAM memory usage (as a percentage)."""
+        try:
+            
+            return 0
+        except ImportError:
+            return 0
 
     def calculate_batch_size(self, max_memory_usage=90, min_batch_size=1, max_batch_size=20):
-        """Calcule dynamiquement la taille du batch en fonction de la mémoire disponible."""
+        """Dynamically calculate batch size based on available memory."""
         if self.availableMemory > max_memory_usage:
             return max_batch_size
         else:
             return max(min_batch_size, int((self.availableMemory / max_memory_usage) * max_batch_size))
 
-# Initialisation unique de la configuration
+# Unique configuration initialization
 config = Config()

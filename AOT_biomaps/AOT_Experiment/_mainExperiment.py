@@ -2,23 +2,40 @@ from AOT_biomaps.Settings import Params
 from AOT_biomaps.AOT_Optic._mainOptic import Phantom
 from AOT_biomaps.AOT_Acoustic.AcousticEnums import WaveType, FormatSave
 from AOT_biomaps.AOT_Acoustic.StructuredWave import StructuredWave
-
+from AOT_biomaps.AOT_Medium.HomogeneousMedium import HomogeneousMedium
+from AOT_biomaps.AOT_Medium.PVAMedium import PVAMedium
+from AOT_biomaps.AOT_Medium.MediumEnums import PhantomType
+from AOT_biomaps.AOT_Experiment.ExperimentTools import loadAOSignal
 from abc import ABC, abstractmethod
+
 import os
 import numpy as np
-import torch
-import torch.nn.functional as F
 from tqdm import trange
 from datetime import datetime
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import matplotlib as mpl
 import copy
+import warnings
+
+# Optional cupy import for GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+
+# Optional matplotlib imports for visualization
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.animation as animation
+    import matplotlib as mpl
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
 
 class Experiment(ABC):
     def __init__(self, params, acousticType=WaveType.StructuredWave, formatSave=FormatSave.HDR_IMG):
         self.params = params
         self.OpticImage = None
+        self.medium = None
         self.AcousticFields = None
         self.AOsignal_withTumor = None
         self.AOsignal_withoutTumor = None
@@ -33,7 +50,8 @@ class Experiment(ABC):
             raise TypeError("params must be an instance of the Params class")
 
     def copy(self):
-        """Retourne une copie profonde de l'objet."""
+        """
+    Return une copie profonde de l'objet."""
         return copy.deepcopy(self)
     
     def generatePhantom(self):
@@ -42,6 +60,49 @@ class Experiment(ABC):
         This method initializes the OpticImage attribute with a Phantom instance.
         """
         self.OpticImage = Phantom(params=self.params)
+    
+    def generateMedium(self):
+        """
+        Generate the medium for the experiment.
+        This method initializes the medium attribute based on the parameters.
+        """
+        if self.params.acoustic['medium']['type'] == PhantomType.Homogeneous.value:
+            self.medium = HomogeneousMedium(params=self.params)
+            self.medium.generate_medium()
+            print("Medium generated: Homogeneous. -- done.")
+        elif self.params.acoustic['medium']['type'] == PhantomType.PVA.value:
+            try:
+                self.medium = PVAMedium(params=self.params)
+                self.medium.generate_medium()
+                print("Medium generated: PVA heterogeneous. -- done.")
+            except Exception as e:
+                
+                print(f"Error generating PVA medium: {e}")
+                raise
+    
+    def loadMedium(self, folderPath, fileName="medium"):
+        """
+        Load the medium from a .joblib file.
+        This method initializes the medium attribute by loading it from the specified file.
+        """
+        if self.params.acoustic['medium']['type'] == PhantomType.Homogeneous.value:
+            self.medium = HomogeneousMedium(params=self.params)
+            self.medium.load_medium(folderPath, fileName)
+        elif self.params.acoustic['medium']['type'] == PhantomType.PVA.value:
+            self.medium = PVAMedium(params=self.params)
+            self.medium.load_medium(folderPath, fileName)
+
+        print(f"Medium loaded from {os.path.join(folderPath, fileName)} -- done.")
+
+    def saveMedium(self, folderPath, fileName="medium"):
+        """
+        Save the medium to a .joblib file.
+        This method saves the medium attribute to the specified file.
+        """
+        if self.medium is None:
+            raise ValueError("Medium is not initialized. Please generate or set the medium before saving.")
+        self.medium.save_medium(folderPath, fileName)
+        print(f"Medium saved to {os.path.join(folderPath, fileName)} -- done.")
 
     @abstractmethod
     def generateAcousticFields(self, fieldDataPath, fieldParamPath, show_log=True):
@@ -55,104 +116,181 @@ class Experiment(ABC):
         """
         pass
 
-    def cutAcousticFields(self, max_t, min_t=0):
-        max_t = float(max_t)
-        min_t = float(min_t)
+    def cutAcousticFields(self, max_t, min_t=0, show_log=True):
+        """
+        Cut the acoustic fields to a specified time range.
+        Args:
+            max_t: Maximum time in SAMPLE to keep in the fields.
+            min_t: Minimum time in SAMPLE to keep in the fields (default is 0).
+            show_log: Whether to display a progress bar.
+        """
 
-        min_sample = int(np.floor(min_t * float(self.params.acoustic['f_saving'])))
-        max_sample = int(np.floor(max_t * float(self.params.acoustic['f_saving'])))
-
-        if min_sample < 0 or max_sample < 0:
-            raise ValueError("min_sample and max_sample must be non-negative integers.")
-        if min_sample >= max_sample:
-            raise ValueError("min_sample must be less than max_sample.")
+        if min_t < 0 or max_t < 0:
+            raise ValueError("min_t and max_t must be non-negative integers.")
+        if min_t >= max_t:
+            raise ValueError("min_t must be less than max_t.")
 
         if not self.AcousticFields:
             raise ValueError("AcousticFields is empty. Cannot cut fields.")
 
-        for i in trange(len(self.AcousticFields), desc=f"Cutting Acoustic Fields ({min_sample} to {max_sample} samples)"):
+        iteration = range(len(self.AcousticFields)) if not show_log else trange(len(self.AcousticFields), desc=f"Cutting Acoustic Fields ({min_t} to {max_t} samples)")
+        for i in iteration:
             field = self.AcousticFields[i]
-            if field.field.shape[0] < max_sample:
-                raise ValueError(f"Field {field.getName_field()} has an invalid shape: {field.field.shape}. Expected shape to be at least ({max_sample},).")
-            self.AcousticFields[i].field = field.field[min_sample:max_sample, :, :]
+            if field.field.shape[0] < max_t:
+                raise ValueError(f"Field {field.getName_field()} has an invalid shape: {field.field.shape}. Expected shape to be at least ({max_t},).")
+            self.AcousticFields[i].field = field.field[min_t:max_t, :, :]
 
-    def addNoise(self, noiseType='gaussian', noiseLvl=0.1, withTumor=True):
+    def addNoise(self, y=None, noiseType='gaussian', noiseLvl=0.1, dataToUse=None, m=1, withTumor=True, show_log=True):
         """
-        Ajoute du bruit (gaussien ou poisson) au signal AO sélectionné.
+        Add noise to AO signals with various noise models.
 
-        Args:
-            noiseType (str): Type de bruit à ajouter ('gaussian' ou 'poisson').
-            noiseLvl (float): Niveau de bruit (écart-type pour le bruit gaussien, facteur multiplicatif pour le bruit de Poisson).
-            withTumor (bool): Si True, ajoute le bruit au signal avec tumeur, sinon au signal sans tumeur.
+        Supported noise types:
+        - 'gaussian': Add Gaussian noise with std = noiseLvl * max(signal)
+        - 'poisson': Add Poisson noise proportional to signal amplitude
+        - 'experimental': Add noise with same SNR as in experimental dataToUse for m averages
+
+        Parameters:
+            y (np.ndarray, optional): Input signal to add noise to. If None, uses self.AOsignal_withTumor or self.AOsignal_withoutTumor.
+            noiseType (str): Type of noise ('gaussian', 'poisson', or 'experimental').
+            noiseLvl (float): Noise level for gaussian/poisson noise.
+            dataToUse (np.ndarray): Experimental data for 'experimental' noise type (shape: (n_repeats, n_signals)).
+            m (int): Number of averages for 'experimental' noise type.
+            withTumor (bool): If True and y is None, use signal with tumor.
+            show_log (bool): If True, displays progress bar.
+
+        Returns:
+            np.ndarray: Noisy signal(s) with same shape as input.
         """
-        if withTumor and self.AOsignal_withTumor is None:
-            raise ValueError("AO signal with tumor is not generated. Please generate it first.")
-        if not withTumor and self.AOsignal_withoutTumor is None:
-            raise ValueError("AO signal without tumor is not generated. Please generate it first.")
-
-        if withTumor:
-            AOsignals = self.AOsignal_withTumor
-        else:
-            AOsignals = self.AOsignal_withoutTumor
-        
-        noiseSignals = np.zeros_like(AOsignals)
-        for i in trange(AOsignals.shape[1], desc=f"Adding {noiseType} noise to AO signal {'with' if withTumor else 'without'} tumor"):
-            AOsignal = AOsignals[:, i]
-            if noiseType.lower() == 'gaussian':
-                noise = np.random.normal(0, noiseLvl*np.max(AOsignal), AOsignal.shape)
-                noisy_signal = AOsignal + noise
-            elif noiseType.lower() == 'poisson':
-                # Pour le bruit de Poisson, on utilise souvent un facteur multiplicatif
-                # car le bruit de Poisson est proportionnel à la racine carrée du signal.
-                # Ici, on multiplie le signal par un facteur aléatoire centré autour de 1.
-                noise = np.random.poisson(noiseLvl * np.abs(AOsignal)) / (noiseLvl * np.abs(AOsignal).max())
-                noisy_signal = AOsignal * noise
+        # Select signal source
+        if y is None:
+            if withTumor:
+                if self.AOsignal_withTumor is None:
+                    raise ValueError("AO signal with tumor not generated. Generate it first.")
+                signals = self.AOsignal_withTumor
             else:
-                raise ValueError("noiseType must be either 'gaussian' or 'poisson'.")
-            noisy_signal = np.clip(noisy_signal, a_min=0, a_max=None)  # Assurer que le signal reste non négatif
-            noiseSignals[:, i] = noisy_signal
-        return noiseSignals
+                if self.AOsignal_withoutTumor is None:
+                    raise ValueError("AO signal without tumor not generated. Generate it first.")
+                signals = self.AOsignal_withoutTumor
+        else:
+            signals = y
 
+        # For experimental noise, estimate noise parameters from dataToUse
+        if noiseType.lower() == 'experimental':
+            if dataToUse is None:
+                raise ValueError("dataToUse must be provided for experimental noise type.")
+            # Estimate noise variance from experimental data (using random pairs)
+            n_pairs = min(500, dataToUse.shape[0] // 2)
+            random_pairs = np.random.choice(dataToUse.shape[0], size=(n_pairs, 2), replace=False)
+            noise_var = 0.0
+            for i, k in random_pairs:
+                diff = dataToUse[i, :] - dataToUse[k, :]
+                noise_var += np.sum(diff**2)
+            noise_var /= (2 * dataToUse.shape[1] * n_pairs)
+            noise_var *= 0.5  # Because var(n_i - n_k) = 2*σ_n²
+            noise_var_for_m = noise_var / m
+            mean_signal = np.mean(dataToUse, axis=0)
+            amplitude_real = np.std(mean_signal)
+
+        noiseSignals = np.zeros_like(signals)
+        n_signals = signals.shape[1]
+
+        # Loop over signals
+        iteration = trange(n_signals, desc=f"Adding {noiseType} noise") if show_log else range(n_signals)
+        for i in iteration:
+            signal = signals[:, i]
+
+            if noiseType.lower() == 'gaussian':
+                # Gaussian noise: std = noiseLvl * max(signal)
+                noise = np.random.normal(0, noiseLvl * np.max(signal), signal.shape)
+                noisy_signal = signal + noise
+            elif noiseType.lower() == 'poisson':
+                # Poisson noise proportional to signal
+                max_signal = np.max(np.abs(signal))
+                if max_signal != 0:
+                    noise = np.random.poisson(noiseLvl * np.abs(signal)) / (noiseLvl * max_signal)
+                    noisy_signal = signal * noise
+                else:
+                    noisy_signal = signal.copy()
+            elif noiseType.lower() == 'experimental':
+                # Experimental-based noise with matching SNR
+                amplitude_y = np.max(np.abs(signal))
+                amplitude_ratio = amplitude_y / amplitude_real
+                noise = np.random.randn(signal.shape[0]) * np.sqrt(noise_var_for_m) * amplitude_ratio
+                noisy_signal = signal + noise
+            else:
+                raise ValueError("noiseType must be 'gaussian', 'poisson', or 'experimental'.")
+
+            # Ensure non-negative (shift if needed)
+            if np.min(noisy_signal) < 0:
+                noisy_signal -= np.min(noisy_signal)
+
+            noiseSignals[:, i] = noisy_signal
+
+        return noiseSignals
 
     def reduceDims(self, mode='avg'):
         """
-        Réduit les dimensions T, X, Z d'un numpy array (T, X, Z) par 2 en utilisant une convolution.
-        Retourne un numpy array et met à jour les paramètres numériques.
+        Reduces the T, X, Z dimensions of a numpy array (T, X, Z) by a factor of 2 using CuPy pooling.
+        Falls back to numpy if CuPy is not available.
+        Returns a numpy array and updates numerical parameters.
         """
+        if not CUPY_AVAILABLE:
+            warnings.warn("CuPy not available. Using numpy for downsampling.", UserWarning)
+            # Fall back to numpy implementation
+            for i in trange(len(self.AcousticFields),
+                            desc="Downsampling Acoustic Fields (T, X, Z → T//2, X//2, Z//2)"):
+                field = self.AcousticFields[i].field
+                if field.ndim != 3:
+                    raise ValueError(f"Unsupported shape: {field.shape}. Expected (T, X, Z).")
+                # Simple numpy downsampling by slicing
+                x_down = field[::2, ::2, ::2]
+                self.AcousticFields[i].field = x_down
+            return
+        
         for i in trange(len(self.AcousticFields),
                         desc="Downsampling Acoustic Fields (T, X, Z → T//2, X//2, Z//2)"):
-            # Conversion en tenseur PyTorch
+            # Convert to CuPy array
             field = self.AcousticFields[i].field
-            if not isinstance(field, torch.Tensor):
-                field = torch.from_numpy(field)
+            if not isinstance(field, cp.ndarray):
+                field = cp.asarray(field)
 
-            # Vérification de la forme (doit être 3D : T, X, Z)
-            if field.dim() != 3:
-                raise ValueError(f"Forme non supportée : {field.shape}. Attendu (T, X, Z).")
+            # Check shape (must be 3D: T, X, Z)
+            if field.ndim != 3:
+                raise ValueError(f"Unsupported shape: {field.shape}. Expected (T, X, Z).")
 
-            # Ajout des dimensions pour conv3d : (1, 1, T, X, Z)
-            x = field.unsqueeze(0).unsqueeze(0)
+            # Add dimensions for pool3d: (1, 1, T, X, Z)
+            x = field[cp.newaxis, cp.newaxis, ...]
 
-            # Réduction par convolution 3D
+            # Downsample using 3D pooling
             if mode == 'avg':
-                x_down = F.avg_pool3d(x, kernel_size=(2, 2, 2), stride=(2, 2, 2))
+                x_down = cp.nn.pooling.avg_pool3d(x, kernel_size=(2, 2, 2), stride=(2, 2, 2))
             else:  # mode == 'max'
-                x_down = F.max_pool3d(x, kernel_size=(2, 2, 2), stride=(2, 2, 2))
+                x_down = cp.nn.pooling.max_pool3d(x, kernel_size=(2, 2, 2), stride=(2, 2, 2))
 
-            # Conversion en numpy array et suppression des dimensions ajoutées
-            self.AcousticFields[i].field = x_down.squeeze(0).squeeze(0).cpu().numpy()
+            # Convert to numpy array and remove added dimensions
+            self.AcousticFields[i].field = cp.asnumpy(x_down.squeeze(0).squeeze(0))
 
-        # Fonction utilitaire pour convertir et mettre à jour un paramètre
+        # Utility function to convert and update a parameter
         def convert_and_update(param_dict, key, operation):
             if key in param_dict:
                 if isinstance(param_dict[key], str):
                     param_dict[key] = float(param_dict[key])
                 param_dict[key] = operation(param_dict[key])
 
-        # Mise à jour des paramètres
+        # Update parameters
         convert_and_update(self.params.acoustic, 'f_saving', lambda x: x / 2)
         for param in ['dx', 'dy', 'dz']:
             convert_and_update(self.params.general, param, lambda x: x * 2)
+
+    def normalizeAOsignals(self, withTumor=True):
+        if withTumor and self.AOsignal_withTumor is None:
+            raise ValueError("AO signal with tumor is not generated. Please generate it first.")
+        if not withTumor and self.AOsignal_withoutTumor is None:
+            raise ValueError("AO signal without tumor is not generated. Please generate it first.")
+        if withTumor:
+            self.AOsignal_withTumor = self.AOsignal_withTumor - np.min(self.AOsignal_withTumor)/(np.max(self.AOsignal_withTumor)-np.min(self.AOsignal_withTumor))
+        else:
+            self.AOsignal_withoutTumor = self.AOsignal_withoutTumor - np.min(self.AOsignal_withoutTumor)/(np.max(self.AOsignal_withoutTumor)-np.min(self.AOsignal_withoutTumor))
 
     def saveAcousticFields(self, save_directory):
         progress_bar = trange(len(self.AcousticFields), desc="Saving Acoustic Fields")
@@ -160,7 +298,7 @@ class Experiment(ABC):
             progress_bar.set_postfix_str(f"-- {self.AcousticFields[i].getName_field()}")
             self.AcousticFields[i].save_field(save_directory, formatSave=self.FormatSave)
 
-    def show_animated_Acoustic(self, wave_name=None, desired_duration_ms=5000, save_dir=None):
+    def showAnimatedAcoustic(self, wave_name=None, desired_duration_ms=5000, save_dir=None):
         """
         Plot synchronized animations of A_matrix slices for selected angles.
         Args:
@@ -170,6 +308,9 @@ class Experiment(ABC):
         Returns:
             ani: Matplotlib FuncAnimation object
         """
+        if not MATPLOTLIB_AVAILABLE:
+            warnings.warn("matplotlib is not available. Cannot create animation.", UserWarning)
+            return None
         mpl.rcParams['animation.embed_limit'] = 100
         if save_dir is not None:
             os.makedirs(save_dir, exist_ok=True)
@@ -192,7 +333,7 @@ class Experiment(ABC):
         for idx in range(num_plots):
             ax = axes[idx]
             im = ax.imshow(self.AcousticFields[0, :, :, idx],
-                        extent=(self.params['Xrange'][0], self.params['Xrange'][1], self.params['Zrange'][1], self.params['Zrange'][0]),
+                        extent=(self.params.general['Xrange'][0], self.params.general['Xrange'][1], self.params.general['Zrange'][1], self.params.general['Zrange'][0]),
                         vmax=1, aspect='equal', cmap='jet', animated=True)
             ax.set_xlabel("x (mm)", fontsize=8)
             ax.set_ylabel("z (mm)", fontsize=8)
@@ -230,67 +371,52 @@ class Experiment(ABC):
         return ani
 
     def generateAOsignal(self, withTumor=True, AOsignalDataPath=None):
-        if self.AcousticFields is None:
-            raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
-
-        if self.OpticImage is None:
-            raise ValueError("OpticImage is not initialized. Please generate the phantom first.")
 
         if AOsignalDataPath is not None:
             if not os.path.exists(AOsignalDataPath):
                 raise FileNotFoundError(f"AO file {AOsignalDataPath} not found.")
-            AOmatrix = self._load_AOSignal(AOsignalDataPath)
-            if AOmatrix.shape[0] != self.AcousticFields[0].field.shape[0]:
-                print(f"AO signal shape {AOmatrix.shape} does not match the expected shape {self.AcousticFields[0].field.shape}. Generating corrected AO signal to match...")
+            if withTumor:
+                self.AOsignal_withTumor = loadAOSignal(AOsignalDataPath)
+                if self.AOsignal_withTumor.shape[0] != self.AcousticFields[0].field.shape[0]:
+                    print(f"AO signal shape {self.AOsignal_withTumor.shape} does not match the expected shape {self.AcousticFields[0].field.shape}. Resizing Acoustic fields...")
+                    self.cutAcousticFields(max_t=self.AOsignal_withTumor.shape[0] / float(self.params.acoustic['f_saving']), min_t=0)
             else:
-                return AOmatrix
+                self.AOsignal_withoutTumor = loadAOSignal(AOsignalDataPath)
+                if self.AOsignal_withoutTumor.shape[0] != self.AcousticFields[0].field.shape[0]:
+                    print(f"AO signal shape {self.AOsignal_withoutTumor.shape} does not match the expected shape {self.AcousticFields[0].field.shape}. Resizing Acoustic fields...")
+                    self.cutAcousticFields(max_t=self.AOsignal_withoutTumor.shape[0] / float(self.params.acoustic['f_saving']), min_t=0)
+        else:    
+            if self.AcousticFields is None:
+                raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
 
-        if not all(field.field.shape == self.AcousticFields[0].field.shape for field in self.AcousticFields):
-            minShape = min([field.field.shape[0] for field in self.AcousticFields])
-            self.cutAcousticFields(minShape * self.params['fs_aq'])
-        else:
-            shape_field = self.AcousticFields[0].field.shape
+            if self.OpticImage is None:
+                raise ValueError("OpticImage is not initialized. Please generate the phantom first.")
+            
+            if not all(field.field.shape == self.AcousticFields[0].field.shape for field in self.AcousticFields):
+                minShape = min([field.field.shape[0] for field in self.AcousticFields])
+                self.cutAcousticFields(max_t=minShape * self.params.acoustic['f_saving'])
+            else:
+                shape_field = self.AcousticFields[0].field.shape
 
-        AOsignal = np.zeros((shape_field[0], len(self.AcousticFields)), dtype=np.float32)
+            AOsignal = np.zeros((shape_field[0], len(self.AcousticFields)), dtype=np.float32)
 
-        if withTumor:
-            description = "Generating AO Signal with Tumor"
-        else:
-            description = "Generating AO Signal without Tumor"
+            if withTumor:
+                description = "Generating AO Signal with Tumor"
+            else:
+                description = "Generating AO Signal without Tumor"
 
-        for i in trange(len(self.AcousticFields), desc=description):
-            for t in range(self.AcousticFields[i].field.shape[0]):
-                if withTumor:
-                    interaction = self.OpticImage.phantom * self.AcousticFields[i].field[t, :, :]
-                else:
-                    interaction = self.OpticImage.laser.intensity * self.AcousticFields[i].field[t, :, :]
-                AOsignal[t, i] = np.sum(interaction)
+            for i in trange(len(self.AcousticFields), desc=description):
+                for t in range(self.AcousticFields[i].field.shape[0]):
+                    if withTumor:
+                        interaction = self.OpticImage.phantom * self.AcousticFields[i].field[t, :, :]
+                    else:
+                        interaction = self.OpticImage.laser.intensity * self.AcousticFields[i].field[t, :, :]
+                    AOsignal[t, i] = np.sum(interaction)
 
-        if withTumor:
-            self.AOsignal_withTumor = AOsignal
-        else:
-            self.AOsignal_withoutTumor = AOsignal
-
-    @staticmethod
-    def _loadAOSignal(cdh_file):
-        with open(cdh_file, "r") as file:
-            cdh_content = file.readlines()
-
-        n_events = int([line.split(":")[1].strip() for line in cdh_content if "Number of events" in line][0])
-        n_acquisitions = int([line.split(":")[1].strip() for line in cdh_content if "Number of acquisitions per event" in line][0])
-
-        AOsignal_matrix = np.zeros((n_events, n_acquisitions), dtype=np.float32)
-
-        with open(cdh_file.replace(".cdh", ".cdf"), "rb") as file:
-            for event in range(n_events):
-                num_elements = int([line.split(":")[1].strip() for line in cdh_content if "Number of US transducers" in line][0])
-                hex_length = (num_elements + 3) // 4
-                file.read(hex_length // 2)
-
-                signal = np.frombuffer(file.read(n_acquisitions * 4), dtype=np.float32)
-                AOsignal_matrix[event, :] = signal
-
-        return AOsignal_matrix
+            if withTumor:
+                self.AOsignal_withTumor = AOsignal
+            else:
+                self.AOsignal_withoutTumor = AOsignal
 
     def saveAOsignals_Castor(self, save_directory, withTumor=True):
         if withTumor:
@@ -318,13 +444,13 @@ class Experiment(ABC):
         header_content = (
             f"Data filename: {'AOSignals_withTumor.cdf' if withTumor else 'AOSignals_withoutTumor.cdf'}\n"
             f"Number of events: {nScan}\n"
-            f"Number of acquisitions per event: {AO_signal.shape[1]}\n"
+            f"Number of acquisitions per event: {AO_signal.shape[0]}\n"
             f"Start time (s): 0\n"
             f"Duration (s): 1\n"
-            f"Acquisition frequency (Hz): {1/self.AcousticFields[0].kgrid.dt}\n"
+            f"Acquisition frequency (Hz): {self.params.acoustic['f_saving']}\n"
             f"Data mode: histogram\n"
             f"Data type: AOT\n"
-            f"Number of US transducers: {self.params.acoustic['num_elements']}"
+            f"Number of US transducers: {self.params.acoustic['probe']['num_elements']}"
         )
 
         with open(cdh_location, "w") as fileID:
@@ -334,9 +460,12 @@ class Experiment(ABC):
             for field in self.AcousticFields:
                 fileID.write(field.getName_field() + "\n")
 
-        print(f"Fichiers .cdf, .cdh et info.txt sauvegardés dans {save_directory}")
+        print(f"Files .cdf, .cdh and info.txt saved in {save_directory}")
 
     def showAOsignal(self, withTumor=True, save_dir=None, wave_name=None):
+        if not MATPLOTLIB_AVAILABLE:
+            warnings.warn("matplotlib is not available. Cannot display AO signal.", UserWarning)
+            return
         if withTumor and self.AOsignal_withTumor is None:
             raise ValueError("AO signal with tumor is not generated. Please generate it first.")
         if not withTumor and self.AOsignal_withoutTumor is None:
@@ -347,7 +476,7 @@ class Experiment(ABC):
         else:
             AOsignal = self.AOsignal_withoutTumor
 
-        time_axis = np.arange(AOsignal.shape[0]) / float(self.params.acoustic['f_AQ']) * 1e6
+        time_axis = np.arange(AOsignal.shape[0]) / float(self.params.acoustic['f_saving']) * 1e6
 
         num_plots = AOsignal.shape[1]
         if num_plots <= 5:
@@ -391,7 +520,10 @@ class Experiment(ABC):
         plt.show()
         plt.close(fig)
 
-    def show_animated_all(self, fileOfAcousticField=None, save_dir=None, desired_duration_ms=5000):
+    def showAnimatedAll(self, fileOfAcousticField=None, save_dir=None, desired_duration_ms=5000):
+        if not MATPLOTLIB_AVAILABLE:
+            warnings.warn("matplotlib is not available. Cannot create animation.", UserWarning)
+            return None
         mpl.rcParams['animation.embed_limit'] = 100
         pattern_str = StructuredWave.getPattern(fileOfAcousticField)
         angle = StructuredWave.getAngle(fileOfAcousticField)
@@ -415,11 +547,11 @@ class Experiment(ABC):
         fig.suptitle(f"AO Signal Animation {wave_name} | Angle {angle}°", fontsize=12, y=0.98)
 
         axs[0].imshow(self.OpticImage.T, cmap='hot', alpha=1, origin='upper',
-                    extent=(self.params['Xrange'][0], self.params['Xrange'][1], self.params['Zrange'][1], self.params['Zrange'][0]),
+                    extent=(self.params.general['Xrange'][0], self.params.general['Xrange'][1], self.params.general['Zrange'][1], self.params.general['Zrange'][0]),
                     aspect='equal')
 
         im_field = axs[0].imshow(fieldToPlot[0, :, :, idx], cmap='jet', origin='upper',
-                                extent=(self.params['Xrange'][0], self.params['Xrange'][1], self.params['Zrange'][1], self.params['Zrange'][0]),
+                                extent=(self.params.general['Xrange'][0], self.params.general['Xrange'][1], self.params.general['Zrange'][1], self.params.general['Zrange'][0]),
                                 vmax=1, vmin=0.01, alpha=0.8, aspect='equal')
 
         axs[0].set_title(f"{wave_name} | Angle {angle}° | t = 0.00 ms", fontsize=10)
@@ -472,15 +604,12 @@ class Experiment(ABC):
         plt.close(fig)
         return ani
 
-    def showPhantom(self, withROI=False):
+    def showPhantom(self, withROI=False, figsize=(4,4)):
         """
         Displays the optical phantom with absorbers.
         """
         try:
-            if withROI:
-                self.OpticImage.show_ROI()
-            else:
-                self.OpticImage.show_phantom()
+            self.OpticImage.show_phantom(withROI=False, figsize=figsize)
         except Exception as e:
             raise RuntimeError(f"Error plotting phantom: {e}")
         

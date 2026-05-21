@@ -1,6 +1,14 @@
 from .OpticEnums import OpticFieldType
 
 import numpy as np
+import warnings
+
+# Optional matplotlib import for visualization
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
 
 class Laser:
     def __init__(self, params):
@@ -57,8 +65,10 @@ class Laser:
         """
         Displays the laser intensity distribution.
         """
+        if not MATPLOTLIB_AVAILABLE:
+            warnings.warn("matplotlib is not available. Cannot display laser intensity.", UserWarning)
+            return
         try:
-            import matplotlib.pyplot as plt
             plt.imshow(self.intensity, extent=(self.x[0], self.x[-1] + 1, self.z[-1], self.z[0]), aspect='auto', cmap='hot')
             plt.colorbar(label='Intensity')
             plt.xlabel('X (mm)', fontsize=20)

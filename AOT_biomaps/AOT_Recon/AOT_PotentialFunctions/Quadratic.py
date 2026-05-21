@@ -1,11 +1,17 @@
 import numpy as np
-import torch
-from numba import njit
 
-@njit
+# Check for CuPy availability
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    cp = None
+    CUPY_AVAILABLE = False
+
+
 def _Omega_QUADRATIC_CPU(theta_flat, j_idx, k_idx, values, sigma=1.0):
     """
-    Optimized CPU implementation of the quadratic potential using Numba.
+    CPU implementation of the quadratic potential.
 
     Parameters:
         theta_flat (np.ndarray): shape (J,)
@@ -45,42 +51,38 @@ def _Omega_QUADRATIC_CPU(theta_flat, j_idx, k_idx, values, sigma=1.0):
     U_value *= 0.5
     return grad_U, hess_U, U_value
 
-def _Omega_QUADRATIC_GPU(theta_flat, index, values, device, sigma=1.0):
+
+def _Omega_QUADRATIC_GPU(theta_flat, index, values, sigma=1.0):
     """
     GPU implementation of the quadratic potential function, gradient and Hessian.
-    
+
     Parameters:
-        theta_flat (torch.Tensor): (J,) tensor on GPU
-        index (Tuple[torch.Tensor, torch.Tensor]): (j_idx, k_idx), indices of adjacent pixels
-        values (torch.Tensor): (N_edges,) weights, typically 1 or distance-based
+        theta_flat (cupy.ndarray): (J,) array on GPU
+        index (tuple): (j_idx, k_idx), indices of adjacent pixels
+        values (cupy.ndarray): (N_edges,) weights, typically 1 or distance-based
         sigma (float): smoothness hyperparameter
-        
+
     Returns:
-        grad_U (torch.Tensor): gradient of the potential function, shape (J,)
-        hess_U (torch.Tensor): diagonal of the Hessian, shape (J,)
-        U_value (torch.Tensor): scalar, energy
+        grad_U (cupy.ndarray): gradient of the potential function, shape (J,)
+        hess_U (cupy.ndarray): diagonal of the Hessian, shape (J,)
+        U_value (float): scalar, energy
     """
     j_idx, k_idx = index
     diff = theta_flat[j_idx] - theta_flat[k_idx]
 
-    # Energy
     psi_pair = 0.5 * (diff / sigma) ** 2
     psi_pair = values * psi_pair
 
-    # Gradient
     grad_pair = values * (-diff / sigma**2)
 
-    # Hessian
     hess_pair = values * (1.0 / sigma**2)
 
-    # Allocate buffers on correct device
-    grad_U = torch.zeros_like(theta_flat, device=device)
-    hess_U = torch.zeros_like(theta_flat, device=device)
+    grad_U = cp.zeros_like(theta_flat)
+    hess_U = cp.zeros_like(theta_flat)
 
-    # Accumulate
-    grad_U.index_add_(0, j_idx, grad_pair)
-    hess_U.index_add_(0, j_idx, hess_pair)
+    grad_U[j_idx] += grad_pair
+    hess_U[j_idx] += hess_pair
 
-    U_value = 0.5 * psi_pair.sum()
+    U_value = 0.5 * float(cp.sum(psi_pair))
 
     return grad_U, hess_U, U_value

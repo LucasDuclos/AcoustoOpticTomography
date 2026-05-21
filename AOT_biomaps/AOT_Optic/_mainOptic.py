@@ -1,9 +1,16 @@
 from .Laser import Laser
 from .Absorber import Absorber
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+import warnings
+
+# Optional matplotlib imports for visualization
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
 
 class Phantom:
     """
@@ -16,8 +23,7 @@ class Phantom:
         :param params: Configuration parameters for the phantom.
         """
         try:
-            absorber_params = params.optic['absorbers']
-            self.absorbers = [Absorber(**a) for a in absorber_params] if absorber_params else []
+            self.absorbers = [Absorber(**a) for a in params.optic['absorbers']] if params.optic['absorbers'] else []
             self.laser = Laser(params)
             self.phantom = self._apply_absorbers()
             self.phantom = np.transpose(self.phantom)
@@ -80,7 +86,6 @@ class Phantom:
                 f"Shape mismatch: phantom={self.phantom.shape}, grid={X_mm.shape}"
             )
             self.maskList = []  # Reset the list
-            roi_found = False
 
             for absorber in self.absorbers:
                 center_x_mm = absorber.center[0] * 1000  # Convert to mm
@@ -112,93 +117,89 @@ class Phantom:
         except Exception as e:
             raise RuntimeError(f"Error applying absorbers: {e}")
 
-    def show_phantom(self):
+    def show_phantom(self, withROI=False, figsize=(4,4)):
         """
-        Displays the optical phantom with absorbers.
-        """
-        try:
-            plt.figure(figsize=(6, 6))
-            plt.imshow(
-                self.phantom,
-                extent=(self.laser.x[0], self.laser.x[-1] + 1, self.laser.z[-1], self.laser.z[0]),
-                aspect='equal',
-                cmap='hot'
-            )
-            plt.colorbar(label='Intensity')
-            plt.xlabel('X (mm)', fontsize=20)
-            plt.ylabel('Z (mm)', fontsize=20)
-            plt.tick_params(axis='both', which='major', labelsize=20)
-            plt.title('Optical Phantom with Absorbers')
-            plt.show()
-        except Exception as e:
-            raise RuntimeError(f"Error plotting phantom: {e}")
+        Displays the optical phantom, optionally with ROIs and average intensities.
 
-    def show_ROI(self):
+        Parameters:
+            withROI (bool): If True, displays ROIs, absorber numbers, and average intensities.
+                            If False, displays only the phantom with a simple colorbar.
         """
-        Displays the optical image with ROIs and average intensities.
-        Calls find_ROI() if self.maskList is empty.
-        """
+        if not MATPLOTLIB_AVAILABLE:
+            warnings.warn("matplotlib is not available. Cannot display phantom.", UserWarning)
+            return
         try:
-            if not self.maskList:
-                self.find_ROI()
-
-            fig, ax = plt.subplots(figsize=(6, 6))
+            fig, ax = plt.subplots(figsize=figsize)
             im = ax.imshow(
                 self.phantom,
                 extent=(
-                    np.min(self.laser.x), np.max(self.laser.x),
-                    np.max(self.laser.z), np.min(self.laser.z)
+                    np.min(self.laser.x),
+                    np.max(self.laser.x),
+                    np.max(self.laser.z),
+                    np.min(self.laser.z)
                 ),
                 aspect='equal',
                 cmap='hot'
             )
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(im, cax=cax, label='Intensity')
 
-            # Draw ROIs
-            for i, absorber in enumerate(self.absorbers):
-                center_x_mm = absorber.center[0] * 1000  # Convert to mm
-                center_z_mm = absorber.center[1] * 1000  # Convert to mm
-                radius_mm = absorber.radius * 1000  # Convert to mm
+            if withROI:
+                if not self.maskList:
+                    self.find_ROI()
 
-                circle = patches.Circle(
-                    (center_x_mm, center_z_mm),
-                    radius_mm,
-                    edgecolor='limegreen',
-                    facecolor='none',
-                    linewidth=2
-                )
-                ax.add_patch(circle)
-                ax.text(
-                    center_x_mm,
-                    center_z_mm - 2,
-                    str(i + 1),
-                    color='limegreen',
-                    ha='center',
-                    va='center',
-                    fontsize=12,
-                    fontweight='bold'
-                )
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(im, cax=cax, label='Intensity')
 
-            # Global mask (union of all ROIs)
-            ROI_mask = np.zeros_like(self.phantom, dtype=bool)
-            for mask in self.maskList:
-                ROI_mask |= mask
+                # Draw ROIs
+                for i, absorber in enumerate(self.absorbers):
+                    center_x_mm = absorber.center[0] * 1000  # Convert to mm
+                    center_z_mm = absorber.center[1] * 1000  # Convert to mm
+                    radius_mm = absorber.radius * 1000  # Convert to mm
 
-            roi_values = self.phantom[ROI_mask]
-            if roi_values.size == 0:
-                print("❌ NO PIXELS IN ROIs! Check positions:")
-                for i, abs in enumerate(self.absorbers):
-                    print(f"  Absorber {i}: center=({abs.center[0]*1000:.3f}, {abs.center[1]*1000:.3f}) mm")
-                    print(f"          radius={abs.radius*1000:.3f} mm")
+                    circle = patches.Circle(
+                        (center_x_mm, center_z_mm),
+                        radius_mm,
+                        edgecolor='limegreen',
+                        facecolor='none',
+                        linewidth=2
+                    )
+                    ax.add_patch(circle)
+                    ax.text(
+                        center_x_mm,
+                        center_z_mm - 2,
+                        str(i + 1),
+                        color='limegreen',
+                        ha='center',
+                        va='center',
+                        fontsize=12,
+                        fontweight='bold'
+                    )
+
+                # Global mask (union of all ROIs)
+                ROI_mask = np.zeros_like(self.phantom, dtype=bool)
+                for mask in self.maskList:
+                    ROI_mask |= mask
+
+                roi_values = self.phantom[ROI_mask]
+                if roi_values.size == 0:
+                    print("❌ NO PIXELS IN ROIs! Check positions:")
+                    for i, absorber in enumerate(self.absorbers):
+                        print(f"  Absorber {i}: center=({absorber.center[0]*1000:.3f}, {absorber.center[1]*1000:.3f}) mm")
+                        print(f"          radius={absorber.radius*1000:.3f} mm")
+                else:
+                    print(f" Average intensity in ROIs: {np.mean(roi_values):.4f}")
+
+                ax.set_xlabel('x (mm)')
+                ax.set_ylabel('z (mm)')
+                ax.set_title('Phantom with ROIs')
             else:
-                print(f"✅ Average intensity in ROIs: {np.mean(roi_values):.4f}")
+                plt.colorbar(im, label='Intensity')
+                ax.set_xlabel('X (mm)')
+                ax.set_ylabel('Z (mm)')
+                ax.set_title('Optical Phantom with Absorbers')
 
-            ax.set_xlabel('x (mm)')
-            ax.set_ylabel('z (mm)')
-            ax.set_title('Phantom with ROIs')
+            plt.tick_params(axis='both', which='major', labelsize=20)
             plt.tight_layout()
             plt.show()
         except Exception as e:
-            raise RuntimeError(f"Error in show_ROI: {e}")
+            raise RuntimeError(f"Error in show_phantom: {e}")

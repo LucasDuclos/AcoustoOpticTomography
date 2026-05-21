@@ -354,8 +354,33 @@ class NoiseType(Enum):
     - None: No noise is applied.
     """
     POISSON = 'poisson'
-    """Poisson noise, typically used for emission data."""
+    """Poisson noise."""
     GAUSSIAN = 'gaussian'
-    """Gaussian noise, typically used for transmission data."""
+    """Gaussian noise."""
     None_ = 'none'
     """No noise is applied."""
+
+class SMatrixType(Enum):
+    """
+    Enum for different sparsing methods used in reconstructions.
+    
+    Selection of sparsing methods:
+    - Thresholding: Sparsing based on a threshold value.
+    - TopK: Sparsing by retaining the top K values.
+    - None: No sparsing is applied.
+    """
+    DENSE = 'DENSE'
+    """No sparsing is applied."""
+    CSR = 'CSR'
+    """Sparsing based on a threshold value."""
+    COO = 'COO'
+    """Sparsing by retaining the top K values."""
+    SELL = 'SELL'
+    """Sparsing using sell C sigma method.
+    Optimized variant of ELLPACK, dividing the matrix into fixed-size "chunks" of `C` rows.
+    Non-zero elements are sorted by column within each chunk to improve memory coalescing on GPUs.
+    Rows are padded with zeros to align their length to the longest row in the chunk.
+    ** Ref : Kreutzer, M., Hager, G., Wellein, G., Fehske, H., & Bishop, A. R. (2014).
+          "A Unified Sparse Matrix Data Format for Efficient General Sparse Matrix-Vector Multiply on Modern Processors".
+          ACM Transactions on Mathematical Software, 41(2), 1–24. DOI: 10.1145/2592376.
+    """

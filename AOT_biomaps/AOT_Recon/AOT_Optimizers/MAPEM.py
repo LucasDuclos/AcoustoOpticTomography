@@ -2,19 +2,94 @@ from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType
 from AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Quadratic import _Omega_QUADRATIC_CPU, _Omega_QUADRATIC_GPU
 from AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.RelativeDifferences import _Omega_RELATIVE_DIFFERENCE_CPU, _Omega_RELATIVE_DIFFERENCE_GPU
 from AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Huber import _Omega_HUBER_PIECEWISE_CPU, _Omega_HUBER_PIECEWISE_GPU
-from AOT_biomaps.AOT_Recon.ReconTools import _build_adjacency_sparse
+from AOT_biomaps.AOT_Recon.ReconTools import _build_adjacency_sparse, check_gpu_memory, calculate_memory_requirement
 from AOT_biomaps.Config import config
+
 import numpy as np
-import torch
 from tqdm import trange
 
-def _MAPEM_CPU_STOP(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma, isSavingEachIteration, withTumor, max_saves=5000):
+# Check for CuPy availability
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    cp = None
+    CUPY_AVAILABLE = False
+
+def MAPEM(
+    SMatrix,
+    y,
+    Omega,
+    beta,
+    delta=None,
+    gamma=None,
+    sigma=None,
+    numIterations=100,
+    isSavingEachIteration=True,
+    withTumor=True,
+    max_saves=5000,
+    show_logs=True
+):
     """
-    MAPEM version CPU simple - sans GPU - torch uniquement
+    This method implements the MAPEM algorithm using CuPy for GPU acceleration.
+    Multi-GPU and Multi-CPU modes are not implemented for this algorithm.
     """
     try:
+        tumor_str = "WITH" if withTumor else "WITHOUT"
+        # Auto-select device and method
+        use_gpu = check_gpu_memory(config.select_best_gpu(), calculate_memory_requirement(SMatrix, y), show_logs=show_logs)
+        # Dispatch to the appropriate implementation
+        if use_gpu:
+            return _MAPEM_GPU(SMatrix, y, Omega, beta, delta, gamma, sigma, numIterations,
+                             isSavingEachIteration, tumor_str, max_saves, show_logs)
+        else:
+            return _MAPEM_CPU(SMatrix, y, Omega, beta, delta, gamma, sigma, numIterations,
+                             isSavingEachIteration, tumor_str, max_saves, show_logs)
+    except Exception as e:
+        print(f"Error in MAPEM: {type(e).__name__}: {e}")
+        return None, None
+
+def MAPEM_STOP(
+    SMatrix,
+    y,
+    Omega,
+    beta,
+    delta=None,
+    gamma=None,
+    sigma=None,
+    numIterations=100,
+    isSavingEachIteration=True,
+    withTumor=True,
+    max_saves=5000,
+    show_logs=True
+):
+    """
+    This method implements the MAPEM_STOP algorithm using CuPy for GPU acceleration.
+    Stops when penalized log-likelihood stops increasing.
+    """
+    try:
+        tumor_str = "WITH" if withTumor else "WITHOUT"
+        use_gpu = check_gpu_memory(config.select_best_gpu(), calculate_memory_requirement(SMatrix, y), show_logs=show_logs)
+        if use_gpu:
+            return _MAPEM_GPU_STOP(SMatrix, y, Omega, beta, delta, gamma, sigma, numIterations,
+                                  isSavingEachIteration, tumor_str, max_saves, show_logs)
+        else:
+            return _MAPEM_CPU_STOP(SMatrix, y, Omega, beta, delta, gamma, sigma, numIterations,
+                                  isSavingEachIteration, tumor_str, max_saves, show_logs)
+    except Exception as e:
+        print(f"Error in MAPEM_STOP: {type(e).__name__}: {e}")
+        return None, None
+
+def _MAPEM_CPU_STOP(SMatrix, y, Omega, beta, delta, gamma, sigma, numIterations,
+                   isSavingEachIteration, tumor_str, max_saves, show_logs=True):
+    """
+    CPU implementation of MAPEM with STOP condition using CuPy arrays.
+    """
+    try:
+        # Validate potential type and parameters
         if not isinstance(Omega, PotentialType):
             raise TypeError(f"Omega must be of type PotentialType, got {type(Omega)}")
+
         if Omega == PotentialType.HUBER_PIECEWISE:
             if delta is None:
                 raise ValueError("delta must be specified for HUBER_PIECEWISE potential type.")
@@ -33,17 +108,16 @@ def _MAPEM_CPU_STOP(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma,
         else:
             raise ValueError(f"Unknown potential type: {Omega}")
 
-        SMatrix = torch.tensor(SMatrix, dtype=torch.float32)
-        y_tensor = torch.tensor(y, dtype=torch.float32)
+        SMatrix_cp = cp.asarray(SMatrix, dtype=cp.float32)
+        y_cp = cp.asarray(y, dtype=cp.float32)
         T, Z, X, N = SMatrix.shape
-        A_flat = SMatrix.permute(0, 3, 1, 2).reshape(T * N, Z * X)
-        y_flat = y_tensor.reshape(-1)
-        I_0 = torch.ones((Z, X), dtype=torch.float32)
+        A_flat = SMatrix_cp.transpose(0, 3, 1, 2).reshape(T * N, Z * X)
+        y_flat = y_cp.reshape(-1)
+        I_0 = cp.ones((Z, X), dtype=cp.float32)
         theta_list = [I_0]
-        results = [I_0.numpy()]
+        results = [I_0.get()]
         saved_indices = [0]
-        previous = -np.inf
-        normalization_factor = SMatrix.sum(dim=(0, 3)).reshape(-1)
+        normalization_factor = SMatrix_cp.sum(axis=(0, 3)).reshape(-1)
         adj_index, adj_values = _build_adjacency_sparse(Z, X)
 
         # Calculate save indices
@@ -55,39 +129,46 @@ def _MAPEM_CPU_STOP(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma,
             if save_indices[-1] != numIterations - 1:
                 save_indices.append(numIterations - 1)
 
+        # Set description based on potential type
         if Omega == PotentialType.HUBER_PIECEWISE:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse HUBER β:{beta:.4f}, δ:{delta:.4f}) + STOP condition (penalized log-likelihood) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single CPU ----"
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse HUBER β:{beta:.4f}, δ:{delta:.4f}) + STOP condition (penalized log-likelihood) ---- {tumor_str} TUMOR ---- processing on single CPU"
         elif Omega == PotentialType.RELATIVE_DIFFERENCE:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse RD β:{beta:.4f}, γ:{gamma:.4f}) + STOP condition (penalized log-likelihood) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single CPU ----"
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse RD β:{beta:.4f}, γ:{gamma:.4f}) + STOP condition (penalized log-likelihood) ---- {tumor_str} TUMOR ---- processing on single CPU"
         elif Omega == PotentialType.QUADRATIC:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse QUADRATIC β:{beta:.4f}, σ:{sigma:.4f}) + STOP condition (penalized log-likelihood) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single CPU ----"
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse QUADRATIC β:{beta:.4f}, σ:{sigma:.4f}) + STOP condition (penalized log-likelihood) ---- {tumor_str} TUMOR ---- processing on single CPU"
 
-        for p in trange(numIterations, desc=description):
+        iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
+        for it in iterator:
             theta_p = theta_list[-1]
             theta_p_flat = theta_p.reshape(-1)
             q_flat = A_flat @ theta_p_flat
-            e_flat = (y_flat - q_flat) / (q_flat + torch.finfo(torch.float32).tiny)
+            e_flat = (y_flat - q_flat) / (q_flat + cp.finfo(cp.float32).tiny)
             c_flat = A_flat.T @ e_flat
+
+            # Select potential function
             if Omega == PotentialType.HUBER_PIECEWISE:
                 grad_U, hess_U, U_value = _Omega_HUBER_PIECEWISE_CPU(theta_p_flat, adj_index, adj_values, delta=delta)
             elif Omega == PotentialType.RELATIVE_DIFFERENCE:
                 grad_U, hess_U, U_value = _Omega_RELATIVE_DIFFERENCE_CPU(theta_p_flat, adj_index, adj_values, gamma=gamma)
             elif Omega == PotentialType.QUADRATIC:
                 grad_U, hess_U, U_value = _Omega_QUADRATIC_CPU(theta_p_flat, adj_index, adj_values, sigma=sigma)
+
             denom = normalization_factor + theta_p_flat * beta * hess_U
             num = theta_p_flat * (c_flat - beta * grad_U)
-            theta_next_flat = theta_p_flat + num / (denom + torch.finfo(torch.float32).tiny)
-            theta_next_flat = torch.clamp(theta_next_flat, min=0)
+            theta_next_flat = theta_p_flat + num / (denom + cp.finfo(cp.float32).tiny)
+            theta_next_flat = cp.clip(theta_next_flat, a_min=0, a_max=None)
             theta_next = theta_next_flat.reshape(Z, X)
             theta_list[-1] = theta_next
-            if isSavingEachIteration and p in save_indices:
-                results.append(theta_next.numpy())
-                saved_indices.append(p+1)
-            log_likelihood = (y_flat * torch.log(q_flat + 1e-8) - (q_flat + 1e-8)).sum()
+
+            if isSavingEachIteration and it in save_indices:
+                results.append(theta_next.get())
+                saved_indices.append(it+1)
+
+            log_likelihood = (y_flat * cp.log(q_flat + cp.finfo(cp.float32).tiny) - (q_flat + cp.finfo(cp.float32).tiny)).sum()
             penalized_log_likelihood = log_likelihood - beta * U_value
-            current = penalized_log_likelihood.item()
-            if (p + 1) % 100 == 0:
-                print(f"Iter {p+1}: logL={log_likelihood:.3e}, U={U_value:.3e}, penalized logL={penalized_log_likelihood:.3e}")
+
+            if (it + 1) % 100 == 0:
+                print(f"Iter {it+1}: logL={log_likelihood.get():.3e}, U={U_value.get():.3e}, penalized logL={penalized_log_likelihood.get():.3e}")
 
         if isSavingEachIteration:
             return results, saved_indices
@@ -97,14 +178,16 @@ def _MAPEM_CPU_STOP(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma,
         print(f"An error occurred in _MAPEM_CPU_STOP: {e}")
         return None, None
 
-def _MAPEM_GPU_STOP(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma, isSavingEachIteration, withTumor, max_saves=5000):
+def _MAPEM_GPU_STOP(SMatrix, y, Omega, beta, delta, gamma, sigma, numIterations,
+                   isSavingEachIteration, tumor_str, max_saves, show_logs=True):
     """
-    Maximum A Posteriori (MAP) estimation for Bayesian reconstruction.
-    This method computes the MAP estimate of the parameters given the data.
+    GPU implementation of MAPEM with STOP condition using CuPy.
     """
     try:
+        # Validate potential type and parameters
         if not isinstance(Omega, PotentialType):
             raise TypeError(f"Omega must be of type PotentialType, got {type(Omega)}")
+
         if Omega == PotentialType.HUBER_PIECEWISE:
             if delta is None:
                 raise ValueError("delta must be specified for HUBER_PIECEWISE potential type.")
@@ -123,22 +206,21 @@ def _MAPEM_GPU_STOP(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma,
         else:
             raise ValueError(f"Unknown potential type: {Omega}")
 
-        device = torch.device(f"cuda:{config.select_best_gpu()}")
-        A_matrix_torch = torch.tensor(SMatrix, dtype=torch.float32).to(device)
-        y_torch = torch.tensor(y, dtype=torch.float32).to(device)
+        SMatrix_cp = cp.asarray(SMatrix, dtype=cp.float32)
+        y_cp = cp.asarray(y, dtype=cp.float32)
         T, Z, X, N = SMatrix.shape
         J = Z * X
-        A_flat = A_matrix_torch.permute(0, 3, 1, 2).reshape(T * N, Z * X)
-        y_flat = y_torch.reshape(-1)
-        I_0 = torch.ones((Z, X), dtype=torch.float32, device=device)
-        matrix_theta_torch = [I_0]
-        matrix_theta_from_gpu_MAPEM = [I_0.cpu().numpy()]
+        A_flat = SMatrix_cp.transpose(0, 3, 1, 2).reshape(T * N, J)
+        y_flat = y_cp.reshape(-1)
+        theta_0 = cp.ones((Z, X), dtype=cp.float32)
+        matrix_theta_cp = [theta_0]
+        matrix_theta_from_gpu_MAPEM = [theta_0.get()]
         saved_indices = [0]
-        normalization_factor = A_matrix_torch.sum(dim=(0, 3))
+        normalization_factor = SMatrix_cp.sum(axis=(0, 3))
         normalization_factor_flat = normalization_factor.reshape(-1)
         previous = -np.inf
         nb_false_successive = 0
-        adj_index, adj_values = _build_adjacency_sparse(Z, X, device=device)
+        adj_index, adj_values = _build_adjacency_sparse(Z, X)
 
         # Calculate save indices
         if numIterations <= max_saves:
@@ -149,63 +231,75 @@ def _MAPEM_GPU_STOP(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma,
             if save_indices[-1] != numIterations - 1:
                 save_indices.append(numIterations - 1)
 
+        # Set description based on potential type
         if Omega == PotentialType.HUBER_PIECEWISE:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse HUBER β:{beta:.4f}, δ:{delta:.4f}) + STOP condition (penalized log-likelihood) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single GPU no.{torch.cuda.current_device()} ----"
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse HUBER β:{beta:.4f}, δ:{delta:.4f}) + STOP condition (penalized log-likelihood) ---- {tumor_str} TUMOR ---- processing on single GPU"
         elif Omega == PotentialType.RELATIVE_DIFFERENCE:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse RD β:{beta:.4f}, γ:{gamma:.4f}) + STOP condition (penalized log-likelihood) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single GPU no.{torch.cuda.current_device()} ----"
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse RD β:{beta:.4f}, γ:{gamma:.4f}) + STOP condition (penalized log-likelihood) ---- {tumor_str} TUMOR ---- processing on single GPU"
         elif Omega == PotentialType.QUADRATIC:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse QUADRATIC β:{beta:.4f}, σ:{sigma:.4f}) + STOP condition (penalized log-likelihood) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single GPU no.{torch.cuda.current_device()} ----"
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse QUADRATIC β:{beta:.4f}, σ:{sigma:.4f}) + STOP condition (penalized log-likelihood) ---- {tumor_str} TUMOR ---- processing on single GPU"
 
-        for p in trange(numIterations, desc=description):
-            theta_p = matrix_theta_torch[-1]
+        iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
+        for it in iterator:
+            theta_p = matrix_theta_cp[-1]
             theta_p_flat = theta_p.reshape(-1)
             q_flat = A_flat @ theta_p_flat
-            e_flat = (y_flat - q_flat) / (q_flat + torch.finfo(torch.float32).tiny)
+            e_flat = (y_flat - q_flat) / (q_flat + cp.finfo(cp.float32).tiny)
             c_flat = A_flat.T @ e_flat
+
+            # Select potential function
             if Omega == PotentialType.HUBER_PIECEWISE:
-                grad_U, hess_U, U_value = _Omega_HUBER_PIECEWISE_GPU(theta_p_flat, adj_index, adj_values, device=device, delta=delta)
+                grad_U, hess_U, U_value = _Omega_HUBER_PIECEWISE_GPU(theta_p_flat, adj_index, adj_values, delta=delta)
             elif Omega == PotentialType.RELATIVE_DIFFERENCE:
-                grad_U, hess_U, U_value = _Omega_RELATIVE_DIFFERENCE_GPU(theta_p_flat, adj_index, adj_values, device=device, gamma=gamma)
+                grad_U, hess_U, U_value = _Omega_RELATIVE_DIFFERENCE_GPU(theta_p_flat, adj_index, adj_values, gamma=gamma)
             elif Omega == PotentialType.QUADRATIC:
-                grad_U, hess_U, U_value = _Omega_QUADRATIC_GPU(theta_p_flat, adj_index, adj_values, device=device, sigma=sigma)
-            else:
-                raise ValueError(f"Unknown potential type: {Omega}")
+                grad_U, hess_U, U_value = _Omega_QUADRATIC_GPU(theta_p_flat, adj_index, adj_values, sigma=sigma)
+
             denom = normalization_factor_flat + theta_p_flat * beta * hess_U
             num = theta_p_flat * (c_flat - beta * grad_U)
-            theta_p_plus_1_flat = theta_p_flat + num / (denom + torch.finfo(torch.float32).tiny)
-            theta_p_plus_1_flat = torch.clamp(theta_p_plus_1_flat, min=0)
+            theta_p_plus_1_flat = theta_p_flat + num / (denom + cp.finfo(cp.float32).tiny)
+            theta_p_plus_1_flat = cp.clip(theta_p_plus_1_flat, a_min=0, a_max=None)
             theta_next = theta_p_plus_1_flat.reshape(Z, X)
-            matrix_theta_torch[-1] = theta_next
-            if isSavingEachIteration and p in save_indices:
-                matrix_theta_from_gpu_MAPEM.append(theta_next.cpu().numpy())
-                saved_indices.append(p+1)
-            log_likelihood = (y_flat * (torch.log(q_flat + torch.finfo(torch.float32).tiny)) - (q_flat + torch.finfo(torch.float32).tiny)).sum()
+            matrix_theta_cp[-1] = theta_next
+
+            if isSavingEachIteration and it in save_indices:
+                matrix_theta_from_gpu_MAPEM.append(theta_next.get())
+                saved_indices.append(it+1)
+
+            log_likelihood = (y_flat * cp.log(q_flat + cp.finfo(cp.float32).tiny) - (q_flat + cp.finfo(cp.float32).tiny)).sum()
             penalized_log_likelihood = log_likelihood - beta * U_value
-            if p == 0 or (p + 1) % 100 == 0:
-                current = penalized_log_likelihood.item()
+
+            if it == 0 or (it + 1) % 100 == 0:
+                current = penalized_log_likelihood.get()
                 if current <= previous:
                     nb_false_successive += 1
                 else:
                     nb_false_successive = 0
-                print(f"Iter {p + 1}: lnL without term ln(m_i !) inside={log_likelihood.item():.8e}, Gibbs energy function U={U_value.item():.4e}, penalized lnL without term ln(m_i !) inside={penalized_log_likelihood.item():.8e}, p lnL (current {current:.8e} - previous {previous:.8e} > 0)={(current - previous > 0)}, nb_false_successive={nb_false_successive}")
+                print(f"Iter {it + 1}: lnL without term ln(m_i !) inside={log_likelihood.get():.8e}, Gibbs energy function U={U_value.get():.4e}, penalized lnL without term ln(m_i !) inside={penalized_log_likelihood.get():.8e}, p lnL (current {current:.8e} - previous {previous:.8e} > 0)={(current - previous > 0)}, nb_false_successive={nb_false_successive}")
                 previous = current
 
-        del A_matrix_torch, y_torch, A_flat, y_flat, I_0, normalization_factor, normalization_factor_flat
-        torch.cuda.empty_cache()
+        del SMatrix_cp, y_cp, A_flat, y_flat, theta_0, normalization_factor, normalization_factor_flat
+        cp.cuda.Stream.null.synchronize()
         if isSavingEachIteration:
             return matrix_theta_from_gpu_MAPEM, saved_indices
         else:
             return matrix_theta_from_gpu_MAPEM[-1], None
     except Exception as e:
         print(f"An error occurred in _MAPEM_GPU_STOP: {e}")
-        del A_matrix_torch, y_torch, A_flat, y_flat, I_0, normalization_factor, normalization_factor_flat
-        torch.cuda.empty_cache()
+        del SMatrix_cp, y_cp, A_flat, y_flat, theta_0, normalization_factor, normalization_factor_flat
+        cp.cuda.Stream.null.synchronize()
         return None, None
 
-def _MAPEM_CPU(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma, isSavingEachIteration, withTumor, max_saves=5000):
+def _MAPEM_CPU(SMatrix, y, Omega, beta, delta, gamma, sigma, numIterations,
+               isSavingEachIteration, tumor_str, max_saves, show_logs=True):
+    """
+    CPU implementation of MAPEM using CuPy arrays.
+    """
     try:
+        # Validate potential type and parameters
         if not isinstance(Omega, PotentialType):
             raise TypeError(f"Omega must be of type PotentialType, got {type(Omega)}")
+
         if Omega == PotentialType.HUBER_PIECEWISE:
             if delta is None:
                 raise ValueError("delta must be specified for HUBER_PIECEWISE potential type.")
@@ -225,14 +319,106 @@ def _MAPEM_CPU(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma, isSa
             raise ValueError(f"Unknown potential type: {Omega}")
 
         T, Z, X, N = SMatrix.shape
-        J = Z * X
-        A_flat = np.transpose(SMatrix, (0, 3, 1, 2)).reshape(T * N, Z * X)
-        y_flat = y.reshape(-1)
-        theta_0 = np.ones((Z, X), dtype=np.float32)
+        A_flat = cp.asarray(SMatrix, dtype=cp.float32).transpose(0, 3, 1, 2).reshape(T * N, Z * X)
+        y_flat = cp.asarray(y, dtype=cp.float32).reshape(-1)
+        theta_0 = cp.ones((Z, X), dtype=cp.float32)
         matrix_theta_np = [theta_0]
-        I_reconMatrix = [theta_0.copy()]
+        I_reconMatrix = [theta_0.get()]
         saved_indices = [0]
         normalization_factor = SMatrix.sum(axis=(0, 3))
+        normalization_factor_flat = cp.asarray(normalization_factor.reshape(-1), dtype=cp.float32)
+        adj_index, adj_values = _build_adjacency_sparse(Z, X)
+
+        # Calculate save indices
+        if numIterations <= max_saves:
+            save_indices = list(range(numIterations))
+        else:
+            step = numIterations // max_saves
+            save_indices = list(range(0, numIterations, step))
+            if save_indices[-1] != numIterations - 1:
+                save_indices.append(numIterations - 1)
+
+        # Set description based on potential type
+        if Omega == PotentialType.HUBER_PIECEWISE:
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse HUBER β:{beta:.4f}, δ:{delta:.4f}) ---- {tumor_str} TUMOR ---- processing on single CPU"
+        elif Omega == PotentialType.RELATIVE_DIFFERENCE:
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse RD β:{beta:.4f}, γ:{gamma:.4f}) ---- {tumor_str} TUMOR ---- processing on single CPU"
+        elif Omega == PotentialType.QUADRATIC:
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse QUADRATIC β:{beta:.4f}, σ:{sigma:.4f}) ---- {tumor_str} TUMOR ---- processing on single CPU"
+
+        iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
+        for it in iterator:
+            theta_p = matrix_theta_np[-1]
+            theta_p_flat = theta_p.reshape(-1)
+            q_flat = A_flat @ theta_p_flat
+            e_flat = (y_flat - q_flat) / (q_flat + cp.finfo(cp.float32).tiny)
+            c_flat = A_flat.T @ e_flat
+
+            # Select potential function
+            if Omega == PotentialType.HUBER_PIECEWISE:
+                grad_U, hess_U, _ = _Omega_HUBER_PIECEWISE_CPU(theta_p_flat, adj_index, adj_values, delta=delta)
+            elif Omega == PotentialType.RELATIVE_DIFFERENCE:
+                grad_U, hess_U, _ = _Omega_RELATIVE_DIFFERENCE_CPU(theta_p_flat, adj_index, adj_values, gamma=gamma)
+            elif Omega == PotentialType.QUADRATIC:
+                grad_U, hess_U, _ = _Omega_QUADRATIC_CPU(theta_p_flat, adj_index, adj_values, sigma=sigma)
+
+            denom = normalization_factor_flat + theta_p_flat * beta * hess_U
+            num = theta_p_flat * (c_flat - beta * grad_U)
+            theta_p_plus_1_flat = theta_p_flat + num / (denom + cp.finfo(cp.float32).tiny)
+            theta_p_plus_1_flat = cp.clip(theta_p_plus_1_flat, a_min=0, a_max=None)
+            theta_next = theta_p_plus_1_flat.reshape(Z, X)
+            matrix_theta_np.append(theta_next)
+            if isSavingEachIteration and it in save_indices:
+                I_reconMatrix.append(theta_next.get())
+                saved_indices.append(it+1)
+
+        if isSavingEachIteration:
+            return I_reconMatrix, saved_indices
+        else:
+            return I_reconMatrix[-1], None
+    except Exception as e:
+        print(f"An error occurred in _MAPEM_CPU: {e}")
+        return None, None
+
+def _MAPEM_GPU(SMatrix, y, Omega, beta, delta, gamma, sigma, numIterations,
+               isSavingEachIteration, tumor_str, max_saves, show_logs=True):
+    """
+    GPU implementation of MAPEM using CuPy.
+    """
+    try:
+        # Validate potential type and parameters
+        if not isinstance(Omega, PotentialType):
+            raise TypeError(f"Omega must be of type PotentialType, got {type(Omega)}")
+
+        if Omega == PotentialType.HUBER_PIECEWISE:
+            if delta is None:
+                raise ValueError("delta must be specified for HUBER_PIECEWISE potential type.")
+            if beta is None:
+                raise ValueError("beta must be specified for HUBER_PIECEWISE potential type.")
+        elif Omega == PotentialType.RELATIVE_DIFFERENCE:
+            if gamma is None:
+                raise ValueError("gamma must be specified for RELATIVE_DIFFERENCE potential type.")
+            if beta is None:
+                raise ValueError("beta must be specified for RELATIVE_DIFFERENCE potential type.")
+        elif Omega == PotentialType.QUADRATIC:
+            if sigma is None:
+                raise ValueError("sigma must be specified for QUADRATIC potential type.")
+            if beta is None:
+                raise ValueError("beta must be specified for QUADRATIC potential type.")
+        else:
+            raise ValueError(f"Unknown potential type: {Omega}")
+
+        SMatrix_cp = cp.asarray(SMatrix, dtype=cp.float32)
+        y_cp = cp.asarray(y, dtype=cp.float32)
+        T, Z, X, N = SMatrix.shape
+        J = Z * X
+        A_flat = SMatrix_cp.transpose(0, 3, 1, 2).reshape(T * N, J)
+        y_flat = y_cp.reshape(-1)
+        theta_0 = cp.ones((Z, X), dtype=cp.float32)
+        matrix_theta_cp = [theta_0]
+        I_reconMatrix = [theta_0.get()]
+        saved_indices = [0]
+        normalization_factor = SMatrix_cp.sum(axis=(0, 3))
         normalization_factor_flat = normalization_factor.reshape(-1)
         adj_index, adj_values = _build_adjacency_sparse(Z, X)
 
@@ -245,132 +431,48 @@ def _MAPEM_CPU(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma, isSa
             if save_indices[-1] != numIterations - 1:
                 save_indices.append(numIterations - 1)
 
+        # Set description based on potential type
         if Omega == PotentialType.HUBER_PIECEWISE:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse HUBER β:{beta:.4f}, δ:{delta:.4f}) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single CPU ----"
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse HUBER β:{beta:.4f}, δ:{delta:.4f}) ---- {tumor_str} TUMOR ---- processing on single GPU"
         elif Omega == PotentialType.RELATIVE_DIFFERENCE:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse RD β:{beta:.4f}, γ:{gamma:.4f}) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single CPU ----"
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse RD β:{beta:.4f}, γ:{gamma:.4f}) ---- {tumor_str} TUMOR ---- processing on single GPU"
         elif Omega == PotentialType.QUADRATIC:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse QUADRATIC β:{beta:.4f}, σ:{sigma:.4f}) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single CPU ----"
+            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse QUADRATIC σ:{sigma:.4f}) ---- {tumor_str} TUMOR ---- processing on single GPU"
 
-        for p in trange(numIterations, desc=description):
-            theta_p = matrix_theta_np[-1]
+        iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
+        for it in iterator:
+            theta_p = matrix_theta_cp[-1]
             theta_p_flat = theta_p.reshape(-1)
             q_flat = A_flat @ theta_p_flat
-            e_flat = (y_flat - q_flat) / (q_flat + np.finfo(np.float32).tiny)
+            e_flat = (y_flat - q_flat) / (q_flat + cp.finfo(cp.float32).tiny)
             c_flat = A_flat.T @ e_flat
+
+            # Select potential function
             if Omega == PotentialType.HUBER_PIECEWISE:
-                grad_U, hess_U, _ = _Omega_HUBER_PIECEWISE_CPU(theta_p_flat, adj_index, adj_values, delta=delta)
+                grad_U, hess_U, _ = _Omega_HUBER_PIECEWISE_GPU(theta_p_flat, adj_index, adj_values, delta=delta)
             elif Omega == PotentialType.RELATIVE_DIFFERENCE:
-                grad_U, hess_U, _ = _Omega_RELATIVE_DIFFERENCE_CPU(theta_p_flat, adj_index, adj_values, gamma=gamma)
+                grad_U, hess_U, _ = _Omega_RELATIVE_DIFFERENCE_GPU(theta_p_flat, adj_index, adj_values, gamma=gamma)
             elif Omega == PotentialType.QUADRATIC:
-                grad_U, hess_U, _ = _Omega_QUADRATIC_CPU(theta_p_flat, adj_index, adj_values, sigma=sigma)
+                grad_U, hess_U, _ = _Omega_QUADRATIC_GPU(theta_p_flat, adj_index, adj_values, sigma=sigma)
+
             denom = normalization_factor_flat + theta_p_flat * beta * hess_U
             num = theta_p_flat * (c_flat - beta * grad_U)
-            theta_p_plus_1_flat = theta_p_flat + num / (denom + np.finfo(np.float32).tiny)
-            theta_p_plus_1_flat = np.clip(theta_p_plus_1_flat, 0, None)
+            theta_p_plus_1_flat = theta_p_flat + num / (denom + cp.finfo(cp.float32).tiny)
+            theta_p_plus_1_flat = cp.clip(theta_p_plus_1_flat, a_min=0, a_max=None)
             theta_next = theta_p_plus_1_flat.reshape(Z, X)
-            matrix_theta_np.append(theta_next)
-            if isSavingEachIteration and p in save_indices:
-                I_reconMatrix.append(theta_next.copy())
-                saved_indices.append(p+1)
+            matrix_theta_cp.append(theta_next)
+            if isSavingEachIteration and it in save_indices:
+                I_reconMatrix.append(theta_next.get())
+                saved_indices.append(it+1)
 
-        if isSavingEachIteration:
-            return I_reconMatrix, saved_indices
-        else:
-            return I_reconMatrix[-1], None
-    except Exception as e:
-        print(f"An error occurred in _MAPEM_CPU: {e}")
-        return None, None
-
-def _MAPEM_GPU(SMatrix, y, Omega, numIterations, beta, delta, gamma, sigma, isSavingEachIteration, withTumor, max_saves=5000):
-    """
-    Maximum A Posteriori (MAP) estimation for Bayesian reconstruction using GPU.
-    This method computes the MAP estimate of the parameters given the data.
-    """
-    try:
-        if not isinstance(Omega, PotentialType):
-            raise TypeError(f"Omega must be of type PotentialType, got {type(Omega)}")
-        if Omega == PotentialType.HUBER_PIECEWISE:
-            if delta is None:
-                raise ValueError("delta must be specified for HUBER_PIECEWISE potential type.")
-            if beta is None:
-                raise ValueError("beta must be specified for HUBER_PIECEWISE potential type.")
-        elif Omega == PotentialType.RELATIVE_DIFFERENCE:
-            if gamma is None:
-                raise ValueError("gamma must be specified for RELATIVE_DIFFERENCE potential type.")
-            if beta is None:
-                raise ValueError("beta must be specified for RELATIVE_DIFFERENCE potential type.")
-        elif Omega == PotentialType.QUADRATIC:
-            if sigma is None:
-                raise ValueError("sigma must be specified for QUADRATIC potential type.")
-            if beta is None:
-                raise ValueError("beta must be specified for QUADRATIC potential type.")
-        else:
-            raise ValueError(f"Unknown potential type: {Omega}")
-
-        device = torch.device(f"cuda:{config.select_best_gpu()}")
-        A_matrix_torch = torch.tensor(SMatrix, dtype=torch.float32).to(device)
-        y_torch = torch.tensor(y, dtype=torch.float32).to(device)
-        T, Z, X, N = SMatrix.shape
-        J = Z * X
-        A_flat = A_matrix_torch.permute(0, 3, 1, 2).reshape(T * N, Z * X)
-        y_flat = y_torch.reshape(-1)
-        theta_0 = torch.ones((Z, X), dtype=torch.float32, device=device)
-        matrix_theta_torch = [theta_0]
-        I_reconMatrix = [theta_0.cpu().numpy()]
-        saved_indices = [0]
-        normalization_factor = A_matrix_torch.sum(dim=(0, 3))
-        normalization_factor_flat = normalization_factor.reshape(-1)
-        adj_index, adj_values = _build_adjacency_sparse(Z, X, device=device)
-
-        # Calculate save indices
-        if numIterations <= max_saves:
-            save_indices = list(range(numIterations))
-        else:
-            step = numIterations // max_saves
-            save_indices = list(range(0, numIterations, step))
-            if save_indices[-1] != numIterations - 1:
-                save_indices.append(numIterations - 1)
-
-        if Omega == PotentialType.HUBER_PIECEWISE:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse HUBER β:{beta:.4f}, δ:{delta:.4f}) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single GPU no.{torch.cuda.current_device()} ----"
-        elif Omega == PotentialType.RELATIVE_DIFFERENCE:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse RD β:{beta:.4f}, γ:{gamma:.4f}) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single GPU no.{torch.cuda.current_device()} ----"
-        elif Omega == PotentialType.QUADRATIC:
-            description = f"AOT-BioMaps -- Bayesian Reconstruction Tomography: MAP-EM (Sparse QUADRATIC σ:{sigma:.4f}) ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- processing on single GPU no.{torch.cuda.current_device()} ----"
-
-        for p in trange(numIterations, desc=description):
-            theta_p = matrix_theta_torch[-1]
-            theta_p_flat = theta_p.reshape(-1)
-            q_flat = A_flat @ theta_p_flat
-            e_flat = (y_flat - q_flat) / (q_flat + torch.finfo(torch.float32).tiny)
-            c_flat = A_flat.T @ e_flat
-            if Omega == PotentialType.HUBER_PIECEWISE:
-                grad_U, hess_U, _ = _Omega_HUBER_PIECEWISE_GPU(theta_p_flat, adj_index, adj_values, device=device, delta=delta)
-            elif Omega == PotentialType.RELATIVE_DIFFERENCE:
-                grad_U, hess_U, _ = _Omega_RELATIVE_DIFFERENCE_GPU(theta_p_flat, adj_index, adj_values, device=device, gamma=gamma)
-            elif Omega == PotentialType.QUADRATIC:
-                grad_U, hess_U, _ = _Omega_QUADRATIC_GPU(theta_p_flat, adj_index, adj_values, device=device, sigma=sigma)
-            else:
-                raise ValueError(f"Unknown potential type: {Omega}")
-            denom = normalization_factor_flat + theta_p_flat * beta * hess_U
-            num = theta_p_flat * (c_flat - beta * grad_U)
-            theta_p_plus_1_flat = theta_p_flat + num / (denom + torch.finfo(torch.float32).tiny)
-            theta_p_plus_1_flat = torch.clamp(theta_p_plus_1_flat, min=0)
-            theta_next = theta_p_plus_1_flat.reshape(Z, X)
-            matrix_theta_torch.append(theta_next)
-            if isSavingEachIteration and p in save_indices:
-                I_reconMatrix.append(theta_next.cpu().numpy())
-                saved_indices.append(p+1)
-
-        del A_matrix_torch, y_torch, A_flat, y_flat, theta_0, normalization_factor, normalization_factor_flat
-        torch.cuda.empty_cache()
+        del SMatrix_cp, y_cp, A_flat, y_flat, theta_0, normalization_factor, normalization_factor_flat
+        cp.cuda.Stream.null.synchronize()
         if isSavingEachIteration:
             return I_reconMatrix, saved_indices
         else:
             return I_reconMatrix[-1], None
     except Exception as e:
         print(f"An error occurred in _MAPEM_GPU: {e}")
-        del A_matrix_torch, y_torch, A_flat, y_flat, theta_0, normalization_factor, normalization_factor_flat
-        torch.cuda.empty_cache()
+        del SMatrix_cp, y_cp, A_flat, y_flat, theta_0, normalization_factor, normalization_factor_flat
+        cp.cuda.Stream.null.synchronize()
         return None, None

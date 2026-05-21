@@ -1,7 +1,6 @@
 from .StructuredWave import StructuredWave
 from .AcousticEnums import WaveType
 
-
 class PlaneWave(StructuredWave):
     def __init__(self, angle_deg, **kwargs):
         """

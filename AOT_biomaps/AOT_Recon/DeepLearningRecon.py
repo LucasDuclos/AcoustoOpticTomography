@@ -31,5 +31,5 @@ class DeepLearningRecon(Recon):
     def _deepLearningReconPython(self):
         pass
 
-    def checkExistingFile(self, withTumor=True, overwrite=False):
+    def checkExistingFile(self, date=None, withTumor=True):
         raise NotImplementedError("checkExistingFile method is not implemented yet.")

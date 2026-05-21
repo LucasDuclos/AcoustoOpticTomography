@@ -1,37 +1,52 @@
-from ._mainRecon import Recon
-from .ReconEnums import ReconType, OptimizerType, ProcessType
-from .AOT_Optimizers import MLEM, LS
-from .ReconTools import check_gpu_memory, calculate_memory_requirement, mse
+import concurrent
 from AOT_biomaps.Config import config
 
+from ._mainRecon import Recon
+from .ReconEnums import ReconType, OptimizerType, ProcessType, SMatrixType
+from .AOT_Optimizers import MLEM, LS
+from .AOT_SparseSMatrix import SparseSMatrix_CSR, SparseSMatrix_SELL
 
 import os
-import sys
 import subprocess
-import warnings
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from IPython.display import HTML
 from datetime import datetime
 from tempfile import gettempdir
+import math
 
-
+# Check for matplotlib availability
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.animation as animation
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    plt = None
+    animation = None
+    MATPLOTLIB_AVAILABLE = False
 
 class AlgebraicRecon(Recon):
     """
     This class implements the Algebraic reconstruction process.
     It currently does not perform any operations but serves as a template for future implementations.
     """
-    def __init__(self, opti = OptimizerType.MLEM, numIterations = 10000, numSubsets = 1, isSavingEachIteration=True, **kwargs):
+    def __init__(self, opti = OptimizerType.MLEM, numIterations = 10000, numSubsets = 1, isSavingEachIteration=True, maxSaves = 5000, denominatorThreshold = 1e-6, smatrixType = SMatrixType.SELL, sparseThreshold=0.1, isComplexeRecon = False, device = None, **kwargs):
         super().__init__(**kwargs)
         self.reconType = ReconType.Algebraic
         self.optimizer = opti
         self.reconPhantom = []
         self.reconLaser = []
+        self.indices = []
         self.numIterations = numIterations
         self.numSubsets = numSubsets
         self.isSavingEachIteration = isSavingEachIteration
+        self.maxSaves = maxSaves
+        self.denominatorThreshold = denominatorThreshold
+        self.isComplexeRecon = isComplexeRecon
+        self.device = device if device is not None else config.select_best_gpu()
+        self.SMatrix = None  # system matrix
+        self.smatrixType = smatrixType # SMatrixType.DENSE if no sparsing, else SMatrixType.SELL or SMatrixType.CSR or SMatrixType.COO
+        # Sparse matrix attributes
+
+        self.sparseThreshold = sparseThreshold
 
         if self.numIterations <= 0:
             raise ValueError("Number of iterations must be greater than 0.")
@@ -43,38 +58,35 @@ class AlgebraicRecon(Recon):
             raise TypeError("Number of subsets must be an integer.")
         
         print("Generating system matrix (processing acoustic fields)...")
-        self.SMatrix = np.stack([ac_field.field for ac_field in self.experiment.AcousticFields], axis=-1)
+        if self.isComplexeRecon:
+            if self.experiment.AOsignal_withTumor is not None:
+                self.experiment.AOsignal_withTumor_demodulated = self.experiment.parse_and_demodulate(withTumor=True)
+            elif self.experiment.AOsignal_withoutTumor is not None:
+                self.experiment.AOsignal_withoutTumor_demodulated = self.experiment.parse_and_demodulate(withTumor=False)
+            else:
+                raise ValueError("No AO signal available for demodulation. Please provide at least one signal, with or without tumor.")
+            self.experiment.AcousticFields_demodulated = self.experiment.demodulate_acoustic_fields()
+
+        if self.smatrixType == SMatrixType.DENSE:
+            self.SMatrix = self._fillDenseSMatrix()
+        else:
+            self.SMatrix = self._fillSparseSMatrix(isShowLogs=True)
 
     # PUBLIC METHODS
 
-    def run(self, processType = ProcessType.PYTHON, withTumor= True):
+    def run(self, processType = ProcessType.PYTHON, withTumor= True, show_logs=True):
         """
         This method is a placeholder for the Algebraic reconstruction process.
         It currently does not perform any operations but serves as a template for future implementations.
         """
-            
         if(processType == ProcessType.CASToR):
-            self._AlgebraicReconCASToR(withTumor)
+            self._AlgebraicReconCASToR(withTumor=withTumor, show_logs=show_logs)
         elif(processType == ProcessType.PYTHON):
-            self._AlgebraicReconPython(withTumor)
+            self._AlgebraicReconPython(withTumor=withTumor, show_logs=show_logs)
         else:
             raise ValueError(f"Unknown Algebraic reconstruction type: {processType}")
-
-    def load_reconCASToR(self,withTumor = True):
-        if withTumor:
-            folder = 'results_withTumor'
-        else:
-            folder = 'results_withoutTumor'
-            
-        for thetaFiles in os.path.join(self.saveDir, folder + '_{}'):
-            if thetaFiles.endswith('.hdr'):
-                theta = Recon.load_recon(thetaFiles)
-                if withTumor:
-                    self.reconPhantom.append(theta)
-                else:
-                    self.reconLaser.append(theta)
-
-    def plot_MSE(self, isSaving=True, log_scale_x=False, log_scale_y=False):
+    
+    def plot_MSE(self, isSaving=True, log_scale_x=False, log_scale_y=False, figSize=(4,3), show_logs=True):
         """
         Plot the Mean Squared Error (MSE) of the reconstruction.
 
@@ -89,10 +101,10 @@ class AlgebraicRecon(Recon):
             raise ValueError("MSE is empty. Please calculate MSE first.")
 
         best_idx = self.indices[np.argmin(self.MSE)]
-
-        print(f"Lowest MSE = {np.min(self.MSE):.4f} at iteration {best_idx+1}")
+        if show_logs:
+            print(f"Lowest MSE = {np.min(self.MSE):.4f} at iteration {best_idx+1}")
         # Plot MSE curve
-        plt.figure(figsize=(7, 5))
+        plt.figure(figsize=figSize)
         plt.plot(self.indices, self.MSE, 'r-', label="MSE curve")
         # Add blue dashed lines
         plt.axhline(np.min(self.MSE), color='blue', linestyle='--', label=f"Min MSE = {np.min(self.MSE):.4f}")
@@ -117,26 +129,22 @@ class AlgebraicRecon(Recon):
                 scale_str = "_logx"
             elif log_scale_y:
                 scale_str = "_logy"
-            if self.optimizer == OptimizerType.MLEM:
-                SavingFolder = os.path.join(self.saveDir, f'{self.SMatrix.shape[3]}_SCANS_MSE_plot_MLEM{scale_str}{date_str}.png')
-            elif self.optimizer == OptimizerType.LS:
-                SavingFolder = os.path.join(self.saveDir, f'{self.SMatrix.shape[3]}_SCANS_MSE_plot_LS{scale_str}{date_str}.png')
+            SavingFolder = os.path.join(self.saveDir, f'{len(self.experiment.AcousticFields)}_SCANS_MSE_plot_{self.optimizer.name}_{scale_str}{date_str}.png')
             plt.savefig(SavingFolder, dpi=300)
-            print(f"MSE plot saved to {SavingFolder}")
+            if show_logs:
+                print(f"MSE plot saved to {SavingFolder}")
 
         plt.show()
 
-    def show_MSE_bestRecon(self, isSaving=True):
+    def show_MSE_bestRecon(self, isSaving=True, show_logs=True, figSize=(15, 5)):
         if not self.MSE:
             raise ValueError("MSE is empty. Please calculate MSE first.")
 
-
         best_idx = np.argmin(self.MSE)
-        print(best_idx)
         best_recon = self.reconPhantom[best_idx]
 
         # Crée la figure et les axes
-        fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+        fig, axs = plt.subplots(1, 3, figsize=figSize)
 
         # Left: Best reconstructed image (normalized)
         im0 = axs[0].imshow(best_recon,
@@ -161,7 +169,6 @@ class AlgebraicRecon(Recon):
 
         # Right: Reconstruction at last iteration
         lastRecon = self.reconPhantom[-1]
-        print(lastRecon.shape)
         if self.experiment.OpticImage.phantom.shape != lastRecon.shape:
             lastRecon = lastRecon.T
         im2 = axs[2].imshow(lastRecon,
@@ -188,17 +195,14 @@ class AlgebraicRecon(Recon):
             savePath = os.path.join(self.saveDir, 'results')
             if not os.path.exists(savePath):
                 os.makedirs(savePath)
-            if self.optimizer == OptimizerType.MLEM:
-                namePath = f'{self.SMatrix.shape[3]}_SCANS_comparison_MSE_BestANDLastRecon_MLEM_Date_{date_str}.png'
-            elif self.optimizer == OptimizerType.LS:
-                namePath = f'{self.SMatrix.shape[3]}_SCANS_comparison_MSE_BestANDLastRecon_LS_Date_{date_str}.png'
-            SavingFolder = os.path.join(savePath, namePath)
+            SavingFolder = os.path.join(self.saveDir, f'{len(self.experiment.AcousticFields)}_SCANS_comparison_MSE_BestANDLastRecon_{self.optimizer.name}_{date_str}.png')
             plt.savefig(SavingFolder, dpi=300, bbox_inches='tight')
-            print(f"MSE plot saved to {SavingFolder}")
+            if show_logs:
+                print(f"MSE plot saved to {SavingFolder}")
 
         plt.show()
 
-    def show_theta_animation(self, vmin=None, vmax=None, total_duration_ms=3000, save_path=None, max_frames=1000, isPropMSE=True):
+    def show_theta_animation(self, vmin=None, vmax=None, total_duration_ms=3000, save_path=None, max_frames=1000, figSize=(4, 4), isPropMSE=True, show_logs=True):
         """
         Show theta iteration animation with speed proportional to MSE acceleration.
         In "propMSE" mode: slow down when MSE changes rapidly, speed up when MSE stagnates.
@@ -233,7 +237,7 @@ class AlgebraicRecon(Recon):
         if vmax is None:
             vmax = np.max(frames_subset)
 
-        fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
+        fig, ax = plt.subplots(figsize=figSize, dpi=100)
         im = ax.imshow(
             frames_subset[0],
             extent=(
@@ -301,20 +305,21 @@ class AlgebraicRecon(Recon):
                 ani.save(save_path, writer=animation.PillowWriter(fps=100))
             elif save_path.endswith(".mp4"):
                 ani.save(save_path, writer="ffmpeg", fps=30)
-            print(f"Animation saved to {save_path}")
+            if show_logs:
+                print(f"Animation saved to {save_path}")
 
         plt.close(fig)
         return HTML(ani.to_jshtml())
 
-    def plot_SSIM(self, isSaving=True, log_scale_x=False, log_scale_y=False):
+    def plot_SSIM(self, isSaving=True, log_scale_x=False, log_scale_y=False, figSize=(4,3), show_logs=True):
         if not self.SSIM:
             raise ValueError("SSIM is empty. Please calculate SSIM first.")
 
         best_idx = self.indices[np.argmax(self.SSIM)]
-
-        print(f"Highest SSIM = {np.max(self.SSIM):.4f} at iteration {best_idx+1}")
+        if show_logs:
+            print(f"Highest SSIM = {np.max(self.SSIM):.4f} at iteration {best_idx+1}")
         # Plot SSIM curve
-        plt.figure(figsize=(7, 5))
+        plt.figure(figsize=figSize)
         plt.plot(self.indices, self.SSIM, 'r-', label="SSIM curve")
         # Add blue dashed lines
         plt.axhline(np.max(self.SSIM), color='blue', linestyle='--', label=f"Max SSIM = {np.max(self.SSIM):.4f}")
@@ -339,16 +344,14 @@ class AlgebraicRecon(Recon):
                 scale_str = "_logx"
             elif log_scale_y:
                 scale_str = "_logy"
-            if self.optimizer == OptimizerType.MLEM:
-                SavingFolder = os.path.join(self.saveDir, f'{self.SMatrix.shape[3]}_SCANS_SSIM_plot_MLEM{scale_str}{date_str}.png')
-            elif self.optimizer == OptimizerType.LS:
-                SavingFolder = os.path.join(self.saveDir, f'{self.SMatrix.shape[3]}_SCANS_SSIM_plot_LS{scale_str}{date_str}.png')
+            SavingFolder = os.path.join(self.saveDir, f'{len(self.experiment.AcousticFields)}_SCANS_SSIM_plot_{self.optimizer.name}_{scale_str}{date_str}.png')
             plt.savefig(SavingFolder, dpi=300)
-            print(f"SSIM plot saved to {SavingFolder}")
+            if show_logs:
+                print(f"SSIM plot saved to {SavingFolder}")
 
         plt.show()
 
-    def show_SSIM_bestRecon(self, isSaving=True):
+    def show_SSIM_bestRecon(self, isSaving=True, figSize=(15, 5), show_logs=True):
         
         if not self.SSIM:
             raise ValueError("SSIM is empty. Please calculate SSIM first.")
@@ -357,10 +360,7 @@ class AlgebraicRecon(Recon):
         best_recon = self.reconPhantom[best_idx]
 
         # ----------------- Plotting -----------------
-        _, axs = plt.subplots(1, 3, figsize=(15, 5))  # 1 row, 3 columns
-
-        # Normalization based on LAMBDA max
-        lambda_max = np.max(self.experiment.OpticImage.laser.intensity)
+        _, axs = plt.subplots(1, 3, figsize=figSize)  # 1 row, 3 columns
 
         # Left: Best reconstructed image (normalized)
         im0 = axs[0].imshow(best_recon, 
@@ -394,62 +394,119 @@ class AlgebraicRecon(Recon):
         if isSaving:
             now = datetime.now()    
             date_str = now.strftime("%Y_%d_%m_%y")
-            SavingFolder = os.path.join(self.saveDir, 'results', f'comparison_SSIM_BestANDLastRecon{date_str}.png')
+            SavingFolder = os.path.join(self.saveDir, f'{len(self.experiment.AcousticFields)}_SCANS_comparison_SSIM_BestANDLastRecon_{self.optimizer.name}_{date_str}.png')
             plt.savefig(SavingFolder, dpi=300)
-            print(f"SSIM plot saved to {SavingFolder}")
+            if show_logs:
+                print(f"SSIM plot saved to {SavingFolder}")
         plt.show()
 
-    def plot_CRC_vs_Noise(self, ROI_mask = None, start=0, fin=None, step=10, save_path=None):
+    def plot_CRC_vs_Noise(self, use_ROI=True, fin=None, min_distance=0.01, figSize = (4,3),
+                     log_scale_x=False, log_scale_y=False, isSaving=False, show_logs=True):
         """
-        Plot CRC (Contrast Recovery Coefficient) vs Noise for each iteration.
+        Plot CRC vs Noise with min_distance always calculated in linear space.
+
+        Args:
+            min_distance: Minimum linear distance between points (always calculated in linear space)
+            log_scale_x: Display X axis in logarithmic scale (but distance calculation remains linear)
+            log_scale_y: Display Y axis in logarithmic scale
         """
+        # Vérifications initiales
         if self.reconLaser is None or self.reconLaser == []:
             raise ValueError("Reconstructed laser is empty. Run reconstruction first.")
         if isinstance(self.reconLaser, list) and len(self.reconLaser) == 1:
-            raise ValueError("Reconstructed Image without tumor is a single frame. Run reconstruction with isSavingEachIteration=True to get a sequence of frames.")
+            raise ValueError("Reconstructed Image without tumor is a single frame. Run with isSavingEachIteration=True.")
         if self.reconPhantom is None or self.reconPhantom == []:
             raise ValueError("Reconstructed phantom is empty. Run reconstruction first.")
         if isinstance(self.reconPhantom, list) and len(self.reconPhantom) == 1:
-            raise ValueError("Reconstructed Image with tumor is a single frame. Run reconstruction with isSavingEachIteration=True to get a sequence of frames.")
-        
+            raise ValueError("Reconstructed Image with tumor is a single frame. Run with isSavingEachIteration=True.")
+
         if fin is None:
             fin = len(self.reconPhantom) - 1
+        iter_range = self.indices[:fin+1]
 
-        iter_range = self.indices
-
-        crc_values = []
-        noise_values = []
-        
         if self.CRC is None:
-            self.calculateCRC(use_ROI=True)
+            self.calculateCRC(use_ROI=use_ROI)
 
-        for i in iter_range:
-            recon_without_tumor = self.reconLaser[i].T
-            # Noise
+        # Calcul des valeurs de bruit
+        noise_values = []
+        for i in range(len(iter_range)):
+            recon_without_tumor = self.reconLaser[i]
             noise = np.mean(np.abs(recon_without_tumor - self.experiment.OpticImage.laser.intensity))
-            noise_values.append(noise)
+            noise_values.append(max(noise, 1e-10))  # Évite les valeurs nulles
 
-        plt.figure(figsize=(6, 5))
-        plt.plot(noise_values, crc_values, 'o-', label='ML-EM')
-        for i, (x, y) in zip(iter_range, zip(noise_values, crc_values)):
-            plt.text(x, y, str(i), fontsize=5.5, ha='left', va='bottom')
+        # Sous-échantillonnage TOUJOURS basé sur la distance linéaire
+        sampled_indices = [0]
+        for i in range(1, len(noise_values)):
+            last_noise = noise_values[sampled_indices[-1]]
+            current_noise = noise_values[i]
 
+            # Calcul de la distance EN LINÉAIRE (peu importe l'échelle d'affichage)
+            distance = abs(current_noise - last_noise)
+
+            if distance > min_distance:
+                sampled_indices.append(i)
+
+        sampled_indices.append(len(noise_values) - 1)
+
+        # Vérification si l'avant-dernier point est trop proche du dernier
+        if len(sampled_indices) > 1:
+            last_idx = sampled_indices[-1]
+            prev_idx = sampled_indices[-2]
+            last_noise = noise_values[last_idx]
+            prev_noise = noise_values[prev_idx]
+
+            if abs(last_noise - prev_noise) <= min_distance:
+                sampled_indices = sampled_indices[:-1]  # Supprime l'avant-dernier
+
+        # Extraction des données
+        sampled_noise = [noise_values[i] for i in sampled_indices]
+        sampled_CRC = [self.CRC[i] for i in sampled_indices]
+        sampled_iter = [iter_range[i] for i in sampled_indices]
+
+        # Création de la figure
+        plt.figure(figsize=figSize)
+        plt.plot(sampled_noise, sampled_CRC, 'o-', color='blue', label=f'{self.optimizer.name}')
+
+        # Positionnement des labels
+        for x, y, it in zip(sampled_noise, sampled_CRC, sampled_iter):
+            plt.text(x * 1.01, y * 1.01, str(it),
+                    fontsize=8, ha='left', va='bottom',
+                    bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
+
+        # Configuration des axes
         plt.xlabel("Noise (mean absolute error)")
         plt.ylabel("CRC (Contrast Recovery Coefficient)")
+        plt.title(f"CRC vs Noise (linear min_distance={min_distance})")
 
-        plt.xscale('log')
-        plt.yscale('log')
+        # Application des échelles (uniquement pour l'affichage)
+        if log_scale_x:
+            plt.xscale('log')
+        if log_scale_y:
+            plt.yscale('log')
 
-        plt.title("CRC vs Noise over Iterations")
-        plt.grid(True)
+        plt.grid(True, which="both", ls="--", alpha=0.5)
         plt.legend()
 
-        if save_path:
-            plt.savefig(save_path, dpi=300)
-            print(f"Figure saved to: {save_path}")
+        # Sauvegarde
+        if isSaving:
+            if self.saveDir is None:
+                print("Warning: saveDir is None. Configure saving path to save the figure.")
+            else:
+                os.makedirs(self.saveDir, exist_ok=True)
+                now = datetime.now()
+                date_str = now.strftime("%Y_%m_%d_%H%M")
+                scale_desc = "logX" if log_scale_x else "linX"
+                scale_desc += "_logY" if log_scale_y else "_linY"
+                filename = f"CRCvsNOISE_{len(self.experiment.AcousticFields)}scans_{self.optimizer.name}_{scale_desc}_{date_str}.png"
+                save_path = os.path.join(self.saveDir, filename)
+                plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                if show_logs:
+                    print(f"Plot saved to: {save_path}")
+
+        plt.tight_layout()
         plt.show()
-        
-    def show_reconstruction_progress(self, start=0, fin=None, save_path=None, with_tumor=True):
+
+    def show_reconstruction_progress(self, start=0, fin=None, save_path=None, with_tumor=True, show_logs=True):
         """
         Show the reconstruction progress for either with or without tumor.
         If isPropMSE is True, the frame selection is adapted to MSE changes.
@@ -554,7 +611,8 @@ class AlgebraicRecon(Recon):
             else:
                 save_path = f"{save_path}_{title_suffix}"
             plt.savefig(save_path, dpi=300)
-            print(f"Figure saved to: {save_path}")
+            if show_logs:
+                print(f"Figure saved to: {save_path}")
 
         plt.show()
 
@@ -563,8 +621,9 @@ class AlgebraicRecon(Recon):
         Check if the reconstruction file already exists, based on current instance parameters.
 
         Args:
+            date (str, optional): Date string in format "ddmm". If None, uses current date.
             withTumor (bool): If True, checks reconPhantom.npy; otherwise, checks reconLaser.npy.
-            overwrite (bool): If False, returns False if the file exists.
+            overwrite (bool): If True, ignores existing files and returns True for saving.
 
         Returns:
             tuple: (bool: whether to save, str: the filepath)
@@ -573,22 +632,24 @@ class AlgebraicRecon(Recon):
             raise ValueError("Save directory is not specified.")
         if date is None:
             date = datetime.now().strftime("%d%m")
-        results_dir = os.path.join(self.saveDir, f'results_{date}_{self.optimizer.value}_')
+        results_dir = os.path.join(self.saveDir, f'results_{date}_{self.optimizer.value}')
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
 
-        filename = 'reconPhantom.npy' if withTumor else 'reconLaser.npy'
-        filepath = os.path.join(results_dir, filename)
+        # Détermine le nom du fichier en fonction de withTumor
+        indices_file = os.path.join(results_dir, f"indices_{'withTumor' if withTumor else 'withoutTumor'}.npy")
 
-        if os.path.exists(filepath):
-            return (True, filepath)
+        # Si le fichier existe retourne True
+        if os.path.exists(indices_file):
+            return (True, results_dir)
 
-        return (False, filepath)
+        # Sinon, retourne False, indiquant qu'on peut sauvegarder
+        return (False, results_dir)
 
-
-    def load(self, withTumor=True, results_date=None, optimizer=None, filePath=None):
+    def load(self, withTumor=True, results_date=None, optimizer=None, filePath=None, show_logs=True):
         """
-        Load the reconstruction results (reconPhantom or reconLaser) and indices into self.
+        Load the reconstruction results (reconPhantom or reconLaser) and indices as lists of 2D np arrays into self.
+        If the loaded file is a 3D array, it is split into a list of 2D arrays.
         Args:
             withTumor: If True, loads reconPhantom (with tumor), else reconLaser (without tumor).
             results_date: Date string (format "ddmm") to specify which results to load. If None, uses the most recent date in saveDir.
@@ -601,97 +662,213 @@ class AlgebraicRecon(Recon):
             recon_path = filePath
             if not os.path.exists(recon_path):
                 raise FileNotFoundError(f"No reconstruction file found at {recon_path}.")
-
-            if withTumor:
-                self.reconPhantom = np.load(recon_path, allow_pickle=True)
+            # Charge le fichier (3D ou liste de 2D)
+            data = np.load(recon_path, allow_pickle=True)
+            # Découpe en liste de 2D si c'est un tableau 3D
+            if isinstance(data, np.ndarray) and data.ndim == 3:
+                if withTumor:
+                    self.reconPhantom = [data[i, :, :] for i in range(data.shape[0])]
+                else:
+                    self.reconLaser = [data[i, :, :] for i in range(data.shape[0])]
             else:
-                self.reconLaser = np.load(recon_path, allow_pickle=True)
-
-            # Essayer de charger les indices (fichier avec suffixe "_indices.npy")
-            base_dir, file_name = os.path.split(recon_path)
-            file_base, _ = os.path.splitext(file_name)
-            indices_path = os.path.join(base_dir, f"{file_base}_indices.npy")
+                # Sinon, suppose que c'est déjà une liste de 2D
+                if withTumor:
+                    self.reconPhantom = data
+                else:
+                    self.reconLaser = data
+            # Essayer de charger les indices
+            base_dir, _ = os.path.split(recon_path)
+            indices_path = os.path.join(base_dir, 'indices.npy')
             if os.path.exists(indices_path):
-                self.indices = np.load(indices_path, allow_pickle=True)
+                indices_data = np.load(indices_path, allow_pickle=True)
+                if isinstance(indices_data, np.ndarray) and indices_data.ndim == 3:
+                    self.indices = [indices_data[i, :, :] for i in range(indices_data.shape[0])]
+                else:
+                    self.indices = indices_data
             else:
                 self.indices = None
-
-            print(f"Loaded reconstruction results and indices from {recon_path}")
+                
+            if show_logs:
+                print(f"Loaded reconstruction results and indices from {recon_path}")
         else:
             # Mode chargement depuis le répertoire de résultats
             if self.saveDir is None:
                 raise ValueError("Save directory is not specified. Please set saveDir before loading.")
-
-            # Determine optimizer name for path matching
+            # Use current optimizer and potential function if not provided
             opt_name = optimizer.value if optimizer is not None else self.optimizer.value
-
+            # Build the base directory pattern
+            dir_pattern = f'results_*_{opt_name}'
+            # Add parameters to the pattern based on the optimizer
+            if optimizer is None:
+                optimizer = self.optimizer
+            if optimizer == OptimizerType.PPGMLEM:
+                beta_str = f'_Beta_{self.beta}'
+                delta_str = f'_Delta_{self.delta}'
+                gamma_str = f'_Gamma_{self.gamma}'
+                sigma_str = f'_Sigma_{self.sigma}'
+                dir_pattern += f'{beta_str}{delta_str}{gamma_str}{sigma_str}'
+            elif optimizer in (OptimizerType.PGC, OptimizerType.DEPIERRO95):
+                beta_str = f'_Beta_{self.beta}'
+                sigma_str = f'_Sigma_{self.sigma}'
+                dir_pattern += f'{beta_str}{sigma_str}'
             # Find the most recent results directory if no date is specified
             if results_date is None:
-                dir_pattern = f'results_*_{opt_name}_'
                 dirs = [d for d in os.listdir(self.saveDir) if os.path.isdir(os.path.join(self.saveDir, d)) and dir_pattern in d]
                 if not dirs:
-                    raise FileNotFoundError(f"No results directory found for optimizer '{opt_name}' in {self.saveDir}.")
+                    raise FileNotFoundError(f"No matching results directory found for pattern '{dir_pattern}' in {self.saveDir}.")
                 dirs.sort(reverse=True)  # Most recent first
                 results_dir = os.path.join(self.saveDir, dirs[0])
             else:
-                results_dir = os.path.join(self.saveDir, f'results_{results_date}_{opt_name}_')
+                results_dir = os.path.join(self.saveDir, f'results_{results_date}_{opt_name}')
+                if optimizer == OptimizerType.MLEM:
+                    pass
+                elif optimizer == OptimizerType.LS:
+                    results_dir += f'_Alpha_{self.alpha}'
                 if not os.path.exists(results_dir):
                     raise FileNotFoundError(f"Directory {results_dir} does not exist.")
-
             # Load reconstruction results
             recon_key = 'reconPhantom' if withTumor else 'reconLaser'
             recon_path = os.path.join(results_dir, f'{recon_key}.npy')
             if not os.path.exists(recon_path):
                 raise FileNotFoundError(f"No reconstruction file found at {recon_path}.")
-
-            if withTumor:
-                self.reconPhantom = np.load(recon_path, allow_pickle=True)
+            data = np.load(recon_path, allow_pickle=True)
+            if isinstance(data, np.ndarray) and data.ndim == 3:
+                if withTumor:
+                    self.reconPhantom = [data[i, :, :] for i in range(data.shape[0])]
+                else:
+                    self.reconLaser = [data[i, :, :] for i in range(data.shape[0])]
             else:
-                self.reconLaser = np.load(recon_path, allow_pickle=True)
-
-            # Try to load saved indices (if file exists)
-            indices_path = os.path.join(results_dir, f'{recon_key}_indices.npy')
-            if os.path.exists(indices_path):
-                self.indices = np.load(indices_path, allow_pickle=True)
+                if withTumor:
+                    self.reconPhantom = data
+                else:
+                    self.reconLaser = data
+            # Load saved indices as list of 2D arrays
+            indices_path = os.path.join(results_dir, 'indices.npy')
+            if not os.path.exists(indices_path):
+                raise FileNotFoundError(f"No indices file found at {indices_path}.")
+            indices_data = np.load(indices_path, allow_pickle=True)
+            if isinstance(indices_data, np.ndarray) and indices_data.ndim == 3:
+                self.indices = [indices_data[i, :, :] for i in range(indices_data.shape[0])]
             else:
-                self.indices = None
-
-            print(f"Loaded reconstruction results and indices from {results_dir}")
-
-
-
-
+                self.indices = indices_data
+            if show_logs:
+                print(f"Loaded reconstruction results and indices from {results_dir}")
+        
     def normalizeSMatrix(self):
-        self.SMatrix = self.SMatrix / (float(self.experiment.params.acoustic['voltage'])*float(self.experiment.params.acoustic['sensitivity']))  
+        self.SMatrix = self.SMatrix / (float(self.experiment.params.acoustic['emission']['voltage'])*float(self.experiment.params.acoustic['emission']['sensitivity']))  
 
     # PRIVATE METHODS
 
-    def _AlgebraicReconPython(self,withTumor):
+    def _fillDenseSMatrix(self):
+        """
+        Construit une matrice dense en mémoire.
+        """
+        T, Z, X = self.experiment.AcousticFields[0].field.shape
+        N = len(self.experiment.AcousticFields)
+        S = np.empty((T, Z, X, N), dtype=np.float32)
+        def copy_block(i):
+            np.copyto(S[..., i], self.experiment.AcousticFields[i].field)
+        with concurrent.futures.ThreadPoolExecutor() as ex:
+            ex.map(copy_block, range(N))
+        return S
+           
+    def _fillSparseSMatrix(self, isShowLogs=True):
+        if self.smatrixType == SMatrixType.CSR:
+            return self._fillSparseSMatrix_CSR(isShowLogs=isShowLogs)
+        if self.smatrixType == SMatrixType.COO:
+            raise NotImplementedError("COO sparse matrix not implemented yet.")
+        if self.smatrixType == SMatrixType.SELL:
+            return self._fillSparseSMatrix_SELL(isShowLogs=isShowLogs)
+    
+    def _fillSparseSMatrix_CSR(self, isShowLogs=True):
+        """
+        Construit une matrice sparse CSR par morceaux sans concaténation intermédiaire.
+        Libère toute la mémoire temporaire à chaque étape.
+        """
+        sparse_matrix = SparseSMatrix_CSR(self.experiment,relative_threshold=self.sparseThreshold,device=self.device)
+        sparse_matrix.allocate()
+        if isShowLogs:
+            print(f" Sparse matrix size: {sparse_matrix.getMatrixSize()} GB")
+            print(f"Sparse matrix density: {sparse_matrix.compute_density()}")
+        return sparse_matrix
+    
+    def _fillSparseSMatrix_SELL(self, isShowLogs=True):
+        """
+        Construit une matrice sparse SELL par morceaux sans concaténation intermédiaire.
+        Libère toute la mémoire temporaire à chaque étape.
+        """
+        sparse_matrix = SparseSMatrix_SELL(self.experiment,relative_threshold=self.sparseThreshold,device=self.device)
+        sparse_matrix.allocate()
+        # fenetre_gpu = get_apodization_vector_gpu(sparse_matrix)
+        # sparse_matrix.apply_apodization_gpu(fenetre_gpu)
+        if isShowLogs:
+            print(f" Sparse matrix size: {sparse_matrix.getMatrixSize()} GB")
+            print(f"Sparse matrix density: {sparse_matrix.compute_density()}")
+        return sparse_matrix
+        
+    def _AlgebraicReconPython(self,withTumor, show_logs):
     
         if withTumor:
             if self.experiment.AOsignal_withTumor is None:
                 raise ValueError("AO signal with tumor is not available. Please generate AO signal with tumor the experiment first in the experiment object.")
-            if self.optimizer.value == OptimizerType.MLEM.value:
-                self.reconPhantom, self.indices = MLEM(SMatrix=self.SMatrix, y=self.experiment.AOsignal_withTumor, withTumor=withTumor)
-            elif self.optimizer.value == OptimizerType.LS.value:
-                self.reconPhantom, self.indices = LS(SMatrix=self.SMatrix, y=self.experiment.AOsignal_withTumor, withTumor=withTumor)
-            elif self.optimizer.value == OptimizerType.LS_TV.value:
-                self.reconPhantom, self.indices = self._LS_Regularized(SMatrix=self.SMatrix, y=self.experiment.AOsignal_withTumor, withTumor=withTumor)
-            else:
-                raise ValueError(f"Only MLEM and LS are supported for simple algebraic reconstruction. {self.optimizer.value} need Bayesian reconstruction")
         else:
             if self.experiment.AOsignal_withoutTumor is None:
                 raise ValueError("AO signal without tumor is not available. Please generate AO signal without tumor the experiment first in the experiment object.")
-            if self.optimizer.value == OptimizerType.MLEM.value:
-                self.reconLaser, self.indices = MLEM(SMatrix=self.SMatrix, y=self.experiment.AOsignal_withoutTumor, withTumor=withTumor)
-            elif self.optimizer.value == OptimizerType.LS.value:
-                self.reconLaser, self.indices = LS(SMatrix=self.SMatrix, y=self.experiment.AOsignal_withoutTumor, withTumor=withTumor)
-            elif self.optimizer.value == OptimizerType.LS_TV.value:
-                self.reconLaser, self.indices = self._LS_Regularized(SMatrix=self.SMatrix, y=self.experiment.AOsignal_withoutTumor, withTumor=withTumor)
-            else:
-                raise ValueError(f"Only MLEM and LS are supported for simple algebraic reconstruction. {self.optimizer.value} need Bayesian reconstruction")
 
-    def _AlgebraicReconCASToR(self, withTumor):
+        if self.optimizer.value == OptimizerType.MLEM.value:
+            if withTumor:
+                self.reconPhantom, self.indices = MLEM(SMatrix=self.SMatrix, 
+                                                        y=self.experiment.AOsignal_withTumor,
+                                                        numIterations=self.numIterations,
+                                                        isSavingEachIteration=self.isSavingEachIteration,
+                                                        withTumor=withTumor,
+                                                        device=self.device,
+                                                        use_numba=self.isMultiCPU,
+                                                        denominator_threshold=self.denominatorThreshold,
+                                                        max_saves=self.maxSaves,
+                                                        show_logs=show_logs,
+                                                        smatrixType=self.smatrixType,
+                                                        )
+            else:
+                self.reconLaser, self.indices = MLEM(SMatrix=self.SMatrix, 
+                                                        y=self.experiment.AOsignal_withoutTumor,
+                                                        numIterations=self.numIterations,
+                                                        isSavingEachIteration=self.isSavingEachIteration,
+                                                        withTumor=withTumor,
+                                                        device=self.device,
+                                                        use_numba=self.isMultiCPU,
+                                                        denominator_threshold=self.denominatorThreshold,
+                                                        max_saves=self.maxSaves,
+                                                        show_logs=show_logs,
+                                                        smatrixType=self.smatrixType,
+                                                        )
+        elif self.optimizer.value == OptimizerType.LS.value:
+            if withTumor:
+                self.reconPhantom, self.indices = LS(SMatrix=self.SMatrix, 
+                                                        y=self.experiment.AOsignal_withTumor,
+                                                        numIterations=self.numIterations,
+                                                        isSavingEachIteration=self.isSavingEachIteration,
+                                                        withTumor=withTumor,
+                                                        device=self.device,
+                                                        max_saves=self.maxSaves,
+                                                        show_logs=show_logs,
+                                                        smatrixType=self.smatrixType
+                                                )
+            else:
+                self.reconLaser, self.indices = LS(SMatrix=self.SMatrix, 
+                                                        y=self.experiment.AOsignal_withoutTumor,
+                                                        numIterations=self.numIterations,
+                                                        isSavingEachIteration=self.isSavingEachIteration,
+                                                        withTumor=withTumor,
+                                                        device=self.device,
+                                                        max_saves=self.maxSaves,
+                                                        show_logs=show_logs,
+                                                        smatrixType=self.smatrixType
+                                                )
+        else:
+            raise ValueError(f"Only MLEM and LS are supported for simple algebraic reconstruction. {self.optimizer.value} need Bayesian reconstruction")
+
+    def _AlgebraicReconCASToR(self,withTumor, show_logs):
         # Définir les chemins
         smatrix = os.path.join(self.saveDir, "system_matrix")
         if withTumor:
@@ -701,14 +878,16 @@ class AlgebraicRecon(Recon):
 
         # Vérifier et générer les fichiers d'entrée si nécessaire
         if not os.path.isfile(os.path.join(self.saveDir, fileName)):
-            print(f"Fichier .cdh manquant. Génération de {fileName}...")
+            if show_logs:
+                print(f"Fichier .cdh manquant. Génération de {fileName}...")
             self.experiment.saveAOsignals_Castor(self.saveDir)
 
         # Vérifier/générer la matrice système
         if not os.path.isdir(smatrix):
             os.makedirs(smatrix, exist_ok=True)
         if not os.listdir(smatrix):
-            print("Matrice système manquante. Génération...")
+            if show_logs:
+                print("Matrice système manquante. Génération...")
             self.experiment.saveAcousticFields(self.saveDir)
 
         # Vérifier que le fichier .cdh existe (redondant mais sûr)
@@ -747,8 +926,9 @@ class AlgebraicRecon(Recon):
         ]
 
         # Afficher la commande (pour débogage)
-        print("Commande CASToR :")
-        print(" ".join(cmd))
+        if show_logs:
+            print("Commande CASToR :")
+            print(" ".join(cmd))
 
         # Chemin du script temporaire
         recon_script_path = os.path.join(gettempdir(), 'recon.sh')
@@ -762,33 +942,40 @@ class AlgebraicRecon(Recon):
 
         # Rendre le script exécutable et l'exécuter
         subprocess.run(["chmod", "+x", recon_script_path], check=True)
-        print(f"Exécution de la reconstruction avec CASToR...")
+        if show_logs:
+            print(f"Exécution de la reconstruction avec CASToR...")
         result = subprocess.run(recon_script_path, env=env, check=True, capture_output=True, text=True)
 
         # Afficher la sortie de CASToR (pour débogage)
-        print("Sortie CASToR :")
-        print(result.stdout)
-        if result.stderr:
-            print("Erreurs :")
-            print(result.stderr)
+        if show_logs:
+            print("Sortie CASToR :")
+            print(result.stdout)
+            if result.stderr:
+                print("Erreurs :")
+                print(result.stderr)
 
-        print("Reconstruction terminée avec succès.")
+        if show_logs:
+            print("Reconstruction terminée avec succès.")
         self.load_reconCASToR(withTumor=withTumor)
     
+    def flipAngle(self):
+        if self.smatrixType == SMatrixType.CSR:
+            self.SMatrix.flip_angle()
     # STATIC METHODS
     @staticmethod
-    def plot_mse_comparison(recon_list, labels=None):
+    def plot_mse_comparison(recon_list, figSize=(4.5, 3.5), labels=None):
         """
         Affiche les courbes de MSE pour chaque reconstruction dans recon_list.
 
         Args:
             recon_list (list): Liste d'objets recon (doivent avoir les attributs 'indices' et 'MSE').
+            figSize (tuple, optional): Taille de la figure.
             labels (list, optional): Liste des labels pour chaque courbe. Si None, utilise "Recon i".
         """
         if labels is None:
             labels = [f"Recon {i+1}" for i in range(len(recon_list))]
 
-        plt.figure(figsize=(4.5, 3.5))
+        plt.figure(figsize=figSize)
         colors = ['red', 'green', 'blue', 'orange', 'purple']  # Ajoute d'autres couleurs si nécessaire
 
         for i, recon in enumerate(recon_list):
