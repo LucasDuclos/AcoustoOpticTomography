@@ -1,38 +1,38 @@
-# Référence API - AOT_biomaps
+# API Reference - AOT_biomaps
 
-Cette documentation technique décrit toutes les classes, fonctions et modules disponibles dans la librairie AOT_biomaps.
+This technical documentation describes all classes, functions, and modules available in the AOT_biomaps library.
 
-## 📚 Table des matières
+## 📚 Table of Contents
 
-- [Modules Principaux](#-modules-principaux)
+- [Main Modules](#-main-modules)
 - [AOT_Recon](#-aot_recon)
-  - [Classes de Reconstruction](#classes-de-reconstruction)
-  - [Optimiseurs](#optimiseurs)
-  - [Matrices Creuses](#matrices-creuses)
-  - [Noyaux et Fonctions Utilitaires](#noyaux-et-fonctions-utilitaires)
+  - [Reconstruction Classes](#reconstruction-classes)
+  - [Optimizers](#optimizers)
+  - [Sparse Matrices](#sparse-matrices)
+  - [Kernels and Utility Functions](#kernels-and-utility-functions)
 - [AOT_Acoustic](#-aot_acoustic)
 - [AOT_Optic](#-aot_optic)
 - [AOT_Experiment](#-aot_experiment)
 - [AOT_Medium](#-aot_medium)
-- [Énumérations](#énumérations)
+- [Enumerations](#enumerations)
 - [Configuration](#configuration)
 
 ---
 
-## 📦 Modules Principaux
+## 📦 Main Modules
 
-### AOT_biomaps (Package racine)
+### AOT_biomaps (Root Package)
 
 ```python
 from AOT_biomaps import (
-    Tomography,           # Classe principale pour les expériences
-    AlgebraicRecon,      # Reconstruction algébrique
-    AnalyticRecon,        # Reconstruction analytique
-    BayesianRecon,        # Reconstruction bayésienne
-    DeepLearningRecon,    # Reconstruction par deep learning
-    PrimalDualRecon,      # Reconstruction primal-dual
-    config,               # Configuration globale
-    Settings             # Paramètres par défaut
+    Tomography,           # Main class for experiments
+    AlgebraicRecon,      # Algebraic reconstruction
+    AnalyticRecon,        # Analytic reconstruction
+    BayesianRecon,        # Bayesian reconstruction
+    DeepLearningRecon,    # Deep learning reconstruction
+    PrimalDualRecon,      # Primal-dual reconstruction
+    config,               # Global configuration
+    Settings             # Default settings
 )
 ```
 
@@ -40,32 +40,32 @@ from AOT_biomaps import (
 
 ## 🔬 AOT_Recon
 
-### Classes de Reconstruction
+### Reconstruction Classes
 
 #### AlgebraicRecon
 
-**Classe** : `AOT_biomaps.AOT_Recon.AlgebraicRecon.AlgebraicRecon`
+**Class**: `AOT_biomaps.AOT_Recon.AlgebraicRecon.AlgebraicRecon`
 
-Reconstruction tomographique utilisant des méthodes algébriques (itératives).
+Algebraic tomographic reconstruction using iterative methods.
 
-**Héritage** : `Recon` → `AlgebraicRecon`
+**Inheritance**: `Recon` → `AlgebraicRecon`
 
-**Attributs** :
+**Attributes**:
 
-| Attribut | Type | Description |
-|----------|------|-------------|
-| `reconPhantom` | list or ndarray | Images reconstruites avec tumeur |
-| `reconLaser` | list or ndarray | Images reconstruites sans tumeur |
-| `experiment` | Tomography | Expérience associée |
-| `reconType` | ReconType | Type de reconstruction |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `reconPhantom` | list or ndarray | Reconstructed images with tumor |
+| `reconLaser` | list or ndarray | Reconstructed images without tumor |
+| `experiment` | Tomography | Associated experiment |
+| `reconType` | ReconType | Reconstruction type |
 | `MSE` | float or list | Mean Squared Error |
 | `SSIM` | float or list | Structural Similarity Index |
 | `CRC` | float or list | Contrast Recovery Coefficient |
 
-**Méthodes** :
+**Methods**:
 
 ```python
-# Constructeur
+# Constructor
 AlgebraicRecon(
     experiment: Tomography,
     saveDir: str = None,
@@ -73,10 +73,10 @@ AlgebraicRecon(
     isMultiCPU: bool = True
 )
 
-# Exécuter la reconstruction
+# Run reconstruction
 run(withTumor: bool = True)
 
-# Sauvegarder les résultats
+# Save results
 save(
     withTumor: bool = True,
     overwrite: bool = False,
@@ -84,16 +84,16 @@ save(
     show_logs: bool = True
 )
 
-# Calculer les métriques
+# Calculate metrics
 calculateMSE(withTumor: bool = True)
 calculateSSIM(withTumor: bool = True, show_log: bool = False)
 calculateCRC(use_ROI: bool = True)
 
-# Visualiser les résultats
+# Visualize results
 show(withTumor: bool = True, savePath: str = None, scale: str = 'same')
 ```
 
-**Exemple** :
+**Example**:
 ```python
 from AOT_biomaps import Tomography, AlgebraicRecon
 
@@ -108,35 +108,35 @@ recon.show()
 
 #### AnalyticRecon
 
-**Classe** : `AOT_biomaps.AOT_Recon.AnalyticRecon.AnalyticRecon`
+**Class**: `AOT_biomaps.AOT_Recon.AnalyticRecon.AnalyticRecon`
 
-Reconstruction tomographique utilisant des méthodes analytiques (rétroprojection filtrée).
+Tomographic reconstruction using analytic methods (filtered backprojection).
 
-**Héritage** : `Recon` → `AnalyticRecon`
+**Inheritance**: `Recon` → `AnalyticRecon`
 
-**Attributs** :
+**Attributes**:
 
-| Attribut | Type | Description |
-|----------|------|-------------|
-| `analyticType` | AnalyticType | Type de reconstruction analytique |
-| `Lc` | float | Longueur de cohérence (pour iRADON) |
-| `AOsignal_demoldulated` | ndarray | Signal AOT démodulé |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `analyticType` | AnalyticType | Analytic reconstruction type |
+| `Lc` | float | Coherence length (for iRADON) |
+| `AOsignal_demoldulated` | ndarray | Demodulated AOT signal |
 
-**Méthodes** :
+**Methods**:
 
 ```python
-# Constructeur
+# Constructor
 AnalyticRecon(
     analyticType: AnalyticType,
     Lc: float = None,
     **kwargs
 )
 
-# Exécuter la reconstruction
+# Run reconstruction
 run(withTumor: bool = True)
 ```
 
-**Exemple** :
+**Example**:
 ```python
 from AOT_biomaps import AnalyticRecon
 from AOT_biomaps.AOT_Recon.ReconEnums import AnalyticType
@@ -151,14 +151,14 @@ recon.run(withTumor=True)
 
 ---
 
-### Optimiseurs
+### Optimizers
 
-#### Module MLEM
+#### MLEM Module
 
-**Fonctions** : `AOT_biomaps.AOT_Recon.AOT_Optimizers.MLEM`
+**Functions**: `AOT_biomaps.AOT_Recon.AOT_Optimizers.MLEM`
 
 ```python
-# Fonction principale MLEM (unifiée)
+# Main MLEM function (unified)
 MLEM(
     SMatrix: Union[SparseMatrix, ndarray],
     y: Union[np.ndarray, cp.ndarray],
@@ -172,7 +172,7 @@ MLEM(
     smatrixType: SMatrixType = SMatrixType.SELL
 ) -> Tuple[Union[np.ndarray, list], Optional[list]]
 
-# MLEM pour matrices denses
+# MLEM for dense matrices
 MLEM_dense(
     SMatrix: ndarray,
     y: Union[np.ndarray, cp.ndarray],
@@ -185,7 +185,7 @@ MLEM_dense(
     device: Optional[str] = None
 ) -> Tuple[Union[np.ndarray, list], Optional[list]]
 
-# MLEM pour matrices creuses
+# MLEM for sparse matrices
 MLEM_sparse(
     SMatrix: SparseMatrix,
     y: Union[np.ndarray, cp.ndarray],
@@ -199,25 +199,25 @@ MLEM_sparse(
 ) -> Tuple[Union[np.ndarray, list], Optional[list]]
 ```
 
-**Exemple** :
+**Example**:
 ```python
 from AOT_biomaps.AOT_Recon.AOT_Optimizers.MLEM import MLEM, MLEM_sparse
 
-# Avec matrice dense
+# With dense matrix
 result, indices = MLEM_dense(SMatrix, y, numIterations=50)
 
-# Avec matrice creuse
+# With sparse matrix
 result, indices = MLEM_sparse(sparse_matrix, y, numIterations=50)
 ```
 
 ---
 
-#### Module PDHG
+#### PDHG Module
 
-**Fonctions** : `AOT_biomaps.AOT_Recon.AOT_Optimizers.PDHG`
+**Functions**: `AOT_biomaps.AOT_Recon.AOT_Optimizers.PDHG`
 
 ```python
-# PDHG avec régularisation TV
+# PDHG with TV regularization
 CP_TV(
     SMatrix: Union[SparseMatrix, ndarray],
     y: Union[np.ndarray, cp.ndarray],
@@ -233,7 +233,7 @@ CP_TV(
     device: Optional[str] = None
 ) -> Tuple[Union[np.ndarray, list], Optional[list]]
 
-# PDHG pour matrices denses avec TV
+# PDHG for dense matrices with TV
 CP_TV_dense_cupy(
     SMatrix: ndarray,
     y: Union[np.ndarray, cp.ndarray],
@@ -247,7 +247,7 @@ CP_TV_dense_cupy(
     show_logs: bool
 )
 
-# PDHG avec régularisation KL
+# PDHG with KL regularization
 CP_KL_dense_cupy(
     SMatrix: ndarray,
     y: Union[np.ndarray, cp.ndarray],
@@ -261,7 +261,7 @@ CP_KL_dense_cupy(
 )
 ```
 
-**Exemple** :
+**Example**:
 ```python
 from AOT_biomaps.AOT_Recon.AOT_Optimizers.PDHG import CP_TV
 
@@ -276,12 +276,12 @@ result, indices = CP_TV(
 
 ---
 
-#### Module LS (Moindres Carrés)
+#### LS Module (Least Squares)
 
-**Fonctions** : `AOT_biomaps.AOT_Recon.AOT_Optimizers.LS`
+**Functions**: `AOT_biomaps.AOT_Recon.AOT_Optimizers.LS`
 
 ```python
-# LS principal
+# Main LS function
 LS(
     SMatrix: Union[SparseMatrix, ndarray],
     y: Union[np.ndarray, cp.ndarray],
@@ -295,7 +295,7 @@ LS(
     device: Optional[str] = None
 ) -> Tuple[Union[np.ndarray, list], Optional[list]]
 
-# LS avec matrice CSR
+# LS with CSR matrix
 LS_CG_sparseCSR_cupy(
     SMatrix: SparseMatrix,
     y: Union[np.ndarray, cp.ndarray],
@@ -307,7 +307,7 @@ LS_CG_sparseCSR_cupy(
     show_logs: bool
 )
 
-# LS avec matrice SELL
+# LS with SELL matrix
 LS_CG_sparseSELL_cupy(
     SMatrix: SparseMatrix,
     y: Union[np.ndarray, cp.ndarray],
@@ -322,9 +322,9 @@ LS_CG_sparseSELL_cupy(
 
 ---
 
-#### Module MAPEM
+#### MAPEM Module
 
-**Fonctions** : `AOT_biomaps.AOT_Recon.AOT_Optimizers.MAPEM`
+**Functions**: `AOT_biomaps.AOT_Recon.AOT_Optimizers.MAPEM`
 
 ```python
 MAPEM(
@@ -347,9 +347,9 @@ MAPEM(
 
 ---
 
-#### Module DEPIERRO
+#### DEPIERRO Module
 
-**Fonctions** : `AOT_biomaps.AOT_Recon.AOT_Optimizers.DEPIERRO`
+**Functions**: `AOT_biomaps.AOT_Recon.AOT_Optimizers.DEPIERRO`
 
 ```python
 DEPIERRO(
@@ -367,9 +367,9 @@ DEPIERRO(
 
 ---
 
-#### Module LBFGS
+#### LBFGS Module
 
-**Fonctions** : `AOT_biomaps.AOT_Recon.AOT_Optimizers.LBFGS`
+**Functions**: `AOT_biomaps.AOT_Recon.AOT_Optimizers.LBFGS`
 
 ```python
 lbfgs_aniso_tv(
@@ -386,30 +386,30 @@ lbfgs_aniso_tv(
 
 ---
 
-### Matrices Creuses
+### Sparse Matrices
 
 #### SparseMatrix (Wrapper)
 
-**Classe** : `AOT_biomaps.AOT_Recon.SparseMatrixWrapper.SparseMatrix`
+**Class**: `AOT_biomaps.AOT_Recon.SparseMatrixWrapper.SparseMatrix`
 
-Wrapper unifié pour les matrices creuses (CSR et SELL).
+Unified wrapper for sparse matrices (CSR and SELL).
 
-**Attributs** :
+**Attributes**:
 
-| Attribut | Type | Description |
-|----------|------|-------------|
-| `matrix_type` | str | Type de matrice ('CSR' ou 'SELL') |
-| `device` | str | Device ('cpu' ou 'gpu') |
-| `N` | int | Nombre d'angles |
-| `T` | int | Nombre de pas de temps |
-| `Z` | int | Taille en Z |
-| `X` | int | Taille en X |
-| `total_nnz` | int | Nombre total d'éléments non-nuls |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `matrix_type` | str | Matrix type ('CSR' or 'SELL') |
+| `device` | str | Device ('cpu' or 'gpu') |
+| `N` | int | Number of angles |
+| `T` | int | Number of time steps |
+| `Z` | int | Size in Z |
+| `X` | int | Size in X |
+| `total_nnz` | int | Total number of non-zero elements |
 
-**Méthodes** :
+**Methods**:
 
 ```python
-# Constructeur
+# Constructor
 SparseMatrix(
     manip: Any,
     matrix_type: str = 'CSR',
@@ -417,30 +417,30 @@ SparseMatrix(
     **kwargs
 )
 
-# Allouer la matrice
+# Allocate the matrix
 allocate()
 
-# Opérations matricielles
+# Matrix operations
 projection(theta: Union[np.ndarray, cp.ndarray]) -> Union[np.ndarray, cp.ndarray]
 backprojection(e: Union[np.ndarray, cp.ndarray]) -> Union[np.ndarray, cp.ndarray]
 apply_normalization(x: Union[np.ndarray, cp.ndarray]) -> Union[np.ndarray, cp.ndarray]
 
-# Propriétés
+# Properties
 get_norm_factor_inv() -> Union[np.ndarray, cp.ndarray]
 get_matrix_size() -> dict
 compute_density() -> float
 
-# Gestion de la mémoire
+# Memory management
 free()
 
-# Utilisation comme context manager
+# Context manager usage
 with SparseMatrix(...) as sm:
-    # La matrice est automatiquement allouée
+    # Matrix is automatically allocated
     result = sm.projection(theta)
-# La mémoire est libérée automatiquement
+# Memory is automatically freed
 ```
 
-**Exemple** :
+**Example**:
 ```python
 from AOT_biomaps.AOT_Recon.SparseMatrixWrapper import SparseMatrix
 
@@ -454,10 +454,10 @@ sparse_matrix.allocate()
 # Projection
 q = sparse_matrix.projection(theta)
 
-# Rétroprojection
+# Backprojection
 c = sparse_matrix.backprojection(e)
 
-# Libérer la mémoire
+# Free memory
 sparse_matrix.free()
 ```
 
@@ -465,24 +465,24 @@ sparse_matrix.free()
 
 #### SparseSMatrix_CSR
 
-**Classe** : `AOT_biomaps.AOT_Recon.AOT_SparseSMatrix.SparseSMatrix_CSR`
+**Class**: `AOT_biomaps.AOT_Recon.AOT_SparseSMatrix.SparseSMatrix_CSR`
 
-Matrice creuse au format CSR (Compressed Sparse Row).
+Sparse matrix in CSR (Compressed Sparse Row) format.
 
-**Attributs** :
+**Attributes**:
 
-| Attribut | Type | Description |
-|----------|------|-------------|
-| `row_ptr` | ndarray | Pointeurs de ligne |
-| `h_col_ind` | ndarray | Indices de colonne |
-| `h_values` | ndarray | Valeurs non-nulles |
-| `norm_factor_inv` | ndarray | Facteurs de normalisation |
-| `total_nnz` | int | Nombre total d'éléments non-nuls |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `row_ptr` | ndarray | Row pointers |
+| `h_col_ind` | ndarray | Column indices |
+| `h_values` | ndarray | Non-zero values |
+| `norm_factor_inv` | ndarray | Normalization factors |
+| `total_nnz` | int | Total number of non-zero elements |
 
-**Méthodes** :
+**Methods**:
 
 ```python
-# Constructeur
+# Constructor
 SparseSMatrix_CSR(
     manip: Any,
     block_rows: int = 64,
@@ -490,14 +490,14 @@ SparseSMatrix_CSR(
     device: Optional[str] = None
 )
 
-# Allouer la matrice
+# Allocate the matrix
 allocate()
 
-# Opérations
+# Operations
 projection(theta: Union[np.ndarray, cp.ndarray]) -> Union[np.ndarray, cp.ndarray]
 backprojection(e: Union[np.ndarray, cp.ndarray]) -> Union[np.ndarray, cp.ndarray]
 
-# Propriétés
+# Properties
 getMatrixSize() -> dict
 compute_density() -> float
 free()
@@ -508,24 +508,24 @@ flipAngle()
 
 #### SparseSMatrix_SELL
 
-**Classe** : `AOT_biomaps.AOT_Recon.AOT_SparseSMatrix.SparseSMatrix_SELL`
+**Class**: `AOT_biomaps.AOT_Recon.AOT_SparseSMatrix.SparseSMatrix_SELL`
 
-Matrice creuse au format SELL-C-sigma (Sliced ELL avec padding).
+Sparse matrix in SELL-C-sigma (Sliced ELL) format.
 
-**Attributs** :
+**Attributes**:
 
-| Attribut | Type | Description |
-|----------|------|-------------|
-| `sell_values` | ndarray | Valeurs non-nulles |
-| `sell_colinds` | ndarray | Indices de colonne |
-| `slice_ptr` | ndarray | Pointeurs de slice |
-| `slice_len` | ndarray | Longueurs de slice |
-| `total_storage` | int | Taille totale de stockage |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `sell_values` | ndarray | Non-zero values |
+| `sell_colinds` | ndarray | Column indices |
+| `slice_ptr` | ndarray | Slice pointers |
+| `slice_len` | ndarray | Slice lengths |
+| `total_storage` | int | Total storage size |
 
-**Méthodes** :
+**Methods**:
 
 ```python
-# Constructeur
+# Constructor
 SparseSMatrix_SELL(
     manip: Any,
     block_rows: int = 64,
@@ -534,15 +534,15 @@ SparseSMatrix_SELL(
     slice_height: int = 32
 )
 
-# Allouer la matrice
+# Allocate the matrix
 allocate()
 
-# Opérations
+# Operations
 projection(theta: Union[np.ndarray, cp.ndarray]) -> Union[np.ndarray, cp.ndarray]
 backprojection(e: Union[np.ndarray, cp.ndarray]) -> Union[np.ndarray, cp.ndarray]
 apply_apodization(window_vector: Union[np.ndarray, cp.ndarray])
 
-# Propriétés
+# Properties
 getMatrixSize() -> dict
 compute_density() -> float
 free()
@@ -551,15 +551,15 @@ flipAngle()
 
 ---
 
-### Noyaux et Fonctions Utilitaires
+### Kernels and Utility Functions
 
 #### AOT_Kernels
 
-**Module** : `AOT_biomaps.AOT_Recon.AOT_Kernels`
+**Module**: `AOT_biomaps.AOT_Recon.AOT_Kernels`
 
-Fonctions utilitaires pour les opérations CPU/GPU.
+Utility functions for CPU/GPU operations.
 
-**Fonctions de vérification** :
+**Verification Functions**:
 
 ```python
 check_cuda_available() -> bool
@@ -567,39 +567,39 @@ check_pycuda_available() -> bool
 get_device_memory_info(device: Optional[str] = None) -> Tuple[int, int]
 ```
 
-**Fonctions utilitaires** :
+**Utility Functions**:
 
 ```python
-# Remplissage de tableaux
+# Array filling
 fill_array_value(arr: Union[np.ndarray, cp.ndarray], value: float, device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 fill_array_zero(arr: Union[np.ndarray, cp.ndarray], device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 
-# Opérations arithmétiques
+# Arithmetic operations
 clamp_positive(arr: Union[np.ndarray, cp.ndarray], device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 vector_axpby(z: Union[np.ndarray, cp.ndarray], x: Union[np.ndarray, cp.ndarray], y: Union[np.ndarray, cp.ndarray], alpha: float, beta: float, device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 vector_minus_axpy(r: Union[np.ndarray, cp.ndarray], z: Union[np.ndarray, cp.ndarray], alpha: float, device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 invert_vector(vec: Union[np.ndarray, cp.ndarray], clip_min: float = 1e-12, device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 
-# Opérations sur matrices creuses
+# Sparse matrix operations
 sparse_matrix_vector_product_csr(data: ndarray, indices: ndarray, indptr: ndarray, x: ndarray, num_rows: int, device: Optional[str] = None) -> ndarray
 
-# Opérations MLEM
+# MLEM operations
 ratio_kernel(y: Union[np.ndarray, cp.ndarray], q: Union[np.ndarray, cp.ndarray], threshold: float = 1e-12, device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 update_theta(theta: Union[np.ndarray, cp.ndarray], c: Union[np.ndarray, cp.ndarray], norm_factor_inv: Union[np.ndarray, cp.ndarray], device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 
-# Opérations TV (Total Variation)
+# TV (Total Variation) operations
 gradient_2d(x: Union[np.ndarray, cp.ndarray], device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 divergence_2d(p: Union[np.ndarray, cp.ndarray], device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 proj_tv(p: Union[np.ndarray, cp.ndarray], alpha: float, device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 
-# Opérations de préconditionnement
+# Preconditioning operations
 update_dual_data_precond(q: Union[np.ndarray, cp.ndarray], Ax: Union[np.ndarray, cp.ndarray], y: Union[np.ndarray, cp.ndarray], sigma_vec: Union[np.ndarray, cp.ndarray], device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 update_primal_precond(x: Union[np.ndarray, cp.ndarray], gradient_combined: Union[np.ndarray, cp.ndarray], tau_vec: Union[np.ndarray, cp.ndarray], device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 
-# Opérations de downsampling
+# Downsampling operations
 downsample_3d(field: Union[np.ndarray, cp.ndarray], mode: str = 'avg', device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 
-# Calcul d'enveloppe
+# Envelope calculation
 calculate_envelope_squared(field: Union[np.ndarray, cp.ndarray], device: Optional[str] = None) -> Union[np.ndarray, cp.ndarray]
 ```
 
@@ -607,28 +607,28 @@ calculate_envelope_squared(field: Union[np.ndarray, cp.ndarray], device: Optiona
 
 ## 🔊 AOT_Acoustic
 
-### Classes d'ondes acoustiques
+### Acoustic Wave Classes
 
 #### PlaneWave
 
-**Classe** : `AOT_biomaps.AOT_Acoustic.PlaneWave.PlaneWave`
+**Class**: `AOT_biomaps.AOT_Acoustic.PlaneWave.PlaneWave`
 
-Génère des ondes planes pour la simulation acoustique.
+Generates plane waves for acoustic simulation.
 
-**Attributs** :
+**Attributes**:
 
-| Attribut | Type | Description |
-|----------|------|-------------|
-| `frequency` | float | Fréquence en Hz |
-| `direction` | list | Direction de propagation [dz, dx] |
-| `amplitude` | float | Amplitude de l'onde |
-| `phase` | float | Phase initiale |
-| `sampling_rate` | float | Fréquence d'échantillonnage en Hz |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `frequency` | float | Frequency in Hz |
+| `direction` | list | Propagation direction [dz, dx] |
+| `amplitude` | float | Wave amplitude |
+| `phase` | float | Initial phase |
+| `sampling_rate` | float | Sampling rate in Hz |
 
-**Méthodes** :
+**Methods**:
 
 ```python
-# Constructeur
+# Constructor
 PlaneWave(
     frequency: float,
     direction: list,
@@ -637,7 +637,7 @@ PlaneWave(
     sampling_rate: float = 1e7
 )
 
-# Générer le champ acoustique
+# Generate acoustic field
 generate_field(
     size: tuple,
     speed_of_sound: float = 1500.0
@@ -648,24 +648,24 @@ generate_field(
 
 #### FocusedWave
 
-**Classe** : `AOT_biomaps.AOT_Acoustic.FocusedWave.FocusedWave`
+**Class**: `AOT_biomaps.AOT_Acoustic.FocusedWave.FocusedWave`
 
-Génère des ondes acoustiques focalisées.
+Generates focused acoustic waves.
 
-**Attributs** :
+**Attributes**:
 
-| Attribut | Type | Description |
-|----------|------|-------------|
-| `frequency` | float | Fréquence en Hz |
-| `focal_point` | list | Point focal [z, x, y] |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `frequency` | float | Frequency in Hz |
+| `focal_point` | list | Focal point [z, x, y] |
 | `amplitude` | float | Amplitude |
-| `radius` | float | Rayon du transducteur |
-| `sampling_rate` | float | Fréquence d'échantillonnage |
+| `radius` | float | Transducer radius |
+| `sampling_rate` | float | Sampling rate |
 
-**Méthodes** :
+**Methods**:
 
 ```python
-# Constructeur
+# Constructor
 FocusedWave(
     frequency: float,
     focal_point: list,
@@ -674,7 +674,7 @@ FocusedWave(
     sampling_rate: float = 1e7
 )
 
-# Générer le champ
+# Generate field
 generate_field(
     size: tuple,
     speed_of_sound: float = 1500.0
@@ -685,37 +685,37 @@ generate_field(
 
 #### StructuredWave
 
-**Classe** : `AOT_biomaps.AOT_Acoustic.StructuredWave.StructuredWave`
+**Class**: `AOT_biomaps.AOT_Acoustic.StructuredWave.StructuredWave`
 
-Génère des ondes structurées.
+Generates structured waves.
 
 ---
 
 #### IrregularWave
 
-**Classe** : `AOT_biomaps.AOT_Acoustic.IrregularWave.IrregularWave`
+**Class**: `AOT_biomaps.AOT_Acoustic.IrregularWave.IrregularWave`
 
-Génère des ondes irrégulières.
+Generates irregular waves.
 
 ---
 
 ## 🎯 AOT_Optic
 
-### Classes optiques
+### Optical Classes
 
 #### Laser
 
-**Classe** : `AOT_biomaps.AOT_Optic.Laser.Laser`
+**Class**: `AOT_biomaps.AOT_Optic.Laser.Laser`
 
-Modélise une source laser pour l'imagerie acousto-optique.
+Models a laser source for acousto-optic imaging.
 
-**Attributs** :
+**Attributes**:
 
-| Attribut | Type | Description |
-|----------|------|-------------|
-| `wavelength` | float | Longueur d'onde en nm |
-| `intensity` | ndarray | Distribution d'intensité |
-| `beam_width` | float | Largeur du faisceau |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `wavelength` | float | Wavelength in nm |
+| `intensity` | ndarray | Intensity distribution |
+| `beam_width` | float | Beam width |
 
 ---
 
@@ -723,33 +723,33 @@ Modélise une source laser pour l'imagerie acousto-optique.
 
 ### Tomography
 
-**Classe** : `AOT_biomaps.AOT_Experiment.Tomography.Tomography`
+**Class**: `AOT_biomaps.AOT_Experiment.Tomography.Tomography`
 
-Classe principale pour gérer les expériences de tomographie acousto-optique.
+Main class for managing acousto-optic tomography experiments.
 
-**Attributs** :
+**Attributes**:
 
-| Attribut | Type | Description |
-|----------|------|-------------|
-| `OpticImage` | OpticImage | Image optique associée |
-| `AcousticFields` | list | Liste des champs acoustiques |
-| `params` | dict | Paramètres de l'expérience |
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `OpticImage` | OpticImage | Associated optical image |
+| `AcousticFields` | list | List of acoustic fields |
+| `params` | dict | Experiment parameters |
 
-**Méthodes** :
+**Methods**:
 
 ```python
-# Constructeur
+# Constructor
 Tomography(
     optic_image: Optional[ndarray] = None,
     acoustic_fields: Optional[list] = None,
     params: Optional[dict] = None
 )
 
-# Charger les données
+# Load data
 load_optic_image(path: str)
 load_acoustic_fields(path: str)
 
-# Sauvegarder les données
+# Save data
 save_optic_image(path: str)
 save_acoustic_fields(path: str)
 ```
@@ -758,50 +758,50 @@ save_acoustic_fields(path: str)
 
 ## 🌍 AOT_Medium
 
-### Classes de milieux
+### Medium Classes
 
 #### HomogeneousMedium
 
-**Classe** : `AOT_biomaps.AOT_Medium.HomogeneousMedium.HomogeneousMedium`
+**Class**: `AOT_biomaps.AOT_Medium.HomogeneousMedium.HomogeneousMedium`
 
-Milieu homogène avec propriétés constantes.
+Homogeneous medium with constant properties.
 
 #### PVAMedium
 
-**Classe** : `AOT_biomaps.AOT_Medium.PVAMedium.PVAMedium`
+**Class**: `AOT_biomaps.AOT_Medium.PVAMedium.PVAMedium`
 
-Milieu avec propriétés variables (PVA - PolyVinyl Alcohol).
+Medium with variable properties (PVA - PolyVinyl Alcohol).
 
 #### BubbleMedium
 
-**Classe** : `AOT_biomaps.AOT_Medium.BubbleMedium.BubbleMedium`
+**Class**: `AOT_biomaps.AOT_Medium.BubbleMedium.BubbleMedium`
 
-Milieu avec bulles.
+Medium with bubbles.
 
 ---
 
-## 📜 Énumérations
+## 📜 Enumerations
 
 ### ReconEnums
 
-**Module** : `AOT_biomaps.AOT_Recon.ReconEnums`
+**Module**: `AOT_biomaps.AOT_Recon.ReconEnums`
 
 ```python
 from AOT_biomaps.AOT_Recon.ReconEnums import (
-    ReconType,       # Type de reconstruction
-    OptimizerType,   # Type d'optimiseur
-    AnalyticType,    # Type de reconstruction analytique
-    SMatrixType,     # Type de matrice creuse
-    ProcessType,     # Type de traitement
-    NoiseType        # Type de bruit
+    ReconType,       # Reconstruction type
+    OptimizerType,   # Optimizer type
+    AnalyticType,    # Analytic reconstruction type
+    SMatrixType,     # Sparse matrix type
+    ProcessType,     # Process type
+    NoiseType        # Noise type
 )
 
-# Valeurs possibles
-ReconType.Algebraic      # Reconstruction algébrique
-ReconType.Analytic       # Reconstruction analytique
-ReconType.Bayesian       # Reconstruction bayésienne
-ReconType.DeepLearning   # Reconstruction par deep learning
-ReconType.Convex         # Reconstruction convexe
+# Possible values
+ReconType.Algebraic      # Algebraic reconstruction
+ReconType.Analytic       # Analytic reconstruction
+ReconType.Bayesian       # Bayesian reconstruction
+ReconType.DeepLearning   # Deep learning reconstruction
+ReconType.Convex         # Convex reconstruction
 
 OptimizerType.MLEM
 OptimizerType.PDHG
@@ -829,7 +829,7 @@ NoiseType.Poisson
 
 ### AcousticEnums
 
-**Module** : `AOT_biomaps.AOT_Acoustic.AcousticEnums`
+**Module**: `AOT_biomaps.AOT_Acoustic.AcousticEnums`
 
 ```python
 from AOT_biomaps.AOT_Acoustic.AcousticEnums import (
@@ -842,13 +842,13 @@ from AOT_biomaps.AOT_Acoustic.AcousticEnums import (
 
 ### OpticEnums
 
-**Module** : `AOT_biomaps.AOT_Optic.OpticEnums`
+**Module**: `AOT_biomaps.AOT_Optic.OpticEnums`
 
 ---
 
 ### MediumEnums
 
-**Module** : `AOT_biomaps.AOT_Medium.MediumEnums`
+**Module**: `AOT_biomaps.AOT_Medium.MediumEnums`
 
 ---
 
@@ -856,22 +856,22 @@ from AOT_biomaps.AOT_Acoustic.AcousticEnums import (
 
 ### Config
 
-**Module** : `AOT_biomaps.Config`
+**Module**: `AOT_biomaps.Config`
 
-Gère la configuration globale de la librairie.
+Manages global library configuration.
 
-**Fonctions** :
+**Functions**:
 
 ```python
 from AOT_biomaps.Config import config
 
-# Obtenir la configuration actuelle
-config.get_process()  # Retourne 'cpu' ou 'gpu'
-config.get_multi_cpu()  # Retourne True ou False
-config.get_verbose()  # Retourne True ou False
+# Get current configuration
+config.get_process()  # Returns 'cpu' or 'gpu'
+config.get_multi_cpu()  # Returns True or False
+config.get_verbose()  # Returns True or False
 
-# Définir la configuration
-config.set_process(device: str)  # 'cpu' ou 'gpu'
+# Set configuration
+config.set_process(device: str)  # 'cpu' or 'gpu'
 config.set_multi_cpu(enabled: bool)
 config.set_verbose(enabled: bool)
 config.set_seed(seed: int)
@@ -881,45 +881,45 @@ config.set_seed(seed: int)
 
 ### Settings
 
-**Module** : `AOT_biomaps.Settings`
+**Module**: `AOT_biomaps.Settings`
 
-Contient les paramètres par défaut de la librairie.
+Contains default library settings.
 
 ---
 
-## 📊 Fonctions de calcul de métriques
+## 📊 Metric Calculation Functions
 
 ### ReconTools
 
-**Module** : `AOT_biomaps.AOT_Recon.ReconTools`
+**Module**: `AOT_biomaps.AOT_Recon.ReconTools`
 
 ```python
 from AOT_biomaps.AOT_Recon.ReconTools import (
     mse,                    # Mean Squared Error
     ssim,                   # Structural Similarity Index
-    fourierz_gpu,           # Transformée de Fourier en z (GPU)
-    ifourierx_gpu,          # Transformée de Fourier inverse en x (GPU)
-    rotate_theta_gpu,       # Rotation theta (GPU)
-    filter_radon_gpu,       # Filtrage Radon (GPU)
-    ifourierz_gpu,          # Transformée de Fourier inverse en z (GPU)
-    EvalDelayLawOS_center,   # Évaluation de la loi de retard
-    calculate_memory_requirement,  # Calcul des besoins mémoire
-    check_gpu_memory,        # Vérification de la mémoire GPU
-    _build_adjacency_sparse  # Construction de la matrice d'adjacence
+    fourierz_gpu,           # Fourier transform in z (GPU)
+    ifourierx_gpu,          # Inverse Fourier transform in x (GPU)
+    rotate_theta_gpu,       # Theta rotation (GPU)
+    filter_radon_gpu,       # Radon filtering (GPU)
+    ifourierz_gpu,          # Inverse Fourier transform in z (GPU)
+    EvalDelayLawOS_center,   # Delay law evaluation
+    calculate_memory_requirement,  # Memory requirement calculation
+    check_gpu_memory,        # GPU memory check
+    _build_adjacency_sparse  # Adjacency matrix construction
 )
 
-# Exemple
+# Example
 mse_value = mse(image1, image2)
 ssim_value = ssim(image1, image2, data_range=1.0)
 ```
 
 ---
 
-## 🎨 Fonctions de potentiel
+## 🎨 Potential Functions
 
-### Module Quadratic
+### Quadratic Module
 
-**Fonctions** : `AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Quadratic`
+**Functions**: `AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Quadratic`
 
 ```python
 from AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Quadratic import (
@@ -928,9 +928,9 @@ from AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Quadratic import (
 )
 ```
 
-### Module Huber
+### Huber Module
 
-**Fonctions** : `AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Huber`
+**Functions**: `AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Huber`
 
 ```python
 from AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Huber import (
@@ -939,9 +939,9 @@ from AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Huber import (
 )
 ```
 
-### Module RelativeDifferences
+### RelativeDifferences Module
 
-**Fonctions** : `AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.RelativeDifferences`
+**Functions**: `AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.RelativeDifferences`
 
 ```python
 from AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.RelativeDifferences import (
@@ -952,45 +952,45 @@ from AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.RelativeDifferences import (
 
 ---
 
-## 📝 Index des classes et fonctions
+## 📝 Class and Function Index
 
-### Classes principales
+### Main Classes
 
-| Classe | Module | Description |
-|--------|--------|-------------|
-| `Tomography` | AOT_Experiment | Expérience de tomographie |
-| `AlgebraicRecon` | AOT_Recon | Reconstruction algébrique |
-| `AnalyticRecon` | AOT_Recon | Reconstruction analytique |
-| `SparseMatrix` | AOT_Recon.SparseMatrixWrapper | Wrapper de matrice creuse |
-| `SparseSMatrix_CSR` | AOT_Recon.AOT_SparseSMatrix | Matrice CSR |
-| `SparseSMatrix_SELL` | AOT_Recon.AOT_SparseSMatrix | Matrice SELL |
-| `PlaneWave` | AOT_Acoustic | Onde plane |
-| `FocusedWave` | AOT_Acoustic | Onde focalisée |
-| `Laser` | AOT_Optic | Source laser |
+| Class | Module | Description |
+|-------|--------|-------------|
+| `Tomography` | AOT_Experiment | Tomography experiment |
+| `AlgebraicRecon` | AOT_Recon | Algebraic reconstruction |
+| `AnalyticRecon` | AOT_Recon | Analytic reconstruction |
+| `SparseMatrix` | AOT_Recon.SparseMatrixWrapper | Sparse matrix wrapper |
+| `SparseSMatrix_CSR` | AOT_Recon.AOT_SparseSMatrix | CSR matrix |
+| `SparseSMatrix_SELL` | AOT_Recon.AOT_SparseSMatrix | SELL matrix |
+| `PlaneWave` | AOT_Acoustic | Plane wave |
+| `FocusedWave` | AOT_Acoustic | Focused wave |
+| `Laser` | AOT_Optic | Laser source |
 
-### Fonctions principales
+### Main Functions
 
-| Fonction | Module | Description |
+| Function | Module | Description |
 |----------|--------|-------------|
-| `MLEM` | AOT_Optimizers.MLEM | Algorithme MLEM |
-| `PDHG` / `CP_TV` | AOT_Optimizers.PDHG | Algorithme PDHG |
-| `LS` | AOT_Optimizers.LS | Moindres carrés |
-| `MAPEM` | AOT_Optimizers.MAPEM | Algorithme MAPEM |
-| `DEPIERRO` | AOT_Optimizers.DEPIERRO | Algorithme DEPIERRO |
-| `create_sparse_matrix` | SparseMatrixWrapper | Créer une matrice creuse |
-| `check_cuda_available` | AOT_Kernels | Vérifier CUDA |
-| `mse` | ReconTools | Calculer MSE |
-| `ssim` | ReconTools | Calculer SSIM |
+| `MLEM` | AOT_Optimizers.MLEM | MLEM algorithm |
+| `PDHG` / `CP_TV` | AOT_Optimizers.PDHG | PDHG algorithm |
+| `LS` | AOT_Optimizers.LS | Least squares |
+| `MAPEM` | AOT_Optimizers.MAPEM | MAPEM algorithm |
+| `DEPIERRO` | AOT_Optimizers.DEPIERRO | DEPIERRO algorithm |
+| `create_sparse_matrix` | SparseMatrixWrapper | Create sparse matrix |
+| `check_cuda_available` | AOT_Kernels | Check CUDA |
+| `mse` | ReconTools | Calculate MSE |
+| `ssim` | ReconTools | Calculate SSIM |
 
 ---
 
 ## 🙏 Support
 
-Pour toute question ou problème, veuillez :
-1. Consulter la [documentation](https://github.com/LucasDuclos/AcoustoOpticTomography/tree/main/docs)
-2. Vérifier les [issues existantes](https://github.com/LucasDuclos/AcoustoOpticTomography/issues)
-3. Ouvrir une nouvelle [issue](https://github.com/LucasDuclos/AcoustoOpticTomography/issues/new)
+For any questions or issues, please:
+1. Check the [documentation](https://github.com/LucasDuclos/AcoustoOpticTomography/tree/main/docs)
+2. Check existing [issues](https://github.com/LucasDuclos/AcoustoOpticTomography/issues)
+3. Open a new [issue](https://github.com/LucasDuclos/AcoustoOpticTomography/issues/new)
 
 ---
 
-**Retour à la [documentation principale](README.md)**
+**Back to [main documentation](README.md)**

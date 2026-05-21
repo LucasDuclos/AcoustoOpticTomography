@@ -4,75 +4,75 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Status: Active Development](https://img.shields.io/badge/status-Active_Development-orange.svg)]()
 
-**AOT_biomaps** est une librairie Python avancée pour la **Tomographie Acousto-Optique (AOT)**. Elle fournit des outils complets pour la reconstruction d'images, la simulation acoustique, la modélisation optique et le traitement des données en 2D/3D.
+**AOT_biomaps** is an advanced Python library for **Acousto-Optic Tomography (AOT)**. It provides comprehensive tools for image reconstruction, acoustic simulation, optical modeling, and 2D/3D data processing.
 
-## 📌 À propos du projet
+## 📌 About the Project
 
-Cette librairie a été développée pour répondre aux besoins de la communauté de recherche en imagerie biomédicale, particulièrement pour les applications de tomographie acousto-optique. Elle combine des algorithmes de reconstruction avancés avec des implémentations optimisées pour CPU et GPU.
+This library was developed to meet the needs of the biomedical imaging research community, particularly for Acousto-Optic Tomography applications. It combines advanced reconstruction algorithms with optimized CPU and GPU implementations.
 
-### Caractéristiques principales
+### Key Features
 
-- ✅ **Reconstruction Tomographique** : MLEM, PDHG, LS, DEPIERRO, MAPEM, LBFGS
-- ✅ **Support Multi-Device** : CPU (NumPy) et GPU (CuPy) avec basculement automatique
-- ✅ **Matrices Creuses** : Implémentations CSR et SELL-C-sigma optimisées
-- ✅ **Simulation Acoustique** : Ondes planes, focalisées, irrégulières
-- ✅ **Modélisation Optique** : Lasers, absorbeurs, milieux hétérogènes
-- ✅ **Traitement du Signal** : Filtrage, rétroprojection, transformation de Radon
-- ✅ **Visualisation** : Outils de visualisation 2D/3D (optionnel avec matplotlib)
+- ✅ **Tomographic Reconstruction**: MLEM, PDHG, LS, DEPIERRO, MAPEM, LBFGS
+- ✅ **Multi-Device Support**: CPU (NumPy) and GPU (CuPy) with automatic fallback
+- ✅ **Sparse Matrices**: Optimized CSR and SELL-C-sigma implementations
+- ✅ **Acoustic Simulation**: Plane, focused, irregular waves
+- ✅ **Optical Modeling**: Lasers, absorbers, heterogeneous media
+- ✅ **Signal Processing**: Filtering, backprojection, Radon transform
+- ✅ **Visualization**: 2D/3D visualization tools (optional with matplotlib)
 
-### Architecture Modulaire
+### Modular Architecture
 
 ```
 AOT_biomaps/
-├── AOT_Acoustic/     # Simulation acoustique
-├── AOT_Experiment/    # Gestion des expériences
-├── AOT_Medium/       # Modélisation des milieux
-├── AOT_Optic/        # Modélisation optique
-├── AOT_Recon/        # Algorithmes de reconstruction
+├── AOT_Acoustic/     # Acoustic simulation
+├── AOT_Experiment/    # Experiment management
+├── AOT_Medium/       # Medium modeling
+├── AOT_Optic/        # Optical modeling
+├── AOT_Recon/        # Reconstruction algorithms
 │   ├── AOT_Optimizers/   # MLEM, PDHG, LS, etc.
-│   ├── AOT_PotentialFunctions/ # Fonctions de potentiel
-│   └── AOT_SparseSMatrix/    # Matrices creuses (CSR, SELL)
-└── Config.py         # Configuration globale
+│   ├── AOT_PotentialFunctions/ # Potential functions
+│   └── AOT_SparseSMatrix/    # Sparse matrices (CSR, SELL)
+└── Config.py         # Global configuration
 ```
 
 ## 🚀 Installation
 
-Voir [INSTALLATION.md](docs/INSTALLATION.md) pour les instructions détaillées.
+See [INSTALLATION.md](docs/INSTALLATION.md) for detailed instructions.
 
-### Installation rapide
+### Quick Installation
 
 ```bash
-# Cloner le dépôt
+# Clone the repository
 git clone https://github.com/LucasDuclos/AcoustoOpticTomography.git
 cd AcoustoOpticTomography
 
-# Installer en mode développement
+# Install in development mode
 pip install -e .
 ```
 
 ## 📖 Documentation
 
-- [📥 Installation](docs/INSTALLATION.md) - Guide d'installation complet
-- [🎯 Utilisation](docs/USAGE.md) - Exemples et tutoriels
-- [🔧 Référence API](docs/API_REFERENCE.md) - Documentation technique
-- [🏗️ Architecture](docs/ARCHITECTURE.md) - Conception de la librairie
-- [🤝 Contribution](docs/CONTRIBUTING.md) - Comment contribuer
-- [📜 Historique](docs/CHANGELOG.md) - Journal des modifications
+- [📥 Installation](docs/INSTALLATION.md) - Complete installation guide
+- [🎯 Usage](docs/USAGE.md) - Examples and tutorials
+- [🔧 API Reference](docs/API_REFERENCE.md) - Technical documentation
+- [🏗️ Architecture](docs/ARCHITECTURE.md) - Library design
+- [🤝 Contributing](docs/CONTRIBUTING.md) - How to contribute
+- [📜 Changelog](docs/CHANGELOG.md) - Release history
 
-## 🎯 Exemple d'utilisation rapide
+## 🎯 Quick Start Example
 
 ```python
 import numpy as np
 from AOT_biomaps import Tomography, AlgebraicRecon
 from AOT_biomaps.AOT_Recon.ReconEnums import ReconType
 
-# Créer une expérience de tomographie
+# Create a tomography experiment
 experiment = Tomography(
     optic_image_path="path/to/optic_image.npy",
     acoustic_fields_path="path/to/acoustic_fields.npy"
 )
 
-# Configurer la reconstruction
+# Setup reconstruction
 recon = AlgebraicRecon(
     experiment=experiment,
     reconType=ReconType.Algebraic,
@@ -80,78 +80,78 @@ recon = AlgebraicRecon(
     numIterations=100
 )
 
-# Exécuter la reconstruction
+# Run reconstruction
 recon.run(withTumor=True)
 
-# Sauvegarder les résultats
+# Save results
 recon.save(withTumor=True, saveDir="results/")
 ```
 
-## 🔧 Dépendances
+## 🔧 Dependencies
 
-### Dépendances principales (requises)
+### Core Dependencies (Required)
 - Python ≥ 3.8
 - NumPy ≥ 1.20
 
-### Dépendances optionnelles
-- **CuPy** ≥ 10.0 - Pour l'accélération GPU
-- **Matplotlib** ≥ 3.0 - Pour la visualisation
-- **tqdm** ≥ 4.0 - Pour les barres de progression
-- **SciPy** ≥ 1.7 - Pour le traitement du signal
-- **kWave** - Pour la simulation acoustique (optionnel)
+### Optional Dependencies
+- **CuPy** ≥ 10.0 - For GPU acceleration
+- **Matplotlib** ≥ 3.0 - For visualization
+- **tqdm** ≥ 4.0 - For progress bars
+- **SciPy** ≥ 1.7 - For signal processing
+- **kWave** - For acoustic simulation (optional)
 
-### Matrice de compatibilité
+### Compatibility Matrix
 
-| Fonctionnalité | CPU (NumPy) | GPU (CuPy) |
-|---------------|-------------|-------------|
-| Reconstruction MLEM | ✅ | ✅ |
-| Reconstruction PDHG | ✅ | ✅ |
-| Matrices CSR | ✅ | ✅ |
-| Matrices SELL | ✅ | ✅ |
-| Visualisation | ✅ | ✅ |
-| Simulation Acoustique | ✅ | ⚠️ (kWave requis) |
+| Feature | CPU (NumPy) | GPU (CuPy) |
+|---------|-------------|-------------|
+| MLEM Reconstruction | ✅ | ✅ |
+| PDHG Reconstruction | ✅ | ✅ |
+| CSR Matrices | ✅ | ✅ |
+| SELL Matrices | ✅ | ✅ |
+| Visualization | ✅ | ✅ |
+| Acoustic Simulation | ✅ | ⚠️ (kWave required) |
 
-## 📊 Performances
+## 📊 Performance
 
-### Benchmark (sur un dataset standard)
+### Benchmark (on standard dataset)
 
-| Algorithme | CPU (s) | GPU (s) | Accélération |
-|-----------|---------|---------|-------------|
+| Algorithm | CPU (s) | GPU (s) | Speedup |
+|-----------|---------|---------|---------|
 | MLEM | 45.2 | 2.1 | **21.5x** |
 | PDHG | 38.7 | 1.8 | **21.5x** |
 | LS | 22.4 | 1.2 | **18.7x** |
 
-### Utilisation mémoire
+### Memory Usage
 
-| Matrice | Format | Taille (Go) |
-|---------|--------|-------------|
+| Matrix | Format | Size (GB) |
+|--------|--------|-----------|
 | 100x100x100x50 | Dense | 19.1 |
 | 100x100x100x50 | CSR | 0.8 |
 | 100x100x100x50 | SELL | 0.6 |
 
-## 🤝 Contribution
+## 🤝 Contributing
 
-Les contributions sont les bienvenues ! Voir [CONTRIBUTING.md](docs/CONTRIBUTING.md) pour les directives.
+Contributions are welcome! See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
-### Comment contribuer
+### How to Contribute
 
-1. Forker le projet
-2. Créer une branche (`git checkout -b feature/AmazingFeature`)
-3. Commiter vos changements (`git commit -m 'Add some AmazingFeature'`)
-4. Pousser sur la branche (`git push origin feature/AmazingFeature`)
-5. Ouvrir une Pull Request
+1. Fork the project
+2. Create a branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-## 📜 Licence
+## 📜 License
 
-Distribué sous la licence MIT. Voir [LICENSE](LICENSE) pour plus d'informations.
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
 
-## 🙏 Remerciements
+## 🙏 Acknowledgments
 
-- Laboratoire d'Imagerie Biomédicale
-- Tous les contributeurs qui ont participé à ce projet
+- Biomedical Imaging Laboratory
+- All contributors who participated in this project
 
 ---
 
-**Contact** : Pour toute question ou suggestion, n'hésitez pas à ouvrir une issue ou à me contacter directement.
+**Contact**: For any questions or suggestions, feel free to open an issue or contact me directly.
 
 [🐙 GitHub](https://github.com/LucasDuclos/AcoustoOpticTomography) | [📧 Email](mailto:lucas.duclos@universite-paris-saclay.fr)

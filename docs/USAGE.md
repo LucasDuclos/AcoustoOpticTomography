@@ -1,169 +1,169 @@
-# Guide d'Utilisation - AOT_biomaps
+# Usage Guide - AOT_biomaps
 
-Ce guide vous explique comment utiliser la librairie AOT_biomaps pour effectuer des reconstructions tomographiques acousto-optiques.
+This guide explains how to use the AOT_biomaps library for Acousto-Optic Tomography reconstruction.
 
-## 📚 Table des matières
+## 📚 Table of Contents
 
-- [Concepts de base](#-concepts-de-base)
-- [Premiers pas](#-premiers-pas)
-- [Reconstruction Tomographique](#-reconstruction-tomographique)
-  - [Reconstruction Algébrique (MLEM)](#reconstruction-algébrique-mlem)
-  - [Reconstruction Analytique](#reconstruction-analytique)
-  - [Reconstruction Bayésienne](#reconstruction-bayésienne)
-  - [Reconstruction par Moindres Carrés](#reconstruction-par-moindres-carrés)
-  - [Reconstruction Primal-Dual (PDHG)](#reconstruction-primal-dual-pdhg)
-- [Utilisation des Matrices Creuses](#-utilisation-des-matrices-creuses)
-- [Simulation Acoustique](#-simulation-acoustique)
-- [Visualisation des Résultats](#-visualisation-des-résultats)
-- [Exemples Complets](#-exemples-complets)
-- [Bonnes Pratiques](#-bonnes-pratiques)
+- [Basic Concepts](#-basic-concepts)
+- [Getting Started](#-getting-started)
+- [Tomographic Reconstruction](#-tomographic-reconstruction)
+  - [Algebraic Reconstruction (MLEM)](#algebraic-reconstruction-mlem)
+  - [Analytic Reconstruction](#analytic-reconstruction)
+  - [Bayesian Reconstruction](#bayesian-reconstruction)
+  - [Least Squares Reconstruction](#least-squares-reconstruction)
+  - [Primal-Dual Reconstruction (PDHG)](#primal-dual-reconstruction-pdhg)
+- [Sparse Matrix Usage](#-sparse-matrix-usage)
+- [Acoustic Simulation](#-acoustic-simulation)
+- [Result Visualization](#-result-visualization)
+- [Complete Examples](#-complete-examples)
+- [Best Practices](#-best-practices)
 
-## 🎯 Concepts de base
+## 🎯 Basic Concepts
 
-### Tomographie Acousto-Optique (AOT)
+### Acousto-Optic Tomography (AOT)
 
-La Tomographie Acousto-Optique combine les avantages de l'imagerie optique (haute résolution) et de l'imagerie ultrasonore (profondeur de pénétration). Le principe est le suivant :
+Acousto-Optic Tomography combines the advantages of optical imaging (high resolution) and ultrasound imaging (penetration depth). The principle is as follows:
 
-1. Un faisceau laser illumine le tissu
-2. Une onde ultrasonore module la lumière
-3. La lumière modulée est détectée et utilisée pour reconstruire une image
+1. A laser beam illuminates the tissue
+2. An ultrasound wave modulates the light
+3. The modulated light is detected and used to reconstruct an image
 
-### Architecture de la librairie
+### Library Architecture
 
 ```
 AOT_biomaps/
-├── AOT_Acoustic/     # Simulation des champs acoustiques
-├── AOT_Experiment/    # Gestion des expériences et données
-├── AOT_Medium/       # Modélisation des milieux de propagation
-├── AOT_Optic/        # Modélisation des sources optiques
-└── AOT_Recon/        # Algorithmes de reconstruction
-    ├── AOT_Optimizers/   # MLEM, PDHG, LS, DEPIERRO, MAPEM, LBFGS
-    ├── AOT_PotentialFunctions/ # Fonctions de régularisation
-    └── AOT_SparseSMatrix/    # Matrices creuses (CSR, SELL)
+├── AOT_Acoustic/     # Acoustic simulation
+├── AOT_Experiment/    # Experiment management
+├── AOT_Medium/       # Medium modeling
+├── AOT_Optic/        # Optical modeling
+└── AOT_Recon/        # Reconstruction algorithms
+    ├── AOT_Optimizers/   # MLEM, PDHG, LS, etc.
+    ├── AOT_PotentialFunctions/ # Potential functions
+    └── AOT_SparseSMatrix/    # Sparse matrices (CSR, SELL)
 ```
 
-### Workflow typique
+### Typical Workflow
 
 ```
-1. Charger les données optiques et acoustiques
+1. Load optical and acoustic data
    ↓
-2. Configurer l'expérience (Tomography)
+2. Configure the experiment (Tomography)
    ↓
-3. Choisir un algorithme de reconstruction
+3. Choose a reconstruction algorithm
    ↓
-4. Exécuter la reconstruction
+4. Run the reconstruction
    ↓
-5. Visualiser et sauvegarder les résultats
+5. Visualize and save results
 ```
 
-## 🚀 Premiers pas
+## 🚀 Getting Started
 
-### Importation de la librairie
+### Basic Import
 
 ```python
-# Importation de base
+# Basic imports
 import numpy as np
 from AOT_biomaps import Tomography, AlgebraicRecon, AnalyticRecon
 from AOT_biomaps.AOT_Recon.ReconEnums import ReconType, OptimizerType
 
-# Vérifier la disponibilité du GPU
+# Check GPU availability
 from AOT_biomaps.AOT_Recon.AOT_Kernels import check_cuda_available
-print(f"CUDA disponible: {check_cuda_available()}")
+print(f"CUDA available: {check_cuda_available()}")
 ```
 
-### Configuration de base
+### Basic Configuration
 
 ```python
 from AOT_biomaps.Config import config
 
-# Définir le device par défaut (cpu ou gpu)
-config.set_process('gpu')  # Utilise le GPU si disponible
+# Set default device (cpu or gpu)
+config.set_process('gpu')  # Use GPU if available
 
-# Activer le mode multi-CPU pour les grands datasets
+# Enable multi-CPU mode for large datasets
 config.set_multi_cpu(True)
 
-# Définir le niveau de verbosité
+# Set verbosity level
 config.set_verbose(True)
 ```
 
-## 🔬 Reconstruction Tomographique
+## 🔬 Tomographic Reconstruction
 
-### Préparation des données
+### Data Preparation
 
-Avant de commencer la reconstruction, vous devez avoir :
-1. Une image optique (phantom) - l'image de référence
-2. Des champs acoustiques - les données de mesure
+Before starting reconstruction, you need:
+1. An optical image (phantom) - the reference image
+2. Acoustic fields - the measurement data
 
 ```python
 import numpy as np
 
-# Exemple: Charger des données de test
-# (Dans la pratique, chargez vos propres données)
+# Example: Load test data
+# (In practice, load your own data)
 T, Z, X, N = 10, 50, 50, 20
 
-# Générer une image optique de test (phantom)
+# Generate a test optical image (phantom)
 optic_image = np.random.rand(Z, X).astype(np.float32)
 
-# Générer des champs acoustiques de test
+# Generate test acoustic fields
 acoustic_fields = [type('AcousticField', (), {
     'field': np.random.rand(T, Z, X).astype(np.float32)
 })() for _ in range(N)]
 ```
 
-### Reconstruction Algébrique (MLEM)
+### Algebraic Reconstruction (MLEM)
 
-**MLEM (Maximum Likelihood Expectation Maximization)** est l'algorithme le plus couramment utilisé pour la reconstruction tomographique.
+**MLEM (Maximum Likelihood Expectation Maximization)** is the most commonly used algorithm for tomographic reconstruction.
 
-#### Exemple de base
+#### Basic Example
 
 ```python
 from AOT_biomaps import Tomography, AlgebraicRecon
 from AOT_biomaps.AOT_Recon.ReconEnums import ReconType, OptimizerType
 
-# Créer une expérience de tomographie
+# Create a tomography experiment
 experiment = Tomography(
     optic_image=optic_image,
     acoustic_fields=acoustic_fields
 )
 
-# Configurer la reconstruction MLEM
+# Setup MLEM reconstruction
 recon = AlgebraicRecon(
     experiment=experiment,
     reconType=ReconType.Algebraic,
     optimizerType=OptimizerType.MLEM,
     numIterations=100,
-    isGPU=False  # Utiliser le CPU
+    isGPU=False  # Use CPU
 )
 
-# Exécuter la reconstruction
+# Run reconstruction
 recon.run(withTumor=True)
 
-# Récupérer les résultats
-reconstructed_image = recon.reconPhantom[-1]  # Dernière itération
-print(f"Forme de l'image reconstruite: {reconstructed_image.shape}")
+# Get results
+reconstructed_image = recon.reconPhantom[-1]  # Last iteration
+print(f"Reconstructed image shape: {reconstructed_image.shape}")
 ```
 
-#### Avec matrice creuse (recommandé pour les grands datasets)
+#### With Sparse Matrix (Recommended for Large Datasets)
 
 ```python
 from AOT_biomaps.AOT_Recon.SparseMatrixWrapper import create_sparse_matrix
 
-# Créer une matrice creuse (CSR ou SELL)
+# Create a sparse matrix (CSR or SELL)
 sparse_matrix = create_sparse_matrix(
     manip=experiment.AcousticFields,
-    matrix_type='SELL',  # ou 'CSR'
-    device='gpu'  # ou 'cpu'
+    matrix_type='SELL',  # or 'CSR'
+    device='gpu'  # or 'cpu'
 )
 
-# Allouer la matrice
+# Allocate the matrix
 sparse_matrix.allocate()
 
-# Utiliser la matrice creuse dans MLEM
+# Use sparse matrix in MLEM
 from AOT_biomaps.AOT_Recon.AOT_Optimizers.MLEM import MLEM_sparse
 
 result, indices = MLEM_sparse(
     SMatrix=sparse_matrix,
-    y=experiment.AcousticFields[0].field,  # Données de mesure
+    y=experiment.AcousticFields[0].field,  # Measurement data
     numIterations=50,
     isSavingEachIteration=True,
     withTumor=True,
@@ -171,62 +171,62 @@ result, indices = MLEM_sparse(
 )
 ```
 
-#### Paramètres avancés MLEM
+#### Advanced MLEM Parameters
 
 ```python
 recon = AlgebraicRecon(
     experiment=experiment,
     reconType=ReconType.Algebraic,
     optimizerType=OptimizerType.MLEM,
-    numIterations=200,           # Nombre d'itérations
-    isSavingEachIteration=True, # Sauvegarder chaque itération
-    max_saves=100,              # Nombre max de sauvegardes
-    denominator_threshold=1e-6, # Seuil pour éviter division par zéro
-    show_logs=True,             # Afficher la barre de progression
-    isGPU=True                  # Utiliser le GPU
+    numIterations=200,           # Number of iterations
+    isSavingEachIteration=True, # Save each iteration
+    max_saves=100,              # Max number of saves
+    denominator_threshold=1e-6, # Threshold to avoid division by zero
+    show_logs=True,             # Show progress bar
+    isGPU=True                  # Use GPU
 )
 ```
 
-### Reconstruction Analytique
+### Analytic Reconstruction
 
-La reconstruction analytique utilise des méthodes de rétroprojection filtrée pour une reconstruction rapide.
+Analytic reconstruction uses filtered backprojection methods for fast reconstruction.
 
 ```python
 from AOT_biomaps import AnalyticRecon
 from AOT_biomaps.AOT_Recon.ReconEnums import AnalyticType
 
-# Créer une reconstruction analytique
+# Create analytic reconstruction
 analytic_recon = AnalyticRecon(
     experiment=experiment,
-    analyticType=AnalyticType.iRADON,  # ou FBP (Filtered Back Projection)
-    Lc=0.01,  # Longueur de cohérence (pour iRADON)
+    analyticType=AnalyticType.iRADON,  # or FBP (Filtered Back Projection)
+    Lc=0.01,  # Coherence length (for iRADON)
     isGPU=True
 )
 
-# Exécuter la reconstruction
+# Run reconstruction
 analytic_recon.run(withTumor=True)
 
-# Récupérer le résultat
+# Get result
 reconstructed_image = analytic_recon.reconPhantom
 ```
 
-### Reconstruction Bayésienne (MAPEM)
+### Bayesian Reconstruction (MAPEM)
 
-**MAPEM (Maximum A Posteriori Expectation Maximization)** ajoute des informations a priori pour améliorer la reconstruction.
+**MAPEM (Maximum A Posteriori Expectation Maximization)** adds prior information to improve reconstruction.
 
 ```python
 from AOT_biomaps.AOT_Recon.AOT_Optimizers.MAPEM import MAPEM
 from AOT_biomaps.AOT_Recon.AOT_PotentialFunctions.Quadratic import Omega_QUADRATIC
 
-# Définir la fonction de potentiel (régularisation)
+# Define potential function (regularization)
 Omega = Omega_QUADRATIC
 
-# Exécuter MAPEM
+# Run MAPEM
 result, indices = MAPEM(
     SMatrix=sparse_matrix,
     y=experiment.AcousticFields[0].field,
     Omega=Omega_QUADRATIC,
-    beta=0.1,  # Paramètre de régularisation
+    beta=0.1,  # Regularization parameter
     numIterations=100,
     isSavingEachIteration=True,
     withTumor=True,
@@ -234,7 +234,7 @@ result, indices = MAPEM(
 )
 ```
 
-### Reconstruction par Moindres Carrés (LS)
+### Least Squares Reconstruction
 
 ```python
 from AOT_biomaps.AOT_Recon.AOT_Optimizers.LS import LS
@@ -243,16 +243,16 @@ result, indices = LS(
     SMatrix=sparse_matrix,
     y=experiment.AcousticFields[0].field,
     numIterations=100,
-    alpha=0.01,  # Paramètre de régularisation
+    alpha=0.01,  # Regularization parameter
     isSavingEachIteration=True,
     withTumor=True,
     device='gpu'
 )
 ```
 
-### Reconstruction Primal-Dual (PDHG)
+### Primal-Dual Reconstruction (PDHG)
 
-**PDHG (Primal-Dual Hybrid Gradient)** est efficace pour les problèmes avec régularisation TV (Total Variation).
+**PDHG (Primal-Dual Hybrid Gradient)** is effective for problems with TV (Total Variation) regularization.
 
 ```python
 from AOT_biomaps.AOT_Recon.AOT_Optimizers.PDHG import CP_TV
@@ -260,9 +260,9 @@ from AOT_biomaps.AOT_Recon.AOT_Optimizers.PDHG import CP_TV
 result, indices = CP_TV(
     SMatrix=sparse_matrix,
     y=experiment.AcousticFields[0].field,
-    alpha=0.01,    # Paramètre de régularisation L1
-    beta=1e-4,     # Paramètre de régularisation TV
-    theta=1.0,     # Paramètre de relaxation
+    alpha=0.01,    # L1 regularization parameter
+    beta=1e-4,     # TV regularization parameter
+    theta=1.0,     # Relaxation parameter
     numIterations=1000,
     isSavingEachIteration=True,
     withTumor=True,
@@ -270,38 +270,38 @@ result, indices = CP_TV(
 )
 ```
 
-## 🗃️ Utilisation des Matrices Creuses
+## 🗃️ Sparse Matrix Usage
 
-### Pourquoi utiliser des matrices creuses ?
+### Why Use Sparse Matrices?
 
-Les matrices creuses permettent de :
-- Réduire la consommation mémoire (jusqu'à 95% de réduction)
-- Accélérer les calculs (surtout sur GPU)
-- Traiter des datasets plus grands
+Sparse matrices allow:
+- Reduced memory consumption (up to 95% reduction)
+- Faster computations (especially on GPU)
+- Handling larger datasets
 
-### Comparaison des formats
+### Format Comparison
 
-| Format | Avantages | Inconvénients | Meilleur pour |
-|--------|-----------|---------------|---------------|
-| Dense | Simple à implémenter | Très gourmand en mémoire | Petits datasets |
-| CSR | Économique en mémoire | Accès aléatoire lent | CPU, datasets moyens |
-| SELL | Optimisé pour GPU | Construction plus complexe | GPU, grands datasets |
+| Format | Advantages | Disadvantages | Best For |
+|--------|-----------|---------------|----------|
+| Dense | Simple to implement | Very memory intensive | Small datasets |
+| CSR | Memory efficient | Slow random access | CPU, medium datasets |
+| SELL | GPU optimized | More complex construction | GPU, large datasets |
 
-### Création d'une matrice creuse
+### Creating a Sparse Matrix
 
 ```python
 from AOT_biomaps.AOT_Recon.SparseMatrixWrapper import create_sparse_matrix, SparseMatrix
 
-# Méthode 1: Utiliser la factory function
+# Method 1: Use factory function
 sparse_matrix = create_sparse_matrix(
     manip=experiment.AcousticFields,
-    matrix_type='SELL',  # ou 'CSR'
+    matrix_type='SELL',  # or 'CSR'
     device='gpu',
     block_rows=64,
     relative_threshold=0.3
 )
 
-# Méthode 2: Créer directement
+# Method 2: Create directly
 from AOT_biomaps.AOT_Recon.AOT_SparseSMatrix.SparseSMatrix_SELL import SparseSMatrix_SELL
 
 sell_matrix = SparseSMatrix_SELL(
@@ -310,157 +310,157 @@ sell_matrix = SparseSMatrix_SELL(
     slice_height=32
 )
 
-# Allouer et construire la matrice
+# Allocate and build the matrix
 sparse_matrix.allocate()
 
-# Utiliser la matrice
+# Use the matrix
 projection = sparse_matrix.projection(theta)  # Projection: q = A * theta
-backprojection = sparse_matrix.backprojection(e)  # Rétroprojection: c = A^T * e
+backprojection = sparse_matrix.backprojection(e)  # Backprojection: c = A^T * e
 ```
 
-### Paramètres de la matrice creuse
+### Sparse Matrix Parameters
 
 ```python
 sparse_matrix = create_sparse_matrix(
     manip=experiment.AcousticFields,
-    matrix_type='SELL',      # 'CSR' ou 'SELL'
-    device='gpu',           # 'cpu' ou 'gpu'
-    block_rows=64,          # Taille des blocs pour le traitement
-    relative_threshold=0.3, # Seuil pour considérer une valeur comme non-nulle
-    slice_height=32         # Hauteur des slices (pour SELL uniquement)
+    matrix_type='SELL',      # 'CSR' or 'SELL'
+    device='gpu',           # 'cpu' or 'gpu'
+    block_rows=64,          # Block size for processing
+    relative_threshold=0.3, # Threshold for considering a value as non-zero
+    slice_height=32         # Slice height (for SELL only)
 )
 ```
 
-### Gestion de la mémoire
+### Memory Management
 
 ```python
-# Libérer la mémoire GPU
+# Free GPU memory
 sparse_matrix.free()
 
-# Utiliser un context manager pour la gestion automatique
+# Use context manager for automatic management
 with create_sparse_matrix(manip, matrix_type='SELL', device='gpu') as sm:
-    # La matrice est automatiquement allouée
+    # Matrix is automatically allocated
     result = sm.projection(theta)
-    # La mémoire est libérée automatiquement à la sortie du bloc
+    # Memory is automatically freed on exit
 ```
 
-## 🔊 Simulation Acoustique
+## 🔊 Acoustic Simulation
 
-### Types d'ondes acoustiques
+### Acoustic Wave Types
 
-La librairie supporte plusieurs types d'ondes :
-- **PlaneWave**: Onde plane
-- **FocusedWave**: Onde focalisée
-- **StructuredWave**: Onde structurée
-- **IrregularWave**: Onde irrégulière
+The library supports several wave types:
+- **PlaneWave**: Plane wave
+- **FocusedWave**: Focused wave
+- **StructuredWave**: Structured wave
+- **IrregularWave**: Irregular wave
 
-### Création d'une onde plane
+### Creating a Plane Wave
 
 ```python
 from AOT_biomaps.AOT_Acoustic.PlaneWave import PlaneWave
 
-# Créer une onde plane
+# Create a plane wave
 plane_wave = PlaneWave(
-    frequency=1e6,      # Fréquence en Hz
-    direction=[1, 0],   # Direction de propagation
+    frequency=1e6,      # Frequency in Hz
+    direction=[1, 0],   # Propagation direction [dz, dx]
     amplitude=1.0,      # Amplitude
-    phase=0.0,          # Phase initiale
-    sampling_rate=1e7   # Fréquence d'échantillonnage
+    phase=0.0,          # Initial phase
+    sampling_rate=1e7   # Sampling rate in Hz
 )
 
-# Générer le champ acoustique
+# Generate the acoustic field
 field = plane_wave.generate_field(
-    size=(100, 100, 100),  # Taille du champ (T, Z, X)
-    speed_of_sound=1500   # Vitesse du son en m/s
+    size=(100, 100, 100),  # Field size (T, Z, X)
+    speed_of_sound=1500   # Speed of sound in m/s
 )
 ```
 
-### Création d'une onde focalisée
+### Creating a Focused Wave
 
 ```python
 from AOT_biomaps.AOT_Acoustic.FocusedWave import FocusedWave
 
-# Créer une onde focalisée
+# Create a focused wave
 focused_wave = FocusedWave(
     frequency=1e6,
-    focal_point=[50, 50, 50],  # Point focal (Z, X, Y)
+    focal_point=[50, 50, 50],  # Focal point [Z, X, Y]
     amplitude=1.0,
-    radius=20,                 # Rayon du transducteur
+    radius=20,                 # Transducer radius
     sampling_rate=1e7
 )
 
-# Générer le champ
+# Generate the field
 field = focused_wave.generate_field(
     size=(100, 100, 100),
     speed_of_sound=1500
 )
 ```
 
-## 📊 Visualisation des Résultats
+## 📊 Result Visualization
 
-### Visualisation de base avec Matplotlib
+### Basic Visualization with Matplotlib
 
 ```python
 import matplotlib.pyplot as plt
 
-# Visualiser l'image optique originale
+# Visualize the original optical image
 plt.figure(figsize=(10, 5))
 plt.subplot(1, 2, 1)
 plt.imshow(experiment.OpticImage.phantom, cmap='hot')
-plt.title('Image Optique (Phantom)')
+plt.title('Optical Image (Phantom)')
 plt.colorbar()
 
-# Visualiser l'image reconstruite
+# Visualize the reconstructed image
 plt.subplot(1, 2, 2)
 plt.imshow(recon.reconPhantom[-1], cmap='hot')
-plt.title('Image Reconstruite')
+plt.title('Reconstructed Image')
 plt.colorbar()
 
 plt.tight_layout()
 plt.show()
 ```
 
-### Visualisation avec la méthode show()
+### Visualization with show() Method
 
 ```python
-# La classe Recon a une méthode show() intégrée
+# The Recon class has a built-in show() method
 recon.show(withTumor=True, savePath='results/')
 ```
 
-### Visualisation des itérations
+### Iteration Visualization
 
 ```python
-# Visualiser plusieurs itérations
+# Visualize multiple iterations
 fig, axes = plt.subplots(2, 3, figsize=(15, 8))
 for i, ax in enumerate(axes.flat):
-    iteration = i * 10  # Afficher toutes les 10 itérations
+    iteration = i * 10  # Show every 10th iteration
     if iteration < len(recon.reconPhantom):
         ax.imshow(recon.reconPhantom[iteration], cmap='hot')
-        ax.set_title(f'Itération {iteration}')
+        ax.set_title(f'Iteration {iteration}')
         ax.axis('off')
 plt.tight_layout()
 plt.show()
 ```
 
-### Calcul des métriques
+### Metrics Calculation
 
 ```python
-# Calculer le MSE (Mean Squared Error)
+# Calculate MSE (Mean Squared Error)
 recon.calculateMSE(withTumor=True)
 print(f"MSE: {recon.MSE}")
 
-# Calculer le SSIM (Structural Similarity Index)
+# Calculate SSIM (Structural Similarity Index)
 recon.calculateSSIM(withTumor=True)
 print(f"SSIM: {recon.SSIM}")
 
-# Calculer le CRC (Contrast Recovery Coefficient)
+# Calculate CRC (Contrast Recovery Coefficient)
 recon.calculateCRC(use_ROI=True)
 print(f"CRC: {recon.CRC}")
 ```
 
-## 📝 Exemples Complets
+## 📝 Complete Examples
 
-### Exemple 1: Reconstruction MLEM complète
+### Example 1: Full MLEM Reconstruction
 
 ```python
 import numpy as np
@@ -472,20 +472,20 @@ from AOT_biomaps.Config import config
 config.set_process('gpu')
 config.set_verbose(True)
 
-# Générer des données de test
+# Generate test data
 T, Z, X, N = 10, 64, 64, 32
 optic_image = np.random.rand(Z, X).astype(np.float32)
 acoustic_fields = [type('AcousticField', (), {
     'field': np.random.rand(T, Z, X).astype(np.float32)
 })() for _ in range(N)]
 
-# Créer l'expérience
+# Create experiment
 experiment = Tomography(
     optic_image=optic_image,
     acoustic_fields=acoustic_fields
 )
 
-# Configurer et exécuter MLEM
+# Setup and run MLEM
 recon = AlgebraicRecon(
     experiment=experiment,
     reconType=ReconType.Algebraic,
@@ -497,28 +497,28 @@ recon = AlgebraicRecon(
 
 recon.run(withTumor=True)
 
-# Afficher les résultats
-print(f"Nombre d'itérations: {len(recon.reconPhantom)}")
-print(f"Forme des images: {recon.reconPhantom[0].shape}")
+# Display results
+print(f"Number of iterations: {len(recon.reconPhantom)}")
+print(f"Image shape: {recon.reconPhantom[0].shape}")
 
-# Calculer les métriques
+# Calculate metrics
 recon.calculateMSE(withTumor=True)
 recon.calculateSSIM(withTumor=True)
-print(f"MSE final: {recon.MSE[-1] if isinstance(recon.MSE, list) else recon.MSE}")
-print(f"SSIM final: {recon.SSIM[-1] if isinstance(recon.SSIM, list) else recon.SSIM}")
+print(f"Final MSE: {recon.MSE[-1] if isinstance(recon.MSE, list) else recon.MSE}")
+print(f"Final SSIM: {recon.SSIM[-1] if isinstance(recon.SSIM, list) else recon.SSIM}")
 
-# Sauvegarder les résultats
+# Save results
 recon.save(withTumor=True, saveDir='results/')
 ```
 
-### Exemple 2: Comparaison CPU vs GPU
+### Example 2: CPU vs GPU Comparison
 
 ```python
 import time
 from AOT_biomaps.AOT_Recon.SparseMatrixWrapper import create_sparse_matrix
 from AOT_biomaps.AOT_Recon.AOT_Optimizers.MLEM import MLEM_sparse
 
-# Créer une matrice creuse
+# Create sparse matrices
 sparse_matrix_cpu = create_sparse_matrix(
     manip=experiment.AcousticFields,
     matrix_type='SELL',
@@ -533,7 +533,7 @@ sparse_matrix_gpu = create_sparse_matrix(
 )
 sparse_matrix_gpu.allocate()
 
-# Mesurer le temps CPU
+# Measure CPU time
 start = time.time()
 result_cpu, _ = MLEM_sparse(
     SMatrix=sparse_matrix_cpu,
@@ -544,7 +544,7 @@ result_cpu, _ = MLEM_sparse(
 )
 cpu_time = time.time() - start
 
-# Mesurer le temps GPU
+# Measure GPU time
 start = time.time()
 result_gpu, _ = MLEM_sparse(
     SMatrix=sparse_matrix_gpu,
@@ -555,18 +555,18 @@ result_gpu, _ = MLEM_sparse(
 )
 gpu_time = time.time() - start
 
-print(f"Temps CPU: {cpu_time:.3f}s")
-print(f"Temps GPU: {gpu_time:.3f}s")
-print(f"Accélération: {cpu_time/gpu_time:.1f}x")
+print(f"CPU time: {cpu_time:.3f}s")
+print(f"GPU time: {gpu_time:.3f}s")
+print(f"Speedup: {cpu_time/gpu_time:.1f}x")
 ```
 
-### Exemple 3: Reconstruction avec différentes méthodes
+### Example 3: Reconstruction with Different Methods
 
 ```python
 from AOT_biomaps.AOT_Recon.AOT_Optimizers import MLEM, LS, PDHG
 from AOT_biomaps.AOT_Recon.SparseMatrixWrapper import create_sparse_matrix
 
-# Créer une matrice creuse
+# Create sparse matrix
 sparse_matrix = create_sparse_matrix(
     manip=experiment.AcousticFields,
     matrix_type='SELL',
@@ -574,7 +574,7 @@ sparse_matrix = create_sparse_matrix(
 )
 sparse_matrix.allocate()
 
-# Tester différentes méthodes
+# Test different methods
 methods = {
     'MLEM': MLEM.MLEM_sparse,
     'LS': LS.LS,
@@ -601,11 +601,11 @@ for name, method in methods.items():
                 show_logs=False
             )
         results[name] = result
-        print(f"{name}: Succès")
+        print(f"{name}: Success")
     except Exception as e:
-        print(f"{name}: Échec - {e}")
+        print(f"{name}: Failed - {e}")
 
-# Comparer les résultats
+# Compare results
 import matplotlib.pyplot as plt
 fig, axes = plt.subplots(1, len(results), figsize=(15, 5))
 for (name, result), ax in zip(results.items(), axes):
@@ -616,63 +616,63 @@ plt.tight_layout()
 plt.show()
 ```
 
-## ✅ Bonnes Pratiques
+## ✅ Best Practices
 
-### 1. Gestion de la mémoire
+### 1. Memory Management
 
 ```python
-# Toujours libérer la mémoire GPU après utilisation
+# Always free GPU memory after use
 sparse_matrix.free()
 
-# Utiliser des context managers pour une gestion automatique
+# Use context managers for automatic management
 with create_sparse_matrix(...) as sm:
-    # Travailler avec la matrice
+    # Work with the matrix
     result = sm.projection(theta)
-# La mémoire est libérée automatiquement
+# Memory is automatically freed
 ```
 
-### 2. Choix du device
+### 2. Device Selection
 
 ```python
-# Vérifier la disponibilité du GPU
+# Check GPU availability
 from AOT_biomaps.AOT_Recon.AOT_Kernels import check_cuda_available
 
 if check_cuda_available():
     device = 'gpu'
-    print("Utilisation du GPU")
+    print("Using GPU")
 else:
     device = 'cpu'
-    print("Utilisation du CPU")
+    print("Using CPU")
 ```
 
-### 3. Sauvegarde des résultats
+### 3. Saving Results
 
 ```python
-# Sauvegarder régulièrement pendant les longues reconstructions
+# Save regularly during long reconstructions
 recon = AlgebraicRecon(
     experiment=experiment,
     numIterations=1000,
     isSavingEachIteration=True,
-    max_saves=100  # Sauvegarder 100 itérations
+    max_saves=100  # Save 100 iterations
 )
 
-# Sauvegarder dans un dossier dédié
-recon.save(withTumor=True, saveDir='results/experience_001/')
+# Save to a dedicated folder
+recon.save(withTumor=True, saveDir='results/experiment_001/')
 ```
 
-### 4. Reproductibilité
+### 4. Reproducibility
 
 ```python
-# Fixer la graine aléatoire pour la reproductibilité
+# Set random seed for reproducibility
 import numpy as np
 np.random.seed(42)
 
-# Utiliser la même graine pour toutes les opérations
+# Use the same seed for all operations
 from AOT_biomaps.Config import config
 config.set_seed(42)
 ```
 
-### 5. Gestion des erreurs
+### 5. Error Handling
 
 ```python
 try:
@@ -680,15 +680,15 @@ try:
     recon.calculateMSE()
     recon.calculateSSIM()
 except Exception as e:
-    print(f"Erreur lors de la reconstruction: {e}")
-    # Sauvegarder l'état avant l'erreur
+    print(f"Error during reconstruction: {e}")
+    # Save state before error
     if hasattr(recon, 'reconPhantom'):
         np.save('recon_error.npy', recon.reconPhantom)
 ```
 
-## 📚 Ressources supplémentaires
+## 📚 Additional Resources
 
-- [Installation](INSTALLATION.md) - Guide d'installation
-- [Référence API](API_REFERENCE.md) - Documentation technique complète
-- [Architecture](ARCHITECTURE.md) - Conception de la librairie
-- [Contribution](CONTRIBUTING.md) - Comment contribuer au projet
+- [Installation](INSTALLATION.md) - Installation guide
+- [API Reference](API_REFERENCE.md) - Technical API documentation
+- [Architecture](ARCHITECTURE.md) - Library design
+- [Contributing](CONTRIBUTING.md) - How to contribute

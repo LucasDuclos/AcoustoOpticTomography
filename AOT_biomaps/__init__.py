@@ -50,7 +50,7 @@ from .AOT_Recon.AOT_PotentialFunctions.RelativeDifferences import *
 from .Config import config
 from .Settings import *
 
-__version__ = '2.9.517'
+__version__ = '2.9.519'
 __process__ = config.get_process()
 
 def initialize(process=None):

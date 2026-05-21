@@ -1,169 +1,169 @@
 # Installation Guide - AOT_biomaps
 
-Ce guide vous explique comment installer et configurer la librairie AOT_biomaps pour la Tomographie Acousto-Optique.
+This guide explains how to install and configure the AOT_biomaps library for Acousto-Optic Tomography.
 
-## 📋 Prérequis
+## 📋 Prerequisites
 
-### Système d'exploitation
-- Windows 10/11 (recommandé)
+### Operating System
+- Windows 10/11 (recommended)
 - Linux (Ubuntu 20.04+, CentOS 7+)
 - macOS (10.15+)
 
 ### Python
-- **Version requise**: Python ≥ 3.8
-- **Recommandé**: Python 3.10 ou 3.11
+- **Required version**: Python ≥ 3.8
+- **Recommended**: Python 3.10 or 3.11
 
-Vérifiez votre version de Python :
+Check your Python version:
 ```bash
 python --version
-# ou
+# or
 python3 --version
 ```
 
 ## 🎯 Installation
 
-### Méthode 1: Installation en mode développement (recommandé)
+### Method 1: Development Installation (Recommended)
 
-Cette méthode est idéale si vous souhaitez contribuer ou modifier le code.
+This method is ideal if you want to contribute or modify the code.
 
 ```bash
-# 1. Cloner le dépôt
+# 1. Clone the repository
 git clone https://github.com/LucasDuclos/AcoustoOpticTomography.git
 cd AcoustoOpticTomography
 
-# 2. Créer un environnement virtuel (optionnel mais recommandé)
+# 2. Create a virtual environment (optional but recommended)
 python -m venv venv
 
-# Sur Windows:
+# On Windows:
 venv\Scripts\activate
 
-# Sur Linux/macOS:
+# On Linux/macOS:
 source venv/bin/activate
 
-# 3. Installer les dépendances
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Installer la librairie en mode développement
+# 4. Install the library in development mode
 pip install -e .
 ```
 
-### Méthode 2: Installation via pip (bientôt disponible)
+### Method 2: pip Installation (Coming Soon)
 
 ```bash
 pip install aot-biomaps
 ```
 
-### Méthode 3: Installation manuelle
+### Method 3: Manual Installation
 
 ```bash
-# 1. Cloner le dépôt
+# 1. Clone the repository
 git clone https://github.com/LucasDuclos/AcoustoOpticTomography.git
 cd AcoustoOpticTomography
 
-# 2. Installer les dépendances de base
+# 2. Install core dependencies
 pip install numpy
 
-# 3. Ajouter le chemin au PYTHONPATH
-# Sur Windows (PowerShell):
+# 3. Add to PYTHONPATH
+# On Windows (PowerShell):
 $env:PYTHONPATH = ".;$env:PYTHONPATH"
 
-# Sur Linux/macOS:
+# On Linux/macOS:
 export PYTHONPATH=".:$PYTHONPATH"
 ```
 
-## 📦 Dépendances
+## 📦 Dependencies
 
-### Dépendances principales (requises)
+### Core Dependencies (Required)
 
 | Package | Version | Description |
 |---------|---------|-------------|
-| numpy | ≥ 1.20 | Calcul numérique de base |
+| numpy | ≥ 1.20 | Core numerical computing |
 
-### Dépendances optionnelles (recommandées)
+### Optional Dependencies (Recommended)
 
 | Package | Version | Description | Installation |
 |---------|---------|-------------|-------------|
-| cupy | ≥ 10.0 | Accélération GPU | `pip install cupy-cuda11x` |
-| matplotlib | ≥ 3.0 | Visualisation | `pip install matplotlib` |
-| tqdm | ≥ 4.0 | Barres de progression | `pip install tqdm` |
-| scipy | ≥ 1.7 | Traitement du signal | `pip install scipy` |
-| kwave | - | Simulation acoustique | Voir ci-dessous |
+| cupy | ≥ 10.0 | GPU acceleration | `pip install cupy-cuda11x` |
+| matplotlib | ≥ 3.0 | Visualization | `pip install matplotlib` |
+| tqdm | ≥ 4.0 | Progress bars | `pip install tqdm` |
+| scipy | ≥ 1.7 | Signal processing | `pip install scipy` |
+| kwave | - | Acoustic simulation | See below |
 
-### Installation de CuPy
+### CuPy Installation
 
-CuPy nécessite CUDA et cuDNN. Choisissez la version appropriée pour votre GPU :
+CuPy requires CUDA and cuDNN. Choose the appropriate version for your GPU:
 
 ```bash
-# Pour CUDA 11.x
+# For CUDA 11.x
 pip install cupy-cuda11x
 
-# Pour CUDA 12.x
+# For CUDA 12.x
 pip install cupy-cuda12x
 
-# Version CPU-only (pour le développement)
+# CPU-only version (for development)
 pip install cupy
 ```
 
-Vérifiez l'installation :
+Verify installation:
 ```python
 import cupy as cp
-print(cp.cuda.runtime.getVersion())  # Affiche la version CUDA
+print(cp.cuda.runtime.getVersion())  # Should print CUDA version
 ```
 
-### Installation de kWave (optionnel)
+### kWave Installation (Optional)
 
-kWave est utilisé pour la simulation acoustique. Il nécessite MATLAB ou est disponible en version Python :
+kWave is used for acoustic simulation. It requires MATLAB or is available as a Python version:
 
 ```bash
-# Version Python (expérimentale)
+# Python version (experimental)
 pip install kwave
 
-# Ou utiliser MATLAB avec le toolbox k-Wave
-# Voir: https://www.k-wave.org/
+# Or use MATLAB with k-Wave toolbox
+# See: https://www.k-wave.org/
 ```
 
-## 🔧 Configuration
+## ⚙️ Configuration
 
-### Fichier de configuration
+### Configuration File
 
-La librairie utilise un fichier `Config.py` pour la configuration globale. Vous pouvez modifier les paramètres par défaut :
+The library uses a `Config.py` file for global configuration. You can modify default parameters:
 
 ```python
 from AOT_biomaps.Config import config
 
-# Définir le device par défaut
-config.set_process('gpu')  # ou 'cpu'
+# Set default device
+config.set_process('gpu')  # or 'cpu'
 
-# Activer/désactiver le mode multi-CPU
+# Enable/disable multi-CPU mode
 config.set_multi_cpu(True)
 ```
 
-### Variables d'environnement
+### Environment Variables
 
-| Variable | Description | Valeur par défaut |
-|----------|-------------|-------------------|
-| `AOT_DEVICE` | Device par défaut (cpu/gpu) | cpu |
-| `AOT_MULTI_CPU` | Activer le multi-CPU | False |
-| `AOT_VERBOSE` | Mode verbeux | False |
+| Variable | Description | Default Value |
+|----------|-------------|---------------|
+| `AOT_DEVICE` | Default device (cpu/gpu) | cpu |
+| `AOT_MULTI_CPU` | Enable multi-CPU | False |
+| `AOT_VERBOSE` | Verbose mode | False |
 
-Exemple :
+Example:
 ```bash
-# Sur Windows
+# On Windows
 export AOT_DEVICE=gpu
 
-# Sur Linux/macOS
+# On Linux/macOS
 export AOT_DEVICE=gpu
 ```
 
-## ⚡ Vérification de l'installation
+## ⚡ Installation Verification
 
-Exécutez le script de test pour vérifier que tout fonctionne :
+Run the test script to verify everything works:
 
 ```bash
 python AOT_biomaps/AOT_Recon/test_kernels.py
 ```
 
-Vous devriez voir :
+You should see:
 ```
 Testing AOT_biomaps kernel and sparse matrix implementations...
 ======================================================================
@@ -188,55 +188,55 @@ Testing AOT_biomaps kernel and sparse matrix implementations...
 All tests completed successfully!
 ```
 
-## 🛠️ Dépannage
+## 🛠️ Troubleshooting
 
-### Erreur: ModuleNotFoundError: No module named 'cupy'
+### Error: ModuleNotFoundError: No module named 'cupy'
 
-**Solution**: Installez CuPy ou désactivez l'accélération GPU :
+**Solution**: Install CuPy or disable GPU acceleration:
 ```bash
-pip install cupy-cuda11x  # ou la version appropriée
+pip install cupy-cuda11x  # or appropriate version
 ```
 
-Ou utilisez uniquement le CPU :
+Or use CPU only:
 ```python
 from AOT_biomaps.Config import config
 config.set_process('cpu')
 ```
 
-### Erreur: CUDA not available
+### Error: CUDA not available
 
-**Solution**: Vérifiez que CUDA est correctement installé :
+**Solution**: Verify CUDA is properly installed:
 ```bash
-nvcc --version  # Vérifie CUDA
-nvidia-smi     # Vérifie les pilotes NVIDIA
+nvcc --version  # Check CUDA
+nvidia-smi     # Check NVIDIA drivers
 ```
 
-### Erreur: kWave is not available
+### Error: kWave is not available
 
-**Solution**: Installez kWave ou désactivez les fonctionnalités acoustiques :
+**Solution**: Install kWave or disable acoustic features:
 ```bash
 pip install kwave
 ```
 
-Ou ignorez simplement l'avertissement - les fonctionnalités de reconstruction fonctionneront sans kWave.
+Or simply ignore the warning - reconstruction features will work without kWave.
 
-### Problèmes de performance
+### Performance Issues
 
-Si les performances sont lentes :
-1. Vérifiez que CuPy utilise bien le GPU :
+If performance is slow:
+1. Verify CuPy is using GPU:
    ```python
    import cupy as cp
-   print(cp.cuda.runtime.getDeviceCount())  # Doit afficher ≥ 1
+   print(cp.cuda.runtime.getDeviceCount())  # Should be ≥ 1
    ```
-2. Assurez-vous que la matrice creuse est utilisée :
+2. Ensure sparse matrix is being used:
    ```python
    from AOT_biomaps.AOT_Recon.SparseMatrixWrapper import create_sparse_matrix
-   # Utilisez matrix_type='SELL' pour de meilleures performances GPU
+   # Use matrix_type='SELL' for better GPU performance
    ```
 
-## 📚 Prochaines étapes
+## 📚 Next Steps
 
-Une fois l'installation terminée, consultez :
-- [USAGE.md](USAGE.md) - Guide d'utilisation complet
-- [API_REFERENCE.md](API_REFERENCE.md) - Référence de l'API
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Architecture de la librairie
+Once installation is complete, check out:
+- [USAGE.md](USAGE.md) - Complete usage guide
+- [API_REFERENCE.md](API_REFERENCE.md) - Technical API reference
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Library architecture
