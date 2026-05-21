@@ -10,7 +10,6 @@ Structure:
 - Consistent API across all operations
 """
 
-import os
 import warnings
 import numpy as np
 
@@ -23,20 +22,8 @@ except ImportError:
     cp = None
     CUPY_AVAILABLE = False
 
-# Check for PyCUDA availability (for custom kernels)
-try:
-    import pycuda.autoinit
-    import pycuda.driver as drv
-    from pycuda.compiler import SourceModule
-    PYCUDA_AVAILABLE = True
-except ImportError:
-    PYCUDA_AVAILABLE = False
 
-# Path to the CUDA kernels file
-KERNELS_FILE = os.path.join(os.path.dirname(__file__), "AOT_biomaps_kernels.cu")
 
-# Cache for compiled kernels
-_kernel_cache = {}
 
 
 def _is_cupy_array(arr):
@@ -58,35 +45,6 @@ def _as_numpy_array(arr):
     if CUPY_AVAILABLE and _is_cupy_array(arr):
         return cp.asnumpy(arr)
     return arr
-
-
-def _get_kernel(name):
-    """
-    Get a compiled CUDA kernel by name.
-    Compiles the kernel on first use and caches it.
-    
-    Args:
-        name: Name of the kernel function
-        
-    Returns:
-        PyCUDA kernel object or None if not available
-    """
-    if not PYCUDA_AVAILABLE:
-        return None
-    
-    if name not in _kernel_cache:
-        try:
-            with open(KERNELS_FILE, 'r') as f:
-                kernel_source = f.read()
-            
-            # Compile the kernel
-            mod = SourceModule(kernel_source, options=["-O3"])
-            _kernel_cache[name] = mod.get_function(name)
-        except Exception as e:
-            warnings.warn(f"Failed to compile kernel {name}: {e}")
-            return None
-    
-    return _kernel_cache[name]
 
 
 # ============================================================================
@@ -731,11 +689,4 @@ def check_cuda_available():
     return CUPY_AVAILABLE
 
 
-def check_pycuda_available():
-    """
-    Check if PyCUDA is available.
-    
-    Returns:
-        True if PyCUDA is available, False otherwise
-    """
-    return PYCUDA_AVAILABLE
+

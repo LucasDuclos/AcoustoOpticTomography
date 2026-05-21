@@ -84,11 +84,10 @@ extras_require = {
     'all': OPTIONAL_DEPENDENCIES['all'],
 }
 
-# Package data - include CUDA kernels
+# Package data - include CUDA source file for compilation with CuPy
 package_data = {
     'AOT_biomaps': [
-        'AOT_Recon/AOT_biomaps_kernels.cubin',
-        'AOT_Recon/AOT_biomaps_kernels.ptx',
+        'AOT_Recon/AOT_biomaps_kernels.cu',
     ],
 }
 
@@ -101,7 +100,7 @@ entry_points = {
 
 setup(
     name='aot-biomaps',
-    version='2.9.519',
+    version='2.9.520',
     packages=find_packages(),
     package_dir={'': '.'},  # Look for packages in current directory
     include_package_data=True,
