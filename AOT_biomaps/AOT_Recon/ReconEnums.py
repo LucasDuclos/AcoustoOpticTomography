@@ -340,6 +340,15 @@ class PotentialType(Enum):
     Reference: Nuyts et al, IEEE Trans. Nucl. Sci., vol. 49, pp. 56-60, 2002.
     """
 
+    TV = 'TV'
+    """
+    Total Variation potential:
+    p(u, v) = |u - v| (anisotropic) or sqrt((u-v)^2 + (u-w)^2) (isotropic)
+
+    Non-differentiable at zero. Returns subgradient.
+    Not compatible with LBFGS (requires differentiable potentials).
+    """
+
 class ProcessType(Enum):
     CASToR = 'CASToR'
     PYTHON = 'PYTHON'

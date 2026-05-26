@@ -4,7 +4,7 @@ from AOT_biomaps.Config import config
 from ._mainRecon import Recon
 from .ReconEnums import ReconType, OptimizerType, ProcessType, SMatrixType
 from .AOT_Optimizers import MLEM, LS
-from .AOT_SparseSMatrix import SparseSMatrix_CSR, SparseSMatrix_SELL
+from .AOT_SMatrix import SMatrix_CSR, SMatrix_SELL
 
 import os
 import subprocess

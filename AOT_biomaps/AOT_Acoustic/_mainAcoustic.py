@@ -1,27 +1,29 @@
 import copy
+import AOT_biomaps
 from AOT_biomaps.Config import config
 from AOT_biomaps.AOT_Acoustic.AcousticTools import calculate_envelope_squared, loadmat, reshape_field
 from AOT_biomaps.AOT_Acoustic.AcousticEnums import TypeSim, Dim, FormatSave, WaveType
 from AOT_biomaps.AOT_Medium import Medium
 
+
 import os
 import numpy as np
 from scipy.io import loadmat as scipy_loadmat
 
-# Optional matplotlib imports for visualization
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib.animation as animation
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
-
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import h5py
 from tempfile import gettempdir
 from abc import ABC, abstractmethod
 import logging
 import warnings
+import sys
+import platform
 
 # Optional kwave imports - will be None if kwave is not installed
+KWAVE_AVAILABLE = False
+KWAVE_BINARIES_AVAILABLE = False
+
 try:
     from kwave.utils.signals import tone_burst
     from kwave.ksource import kSource
@@ -31,6 +33,48 @@ try:
     from kwave.options.simulation_options import SimulationOptions
     from kwave.options.simulation_execution_options import SimulationExecutionOptions
     KWAVE_AVAILABLE = True
+    
+    # Check if kwave binaries are available and executable
+    import subprocess
+    import sys
+    try:
+        # Try to check if the CUDA binary exists and is executable
+        import kwave
+        bin_path = os.path.join(os.path.dirname(kwave.__file__), 'bin')
+        if sys.platform.startswith('linux'):
+            cuda_bin = os.path.join(bin_path, 'linux', 'kspaceFirstOrder-CUDA')
+        elif sys.platform == 'darwin':
+            cuda_bin = os.path.join(bin_path, 'mac', 'kspaceFirstOrder-CUDA')
+        elif sys.platform == 'win32':
+            cuda_bin = os.path.join(bin_path, 'windows', 'kspaceFirstOrder-CUDA.exe')
+        else:
+            cuda_bin = None
+        
+        if cuda_bin and os.path.exists(cuda_bin):
+            # Try to check if we can execute it (this will fail if dependencies are missing)
+            result = subprocess.run([cuda_bin, '-h'], 
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  timeout=5)
+            KWAVE_BINARIES_AVAILABLE = (result.returncode == 0)
+        else:
+            KWAVE_BINARIES_AVAILABLE = False
+    except Exception:
+        KWAVE_BINARIES_AVAILABLE = False
+    
+    if not KWAVE_BINARIES_AVAILABLE:
+        system = platform.system().lower()
+        message = "kWave binaries are not available or cannot be executed. Some acoustic simulation features will be disabled."
+
+        if system == "linux":
+            message += " On Linux, you may need to install: libaec0 libaec-dev libfftw3-dev"
+        elif system == "windows":
+            message += " On Windows, ensure Visual C++ Redistributable is installed."
+        else:
+            message += " Check system dependencies for kWave."
+
+        print(message, file=sys.stderr)  # Clean output without file path
+        KWAVE_AVAILABLE = False
+            
 except ImportError:
     KWAVE_AVAILABLE = False
     warnings.warn("kWave is not available. Some acoustic simulation features will be disabled.", UserWarning)
@@ -78,7 +122,7 @@ class AcousticField(ABC):
         self.medium = medium
         self.params = params
         if self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
-            self._generate_burst_signal()
+            self.generate_burst_signal()
         if self.params.acoustic["dim"] == Dim.D3 and self.params.general["Yrange"] is None:
             raise ValueError("Yrange must be provided for 3D fields.")
             
@@ -203,16 +247,13 @@ class AcousticField(ABC):
 
     ## DISPLAY METHODS ##
 
-    def plot_burst_signal(self):
+    def plot_burst_signal(self, figsize=(4,3)):
         """
         Plot the burst signal used for generating the acoustic field.
         """
-        if not MATPLOTLIB_AVAILABLE:
-            warnings.warn("matplotlib is not available. Cannot plot burst signal.", UserWarning)
-            return
         try:
             time2plot = np.arange(0, len(self.burst)) / self.params.acoustic['f_AQ'] * 1000000  # Convert to microseconds
-            plt.figure(figsize=(8, 8))
+            plt.figure(figsize=figsize)
             plt.plot(time2plot, self.burst)
             plt.title('Excitation burst signal')
             plt.xlabel('Time (µs)')
@@ -223,7 +264,7 @@ class AcousticField(ABC):
             print(f"Error in plot_burst_signal method: {e}")
             raise
 
-    def animated_plot_AcousticField(self, desired_duration_ms = 5000, save_dir=None):
+    def animated_plot_AcousticField(self, desired_duration_ms = 5000, save_dir=None,figsize=(4,3)):
         """
         Plot synchronized animations of A_matrix slices for selected angles.
 
@@ -234,9 +275,6 @@ class AcousticField(ABC):
         Returns:
             ani: Matplotlib FuncAnimation object.
         """
-        if not MATPLOTLIB_AVAILABLE:
-            warnings.warn("matplotlib is not available. Cannot create animation.", UserWarning)
-            return None
         try:
 
             maxF = np.max(self.field[:,20:,:])
@@ -248,15 +286,15 @@ class AcousticField(ABC):
                 os.makedirs(save_dir, exist_ok=True)
 
             # Create a figure and axis
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=figsize)
 
             # Set main title
             if self.waveType.value == WaveType.FocusedWave.value:
-                fig.suptitle("[System Matrix Animation] Focused Wave", fontsize=12, y=0.98)
+                fig.suptitle("[System Matrix Animation] Focused Wave", y=0.98)
             elif self.waveType.value == WaveType.PlaneWave.value:
-                fig.suptitle(f"[System Matrix Animation] Plane Wave | Angles {self.angle}°", fontsize=12, y=0.98)
+                fig.suptitle(f"[System Matrix Animation] Plane Wave | Angles {self.angle}°", y=0.98)
             elif self.waveType.value == WaveType.StructuredWave.value:
-                fig.suptitle(f"[System Matrix Animation] Structured Wave | Pattern structure: {self.pattern.activeList} | Angles {self.angle}°", fontsize=12, y=0.98)
+                fig.suptitle(f"[System Matrix Animation] Structured Wave | Pattern structure: {self.pattern.activeList} | Angles {self.angle}°", y=0.98)
             else:
 
                 raise ValueError("Invalid wave type. Supported types are: FocusedWave, PlaneWave, StructuredWave.")
@@ -271,14 +309,14 @@ class AcousticField(ABC):
                 cmap='jet',
                 animated=True
             )
-            ax.set_title(f"t = 0 ms", fontsize=10)
-            ax.set_xlabel("x (mm)", fontsize=8)
-            ax.set_ylabel("z (mm)", fontsize=8)
+            ax.set_title(f"t = 0 ms")
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("z (mm)")
 
             # Unified update function for all subplots
             def update(frame):
                 im.set_data(self.field[frame, :, :])
-                ax.set_title(f"t = {frame / self.params.acoustic['f_AQ'] * 1000:.2f} ms", fontsize=10)
+                ax.set_title(f"t = {frame / self.params.acoustic['f_AQ'] * 1000:.2f} ms")
                 return [im]  # Return a list of artists that were modified
 
             interval = desired_duration_ms / self.field.shape[0]
@@ -314,7 +352,7 @@ class AcousticField(ABC):
             print(f"Error creating animation: {e}")
             return None
 
-    def show(self, use_dB=False, reference=1e6,Vmax=None):
+    def show(self, use_dB=False, reference=1e6,Vmax=None, figsize=(4,3)):
         """
         Display the maximum intensity projection of the acoustic field envelope.
 
@@ -322,9 +360,6 @@ class AcousticField(ABC):
         - use_dB (bool): If True, display in dB relative to the reference pressure.
         - reference (float): Reference pressure in Pa for dB calculation (default: 1 MPa).
         """
-        if not MATPLOTLIB_AVAILABLE:
-            warnings.warn("matplotlib is not available. Cannot display acoustic field.", UserWarning)
-            return
         try:
             if self.field is None:
                 raise ValueError("Field data is not available. Please generate or load the field first.")
@@ -354,7 +389,7 @@ class AcousticField(ABC):
                 else:
                     vmax = 0.85*np.max(envelope_amplitude_mpa)
 
-            plt.figure(figsize=(10, 6))
+            plt.figure(figsize=figsize)
             plt.imshow(data_to_show.max(axis=0),
                     extent=(self.params.general['Xrange'][0] * 1000, self.params.general['Xrange'][1] * 1000,
                             self.params.general['Zrange'][1] * 1000, self.params.general['Zrange'][0] * 1000),
@@ -374,7 +409,7 @@ class AcousticField(ABC):
     def _generate_acoustic_field_SIMPLE_SIM(self, show_log=False):
         pass
 
-    def _generate_burst_signal(self):
+    def generate_burst_signal(self):
         if self.params.acoustic['typeSim'] == TypeSim.FIELD2.value:
             raise NotImplementedError("FIELD2 simulation is not implemented yet.")
         elif self.params.acoustic['typeSim'] == TypeSim.KWAVE.value:
@@ -400,7 +435,7 @@ class AcousticField(ABC):
         source = kSource()
         source.p_mask = np.zeros(( self.medium.Nx_reshaped, self.medium.Nz_reshaped))
         # Appel à la méthode spécialisée
-        source = self._SetUpSource(source, self.medium.Nx_reshaped, self.medium.kgrid.dt, self.medium.dx_reshaped, self.medium.c_mean,self.medium.factorT)  # factorT=1 pour simplifier
+        source = self._set_up_source(source, self.medium.Nx_reshaped, self.medium.kgrid.dt, self.medium.dx_reshaped, self.medium.c_mean,self.medium.factorT)  # factorT=1 pour simplifier
 
         # ---
         sensor = kSensor()
@@ -490,7 +525,7 @@ class AcousticField(ABC):
     #         source.p_mask = np.zeros((self.params['Nx'], self.params['Ny'], self.params['Nz']))
 
     #         # Appel à la méthode spécialisée
-    #         self._SetUpSource(source, self.params['Nx'], self.params['dx'], factorT)  # factorT=1 pour simplifier
+    #         self._set_up_source(source, self.params['Nx'], self.params['dx'], factorT)  # factorT=1 pour simplifier
 
     #         sensor = kSensor()
     #         sensor.mask = np.ones((self.params['Nx'], self.params['Ny'], self.params['Nz']))
@@ -530,7 +565,7 @@ class AcousticField(ABC):
     #         return None
         
     @abstractmethod
-    def _SetUpSource(self, source, Nx, dt, dx, c0, factorT):
+    def _set_up_source(self, source, Nx, dt, dx, c0, factorT):
         """
         Abstract method: each subclass must implement its own source setup.
         """
@@ -540,6 +575,14 @@ class AcousticField(ABC):
     def _save2D_HDR_IMG(self, filePath):
         """
         Save the 2D acoustic field as an HDR_IMG file.
+        Must be implemented in subclasses.
+        """
+        pass
+
+    @abstractmethod
+    def get_name_field(self):
+        """
+        Abstract method to get the name of the field for saving and loading.
         Must be implemented in subclasses.
         """
         pass

@@ -2,15 +2,9 @@ from .Laser import Laser
 from .Absorber import Absorber
 import numpy as np
 import warnings
-
-# Optional matplotlib imports for visualization
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    from mpl_toolkits.axes_grid1 import make_axes_locatable
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 class Phantom:
     """
@@ -28,7 +22,7 @@ class Phantom:
             self.phantom = self._apply_absorbers()
             self.phantom = np.transpose(self.phantom)
             self.laser.intensity = np.transpose(self.laser.intensity)
-            self.maskList = None  # List to store ROI masks
+            self.find_ROI() 
         except KeyError as e:
             raise ValueError(f"Missing parameter: {e}")
         except Exception as e:
@@ -125,9 +119,6 @@ class Phantom:
             withROI (bool): If True, displays ROIs, absorber numbers, and average intensities.
                             If False, displays only the phantom with a simple colorbar.
         """
-        if not MATPLOTLIB_AVAILABLE:
-            warnings.warn("matplotlib is not available. Cannot display phantom.", UserWarning)
-            return
         try:
             fig, ax = plt.subplots(figsize=figsize)
             im = ax.imshow(
@@ -171,7 +162,7 @@ class Phantom:
                         color='limegreen',
                         ha='center',
                         va='center',
-                        fontsize=12,
+                        fontsize=3*figsize[0],
                         fontweight='bold'
                     )
 
@@ -191,14 +182,13 @@ class Phantom:
 
                 ax.set_xlabel('x (mm)')
                 ax.set_ylabel('z (mm)')
-                ax.set_title('Phantom with ROIs')
+                ax.set_title('Optical Phantom \n (with ROIs)')
             else:
                 plt.colorbar(im, label='Intensity')
                 ax.set_xlabel('X (mm)')
                 ax.set_ylabel('Z (mm)')
-                ax.set_title('Optical Phantom with Absorbers')
+                ax.set_title('Optical Phantom')
 
-            plt.tick_params(axis='both', which='major', labelsize=20)
             plt.tight_layout()
             plt.show()
         except Exception as e:

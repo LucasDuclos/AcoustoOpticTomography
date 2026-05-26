@@ -13,12 +13,12 @@ class IrregularWave(AcousticField):
         super().__init__(**kwargs)
         self.waveType = WaveType.IrregularWave
 
-    def getName_field(self):
+    def get_name_field(self):
         """
         Generate the name for the field file.
         Not implemented for IrregularWave.
         """
-        raise NotImplementedError("getName_field method not implemented for IrregularWave.")
+        raise NotImplementedError("get_name_field method not implemented for IrregularWave.")
 
     def _generate_diverse_structurations(self, num_elements, num_sequences, num_frequencies):
         """

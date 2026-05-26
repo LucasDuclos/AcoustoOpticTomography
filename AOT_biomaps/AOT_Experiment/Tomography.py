@@ -1,27 +1,17 @@
-from AOT_biomaps.AOT_Acoustic.AcousticTools import format_angle, getAngle, getFrequency
+from AOT_biomaps.AOT_Acoustic.AcousticTools import format_angle, get_angle, get_frequency
 from AOT_biomaps.AOT_Acoustic.AcousticEnums import TypeSim, WaveType
 from AOT_biomaps.AOT_Acoustic.StructuredWave import StructuredWave
 from AOT_biomaps.Config import config
-from AOT_biomaps.AOT_Experiment.ExperimentTools import (
-    calc_mat_os,
-    convert_to_hex_list,
-    get_phase_deterministic,
-    hex_to_binary_profile,
-    binary_to_hex_profile
-)
+from AOT_biomaps.AOT_Experiment.ExperimentTools import calc_mat_os, convert_to_hex_list, get_phase_deterministic, hex_to_binary_profile, binary_to_hex_profile, load_AOsignal
 from AOT_biomaps.AOT_Experiment._mainExperiment import Experiment
 import os
 import numpy as np
 from tqdm import trange
 from scipy.io import loadmat, savemat
-import warnings
+import matplotlib.pyplot as plt
+import h5py
+    
 
-# Optional matplotlib import for visualization
-try:
-    import matplotlib.pyplot as plt
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
 
 class Tomography(Experiment):
     """
@@ -74,7 +64,7 @@ class Tomography(Experiment):
 
         return True, "Experiment is correctly initialized."
 
-    def generateAcousticFields(self, fieldDataPath=None, show_log=True, nameBlock=None):
+    def generate_acoustic_fields(self, fieldDataPath=None, show_log=True, nameBlock=None):
         """
         Generate the acoustic fields for simulation.
 
@@ -89,17 +79,14 @@ class Tomography(Experiment):
         if self.medium is None:
             raise ValueError("Medium is not initialized. Please generate the medium first.")
         if self.TypeAcoustic.value == WaveType.StructuredWave.value:
-            self.AcousticFields = self._generateAcousticFields_STRUCT_CPU(fieldDataPath, show_log, nameBlock)
+            self.AcousticFields = self._generate_acousticFields_STRUCT_CPU(fieldDataPath, show_log, nameBlock)
         else:
             raise ValueError("Unsupported wave type.")
 
-    def show_pattern(self):
+    def show_pattern(self,figsize=(5, 4)):
         """
         Display the transducer activation patterns.
         """
-        if not MATPLOTLIB_AVAILABLE:
-            warnings.warn("matplotlib is not available. Cannot display pattern.", UserWarning)
-            return
         if self.AcousticFields is None:
             raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
 
@@ -134,7 +121,7 @@ class Tomography(Experiment):
         height, width = image.shape
 
         # Create figure with compact size
-        fig, ax = plt.subplots(figsize=(5, 4))
+        fig, ax = plt.subplots(figsize=figsize)
         plt.subplots_adjust(left=0.1, right=0.95, top=0.9, bottom=0.2)
 
         # Plot binary pattern
@@ -184,13 +171,10 @@ class Tomography(Experiment):
         plt.tight_layout()
         plt.show()
 
-    def plot_angle_frequency_distribution(self):
+    def plot_angle_frequency_distribution(self, figsize=(12, 5)):
         """
         Plot the distribution of angles and spatial frequencies in the patterns.
         """
-        if not MATPLOTLIB_AVAILABLE:
-            warnings.warn("matplotlib is not available. Cannot plot distribution.", UserWarning)
-            return
         if self.patterns is None:
             raise ValueError("patterns is not initialized. Please load or generate the active list first.")
 
@@ -234,7 +218,7 @@ class Tomography(Experiment):
         freqs = [f for f in freqs if f is not None]
 
         # Plot
-        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
 
         # Angle histogram
         axes[0].hist(angles, bins=np.arange(-20.5, 21.5, 1), color='skyblue', edgecolor='black', rwidth=0.8)
@@ -259,7 +243,7 @@ class Tomography(Experiment):
         plt.tight_layout()
         plt.show()
 
-    def loadActiveList(self, fieldParamPath):
+    def load_activeList(self, fieldParamPath):
         """
         Load the active list patterns from a parameter file.
 
@@ -280,12 +264,12 @@ class Tomography(Experiment):
                     continue
                 if "_" in line and all(c in "0123456789abcdefABCDEF" for c in line.split("_")[0]):
                     patterns.append({"fileName": line})
-                    self.theta.append(getAngle(line))
+                    self.theta.append(get_angle(line))
                     profile = hex_to_binary_profile(line.split('_')[0], self.params.acoustic['probe']['num_elements'])
                     self.ActiveList.append(profile)
                     new_Delay = 1000 * (1/self.params.acoustic['medium']['c0']) * np.sin(np.deg2rad(self.theta[-1])) * np.arange(1, self.params.acoustic['probe']['num_elements'] + 1) * self.params.acoustic['probe']['element_width']
                     self.DelayLaw.append(new_Delay - np.min(new_Delay))
-                    self.decimations.append(getFrequency(line, self.params.acoustic['probe']['num_elements'], self.params.acoustic['probe']['element_width']))
+                    self.decimations.append(get_frequency(line, self.params.acoustic['probe']['num_elements'], self.params.acoustic['probe']['element_width']))
                     continue
                 try:
                     parsed = eval(line, {"__builtins__": None})
@@ -305,7 +289,7 @@ class Tomography(Experiment):
                     print(f"Parsing error on line: {line}\n{e}")
         self.patterns = patterns
 
-    def saveActiveList(self, filePath):
+    def save_activeList(self, filePath):
         """
         Save the list of patterns to a text file.
 
@@ -329,7 +313,7 @@ class Tomography(Experiment):
                     line = f"({coords}, {angles})\n"
                     file.write(line)
 
-    def generateActiveList(self, N=None, decimations=None, angles=None):
+    def generate_activeList(self, N=None, decimations=None, angles=None):
         """
         Generate a list of balanced and regular activation patterns.
 
@@ -350,7 +334,7 @@ class Tomography(Experiment):
         else:
             raise ValueError("Either N (>=2) or both decimations and angles must be provided for pattern generation.")
 
-    def saveAOsignals_matlab(self, filePath):
+    def save_AOsignals_matlab(self, filePath):
         """
         Save AO signals to a MATLAB .mat file.
 
@@ -365,7 +349,7 @@ class Tomography(Experiment):
             'DelayLaw': self.DelayLaw
         })
 
-    def selectAngles(self, angles):
+    def select_angles(self, angles):
         """
         Select acoustic fields and AO signals based on specified angles.
 
@@ -395,7 +379,7 @@ class Tomography(Experiment):
         self.DelayLaw = [self.DelayLaw[i] for i in index]
         self.ActiveList = [self.ActiveList[i] for i in index]
 
-    def selectShifts(self, shifts):
+    def select_shifts(self, shifts):
         """
         Select patterns based on their phase shift parameters.
         Possible values for shifts: "0", "pi/2", "pi", "3pi/2" or "0", "90", "180", "270" (in degrees).
@@ -443,7 +427,7 @@ class Tomography(Experiment):
         self.DelayLaw = [self.DelayLaw[i] for i in index]
         self.ActiveList = [self.ActiveList[i] for i in index]
 
-    def selectDecimations(self, decimations):
+    def select_decimations(self, decimations):
         """
         Select acoustic fields and AO signals based on specified decimation factors.
 
@@ -473,7 +457,7 @@ class Tomography(Experiment):
         self.DelayLaw = [self.DelayLaw[i] for i in index]
         self.ActiveList = [self.ActiveList[i] for i in index]
 
-    def selectPatterns(self, pattern_names):
+    def select_patterns(self, pattern_names):
         """
         Select acoustic fields and AO signals based on specified pattern names.
 
@@ -503,7 +487,7 @@ class Tomography(Experiment):
         self.DelayLaw = [self.DelayLaw[i] for i in index]
         self.ActiveList = [self.ActiveList[i] for i in index]
 
-    def selectRandom(self, N):
+    def select_random(self, N):
         """
         Randomly select N acoustic fields and corresponding AO signals.
 
@@ -613,12 +597,12 @@ class Tomography(Experiment):
             hex_pattern = hexa_list[i]
             fileName = f"{hex_pattern}_{format_angle(angle_val)}"
             patterns.append({"fileName": fileName})
-            self.theta.append(getAngle(fileName))
+            self.theta.append(get_angle(fileName))
             profile = hex_to_binary_profile(fileName.split('_')[0], self.params.acoustic['probe']['num_elements'])
             self.ActiveList.append(profile)
             new_Delay = 1000 * (1/self.params.acoustic['medium']['c0']) * np.sin(np.deg2rad(self.theta[-1])) * np.arange(1, self.params.acoustic['probe']['num_elements'] + 1) * self.params.acoustic['probe']['element_width']
             self.DelayLaw.append(new_Delay - np.min(new_Delay))
-            self.decimations.append(getFrequency(fileName, self.params.acoustic['probe']['num_elements'], self.params.acoustic['probe']['element_width']))
+            self.decimations.append(get_frequency(fileName, self.params.acoustic['probe']['num_elements'], self.params.acoustic['probe']['element_width']))
 
         return patterns
 
@@ -685,12 +669,12 @@ class Tomography(Experiment):
         # 4. Convert to list of dictionaries with "fileName" key
         patterns = [{"fileName": pair} for pair in unique_patterns]
         for i in range(N):
-            self.theta.append(getAngle(patterns[i]["fileName"]))
+            self.theta.append(get_angle(patterns[i]["fileName"]))
             profile = hex_to_binary_profile(patterns[i]["fileName"].split('_')[0], self.params.acoustic['probe']['num_elements'])
             self.ActiveList.append(profile)
             new_Delay = 1000 * (1/self.params.acoustic['medium']['c0']) * np.sin(np.deg2rad(self.theta[-1])) * np.arange(1, self.params.acoustic['probe']['num_elements'] + 1) * self.params.acoustic['probe']['element_width']
             self.DelayLaw.append(new_Delay - np.min(new_Delay))
-            self.decimations.append(getFrequency(patterns[i]["fileName"], self.params.acoustic['probe']['num_elements'], self.params.acoustic['probe']['element_width']))
+            self.decimations.append(get_frequency(patterns[i]["fileName"], self.params.acoustic['probe']['num_elements'], self.params.acoustic['probe']['element_width']))
 
         # 5. Return exactly N patterns
         return patterns[:N]
@@ -752,7 +736,7 @@ class Tomography(Experiment):
 
         return True
 
-    def applyApodisation(self, alpha=0.3, divergence_deg=0.5):
+    def apply_apodisation(self, alpha=0.3, divergence_deg=0.5):
         """
         Apply dynamic apodization on stored acoustic fields.
         Apodization follows the emission angle and natural beam divergence to
@@ -826,7 +810,7 @@ class Tomography(Experiment):
         print("Apodization done.")
 
     # PRIVATE METHODS
-    def _generateAcousticFields_STRUCT_CPU(self, fieldDataPath=None, show_log=False, nameBlock=None):
+    def _generate_acousticFields_STRUCT_CPU(self, fieldDataPath=None, show_log=False, nameBlock=None):
         """
         Generate acoustic fields for structured waves using CPU-based simulation.
 
@@ -901,26 +885,26 @@ class Tomography(Experiment):
             raise FileNotFoundError(f"File {pathAO} not found.")
 
         if pathAO.endswith('.npy'):
-            ao_signal = np.load(pathAO)
+            AOsignal = np.load(pathAO)
         elif pathAO.endswith('.h5'):
             with h5py.File(pathAO, 'r') as f:
                 if h5name not in f:
                     raise KeyError(f"Dataset '{h5name}' not found in the HDF5 file.")
-                ao_signal = f[h5name][:]
+                AOsignal = f[h5name][:]
         elif pathAO.endswith('.mat'):
             mat_data = loadmat(pathAO)
             if h5name not in mat_data:
                 raise KeyError(f"Dataset '{h5name}' not found in the .mat file.")
-            ao_signal = mat_data[h5name]
+            AOsignal = mat_data[h5name]
         elif pathAO.endswith('.hdr'):
-            ao_signal = self._loadAOSignal(pathAO)
+            AOsignal = load_AOsignal(pathAO)
         else:
             raise ValueError("Unsupported file format. Supported formats are: .npy, .h5, .mat, .hdr")
 
         if withTumor:
-            self.AOsignal_withTumor = ao_signal
+            self.AOsignal_withTumor = AOsignal
         else:
-            self.AOsignal_withoutTumor = ao_signal
+            self.AOsignal_withoutTumor = AOsignal
 
     def check_experimentalAO(self, activeListPath, withTumor=True):
         """
@@ -954,7 +938,7 @@ class Tomography(Experiment):
                     with open(activeListPath, 'r') as file:
                         lines = file.readlines()
                         expected_name = lines[self.AcousticFields.index(field)].strip()
-                        nameField = field.getName_field()
+                        nameField = field.get_name_field()
                         if nameField.startswith("field_"):
                             nameField = nameField[len("field_"):]
                         if nameField != expected_name:
@@ -1122,7 +1106,7 @@ class Tomography(Experiment):
         print(f"Acoustic Operator complete: {len(demodulated_fields)} configurations processed.")
         return demodulated_fields
 
-    def flipProbe(self, flipPattern=True, flipAngle=True):
+    def flip_probe(self, flipPattern=True, flipAngle=True):
         """
         Flip the probe (binary pattern and/or angle) for all acoustic fields and AO signals.
 

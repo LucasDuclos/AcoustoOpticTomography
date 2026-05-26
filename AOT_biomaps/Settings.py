@@ -20,7 +20,25 @@ class Params:
         self.acoustic['f_saving'] = int(float(self.acoustic['f_saving']))
         self.acoustic['f_US'] = int(float(self.acoustic['f_US']))
         self.acoustic['medium']['size_structures'] = [float(s) for s in self.acoustic['medium']['size_structures']]
-
+        if self.acoustic['medium']['width'] > self.general['Xrange'][1] - self.general['Xrange'][0]:
+            raise ValueError("The medium width must be smaller than the X range to ensure it fills the grid.")
+        if self.acoustic['medium']['height'] > self.general['Zrange'][1] - self.general['Zrange'][0]:
+            raise ValueError("The medium height must be smaller than the Z range to ensure it fills the grid.")
+        
+        if self.acoustic['medium']['background_medium'].lower() not in ['air', 'water']:
+            raise ValueError("Unsupported background medium: {}. Supported options are 'air' and 'water'.".format(self.acoustic['medium']['background_medium']))
+        if self.acoustic['medium']['background_medium'].lower() == 'air':
+            x_range_width = self.general['Xrange'][1] - self.general['Xrange'][0]
+            required_width = self.acoustic['medium']['width'] + 40 * self.general['dx']
+            
+            if required_width > x_range_width + 1e-9:
+                excess_mm = (required_width - x_range_width) * 1e3
+                raise ValueError(
+                    f"Configuration conflict: With 'background_medium' set to 'air', the medium width + 40 pixels of air margin "
+                    f"exceeds the global Xrange by {excess_mm:.2f} mm. "
+                    f"Please either increase Xrange or decrease the medium width."
+                )
+        
     def __repr__(self):
         return (f"Params(general={self.general}, acoustic={self.acoustic}, optic={self.optic}, "
                 f"reconstruction={self.reconstruction})")

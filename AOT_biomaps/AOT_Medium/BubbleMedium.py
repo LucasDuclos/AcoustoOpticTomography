@@ -14,84 +14,86 @@ except ImportError:
 class BubbleMedium(Medium):
     """
     Class representing a medium with random air bubbles for acoustic wave propagation.
-    - Air bubbles are randomly distributed in a background medium (e.g., water or gel).
-    - Optional air margin around the medium.
+    - The global grid remains strictly defined by user parameters (Xrange, Zrange).
+    - The phantom is centered in X and starts at Z=0.
+    - Background (outside the phantom) is filled with water or air.
     - Respects Nyquist and optimizes VRAM (float32, in-place calculations).
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     def generate_medium(self):
-        """
-        Generate a medium with random air bubbles.
-        - If isAirReflection=True: air surrounds the medium (20-pixel margins).
-        - Otherwise: the medium occupies the entire grid.
-        """
         dx = self.params.general['dx']
-        if dx >= self.params.acoustic['probe']['element_width']:
-            dx = self.params.acoustic['probe']['element_width'] / 2
+        dz = self.params.general['dz']
+        
+        Nx = int(self.params.general['Nx'])
+        Nz = int(self.params.general['Nz'])
 
-        # Physical dimensions to pixels
-        width = self.params.acoustic['medium'].get('width',
-                self.params.general['Xrange'][1] - self.params.general['Xrange'][0])
-        height = self.params.acoustic['medium'].get('height',
-                self.params.general['Zrange'][1] - self.params.general['Zrange'][0])
-        nx = int(np.round(width / dx))
-        nz = int(np.round(height / dx))
+        width = self.params.acoustic['medium'].get('width', self.params.general['Xrange'][1] - self.params.general['Xrange'][0])
+        height = self.params.acoustic['medium'].get('height', self.params.general['Zrange'][1] - self.params.general['Zrange'][0])
+        
+        Px = int(np.round(width / dx))
+        Pz = int(np.round(height / dz))
+        
+        # Security: ensure phantom doesn't exceed global grid
+        Px = min(Px, Nx)
+        Pz = min(Pz, Nz)
 
-        # Add air margins if needed
-        air_margin = 20 if self.params.acoustic['medium']['isAirReflection'] else 0
-        Nx, Nz = nx + 2 * air_margin, nz
+        # Positioning the Phantom (Centered in X, Top in Z)
+        x_start = (Nx - Px) // 2
+        x_end = x_start + Px
+        z_start = 0
+        z_end = Pz
 
-        c_map = np.full((Nx, Nz), 343.0 if air_margin else self.params.acoustic['medium']['c0'], dtype=np.float32)
-        rho_map = np.full((Nx, Nz), 1.2 if air_margin else self.params.acoustic['medium']['density'], dtype=np.float32)
+        bg_medium = self.params.acoustic['medium'].get('background_medium', 'water').lower()
+        
+        if bg_medium == 'air':
+            bg_c = 343.0
+            bg_rho = 1.2
+        elif bg_medium == 'water':
+            bg_c = self.params.acoustic['medium']['c0']
+            bg_rho = self.params.acoustic['medium']['density']
+        else:
+            raise ValueError(f"Unsupported background medium: {bg_medium}. Supported options are 'air' and 'water'.")
+
+        c_map = np.full((Nx, Nz), bg_c, dtype=np.float32)
+        rho_map = np.full((Nx, Nz), bg_rho, dtype=np.float32)
         alpha_coeff_map = np.zeros((Nx, Nz), dtype=np.float32)
         BonA_map = np.zeros((Nx, Nz), dtype=np.float32)
 
-        x_start = air_margin
-        x_end = x_start + nx
+        # Fill the Phantom Background (Water/Gel)
+        phantom_c = self.params.acoustic['medium']['c0']
+        phantom_rho = self.params.acoustic['medium']['density']
+        phantom_alpha = self.params.acoustic['medium'].get('alpha_coeff', 0.5)
+        phantom_BonA = self.params.acoustic['medium'].get('BonA', 6.0)
 
-        # Background map (water/gel)
-        c_background = self.params.acoustic['medium']['c0']
-        rho_background = self.params.acoustic['medium']['density']
+        c_map[x_start:x_end, z_start:z_end] = phantom_c
+        rho_map[x_start:x_end, z_start:z_end] = phantom_rho
+        alpha_coeff_map[x_start:x_end, z_start:z_end] = phantom_alpha
+        BonA_map[x_start:x_end, z_start:z_end] = phantom_BonA
 
-        # Mask for air bubbles
-        bubble_mask = np.zeros((nx, nz), dtype=np.float32)
+
+        bubble_mask = np.zeros((Px, Pz), dtype=np.float32)
         n_bubbles = self.params.acoustic['medium'].get('n_bubbles', 50)
         min_bubble_radius = self.params.acoustic['medium'].get('min_bubble_radius', 2)
         max_bubble_radius = self.params.acoustic['medium'].get('max_bubble_radius', 5)
 
         for _ in range(n_bubbles):
             radius = np.random.randint(min_bubble_radius, max_bubble_radius)
-            x_center = np.random.randint(radius, nx - radius)
-            z_center = np.random.randint(radius, nz - radius)
-            Y, X = np.ogrid[:nx, :nz]
-            dist_from_center = np.sqrt((X - x_center)**2 + (Y - z_center)**2)
+            # Ensure bubbles don't cross phantom boundaries
+            bc_x = np.random.randint(radius, Px - radius) if Px > 2*radius else Px//2
+            bc_z = np.random.randint(radius, Pz - radius) if Pz > 2*radius else Pz//2
+            
+            Y, X = np.ogrid[:Px, :Pz]
+            dist_from_center = np.sqrt((X - bc_x)**2 + (Y - bc_z)**2)
             bubble_mask[dist_from_center <= radius] = 1.0
 
-        # Air bubbles: c=343 m/s, rho=1.2 kg/m^3
-        c_map[x_start:x_end, :] = np.where(
-            bubble_mask == 1.0,
-            343.0,
-            c_background
-        )
-        rho_map[x_start:x_end, :] = np.where(
-            bubble_mask == 1.0,
-            1.2,
-            rho_background
-        )
-        alpha_coeff_map[x_start:x_end, :] = np.where(
-            bubble_mask == 1.0,
-            0.0,
-            self.params.acoustic['medium'].get('alpha_coeff', 0.5)
-        )
-        BonA_map[x_start:x_end, :] = np.where(
-            bubble_mask == 1.0,
-            0.0,
-            self.params.acoustic['medium'].get('BonA', 6.0)
-        )
+        # Apply Bubbles (Air: c=343, rho=1.2) to the phantom region
+        c_map[x_start:x_end, z_start:z_end] = np.where(bubble_mask == 1.0, 343.0, c_map[x_start:x_end, z_start:z_end])
+        rho_map[x_start:x_end, z_start:z_end] = np.where(bubble_mask == 1.0, 1.2, rho_map[x_start:x_end, z_start:z_end])
+        alpha_coeff_map[x_start:x_end, z_start:z_end] = np.where(bubble_mask == 1.0, 0.0, alpha_coeff_map[x_start:x_end, z_start:z_end])
+        BonA_map[x_start:x_end, z_start:z_end] = np.where(bubble_mask == 1.0, 0.0, BonA_map[x_start:x_end, z_start:z_end])
 
-        # Store medium properties
         self.medium_properties = {
             'sound_speed': c_map,
             'density': rho_map,
@@ -113,22 +115,23 @@ class BubbleMedium(Medium):
                 stokes=False
             )
 
-            self.kgrid = kWaveGrid([Nx, Nz], [dx, dx])
-            dt = 1/(self.params.acoustic['f_AQ'])
+            self.kgrid = kWaveGrid([Nx, Nz], [dx, dz])
+            dt = 1 / self.params.acoustic['f_AQ']
             self.kgrid.setTime(self.params.general['Nt'], dt)
         else:
             self.kmedium = None
             self.kgrid = None
             warnings.warn("kWave is not available. Medium properties stored in medium_properties dictionary.", UserWarning)
 
-        # Save variables for later use
         self.factorX = int(np.ceil(self.params.general['dx'] / dx))
-        self.factorZ = self.factorX
+        self.factorZ = int(np.ceil(self.params.general['dz'] / dz))
         if KWAVE_AVAILABLE and self.kgrid is not None:
-            self.factorT = int(np.ceil((1/self.kgrid.dt) / (self.params.acoustic['f_saving'])))
+            self.factorT = int(np.ceil((1/self.kgrid.dt) / self.params.acoustic['f_saving']))
         else:
             self.factorT = 1
+            
         self.c_mean = np.mean(c_map[:, 0])
         self.Nx_reshaped = Nx
         self.Nz_reshaped = Nz
         self.dx_reshaped = dx
+        self.dz_reshaped = dz

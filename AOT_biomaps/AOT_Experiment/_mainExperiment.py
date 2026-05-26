@@ -5,7 +5,7 @@ from AOT_biomaps.AOT_Acoustic.StructuredWave import StructuredWave
 from AOT_biomaps.AOT_Medium.HomogeneousMedium import HomogeneousMedium
 from AOT_biomaps.AOT_Medium.PVAMedium import PVAMedium
 from AOT_biomaps.AOT_Medium.MediumEnums import PhantomType
-from AOT_biomaps.AOT_Experiment.ExperimentTools import loadAOSignal
+from AOT_biomaps.AOT_Experiment.ExperimentTools import load_AOsignal
 from abc import ABC, abstractmethod
 
 import os
@@ -14,6 +14,9 @@ from tqdm import trange
 from datetime import datetime
 import copy
 import warnings
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import matplotlib as mpl
 
 # Optional cupy import for GPU acceleration
 try:
@@ -21,15 +24,6 @@ try:
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
-
-# Optional matplotlib imports for visualization
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib.animation as animation
-    import matplotlib as mpl
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
 
 class Experiment(ABC):
     def __init__(self, params, acousticType=WaveType.StructuredWave, formatSave=FormatSave.HDR_IMG):
@@ -54,14 +48,14 @@ class Experiment(ABC):
     Return une copie profonde de l'objet."""
         return copy.deepcopy(self)
     
-    def generatePhantom(self):
+    def generate_phantom(self):
         """
         Generate the phantom for the experiment.
         This method initializes the OpticImage attribute with a Phantom instance.
         """
         self.OpticImage = Phantom(params=self.params)
     
-    def generateMedium(self):
+    def generate_medium(self):
         """
         Generate the medium for the experiment.
         This method initializes the medium attribute based on the parameters.
@@ -80,10 +74,17 @@ class Experiment(ABC):
                 print(f"Error generating PVA medium: {e}")
                 raise
     
-    def loadMedium(self, folderPath, fileName="medium"):
+    def load_medium(self, folderPath, fileName="medium"):
         """
-        Load the medium from a .joblib file.
-        This method initializes the medium attribute by loading it from the specified file.
+        Load the medium from a .npy file.
+        
+        Parameters:
+        - folderPath (str): The directory where the file is located.
+        - fileName (str): The name of the file (without extension).
+        
+        Raises:
+            ValueError: If medium type is not supported.
+            FileNotFoundError: If the file does not exist.
         """
         if self.params.acoustic['medium']['type'] == PhantomType.Homogeneous.value:
             self.medium = HomogeneousMedium(params=self.params)
@@ -91,21 +92,26 @@ class Experiment(ABC):
         elif self.params.acoustic['medium']['type'] == PhantomType.PVA.value:
             self.medium = PVAMedium(params=self.params)
             self.medium.load_medium(folderPath, fileName)
+        else:
+            raise ValueError(f"Unsupported medium type: {self.params.acoustic['medium']['type']}")
 
-        print(f"Medium loaded from {os.path.join(folderPath, fileName)} -- done.")
-
-    def saveMedium(self, folderPath, fileName="medium"):
+    def save_medium(self, folderPath, fileName="medium"):
         """
-        Save the medium to a .joblib file.
-        This method saves the medium attribute to the specified file.
+        Save the medium to a .npy file.
+        
+        Parameters:
+        - folderPath (str): The directory where the file will be saved.
+        - fileName (str): The name of the file (without extension).
+        
+        Raises:
+            ValueError: If medium is not initialized.
         """
         if self.medium is None:
             raise ValueError("Medium is not initialized. Please generate or set the medium before saving.")
         self.medium.save_medium(folderPath, fileName)
-        print(f"Medium saved to {os.path.join(folderPath, fileName)} -- done.")
 
     @abstractmethod
-    def generateAcousticFields(self, fieldDataPath, fieldParamPath, show_log=True):
+    def generate_acoustic_fields(self, fieldDataPath, fieldParamPath, show_log=True):
         """
         Generate the acoustic fields for simulation.
         Args:
@@ -116,7 +122,7 @@ class Experiment(ABC):
         """
         pass
 
-    def cutAcousticFields(self, max_t, min_t=0, show_log=True):
+    def cut_acoustic_fields(self, max_t, min_t=0, show_log=True):
         """
         Cut the acoustic fields to a specified time range.
         Args:
@@ -140,7 +146,7 @@ class Experiment(ABC):
                 raise ValueError(f"Field {field.getName_field()} has an invalid shape: {field.field.shape}. Expected shape to be at least ({max_t},).")
             self.AcousticFields[i].field = field.field[min_t:max_t, :, :]
 
-    def addNoise(self, y=None, noiseType='gaussian', noiseLvl=0.1, dataToUse=None, m=1, withTumor=True, show_log=True):
+    def add_noise(self, y=None, noiseType='gaussian', noiseLvl=0.1, dataToUse=None, m=1, withTumor=True, show_log=True):
         """
         Add noise to AO signals with various noise models.
 
@@ -228,7 +234,7 @@ class Experiment(ABC):
 
         return noiseSignals
 
-    def reduceDims(self, mode='avg'):
+    def reduce_dims(self, mode='avg'):
         """
         Reduces the T, X, Z dimensions of a numpy array (T, X, Z) by a factor of 2 using CuPy pooling.
         Falls back to numpy if CuPy is not available.
@@ -282,7 +288,7 @@ class Experiment(ABC):
         for param in ['dx', 'dy', 'dz']:
             convert_and_update(self.params.general, param, lambda x: x * 2)
 
-    def normalizeAOsignals(self, withTumor=True):
+    def normalize_AOsignals(self, withTumor=True):
         if withTumor and self.AOsignal_withTumor is None:
             raise ValueError("AO signal with tumor is not generated. Please generate it first.")
         if not withTumor and self.AOsignal_withoutTumor is None:
@@ -292,13 +298,13 @@ class Experiment(ABC):
         else:
             self.AOsignal_withoutTumor = self.AOsignal_withoutTumor - np.min(self.AOsignal_withoutTumor)/(np.max(self.AOsignal_withoutTumor)-np.min(self.AOsignal_withoutTumor))
 
-    def saveAcousticFields(self, save_directory):
+    def save_acoustic_fields(self, save_directory):
         progress_bar = trange(len(self.AcousticFields), desc="Saving Acoustic Fields")
         for i in progress_bar:
             progress_bar.set_postfix_str(f"-- {self.AcousticFields[i].getName_field()}")
             self.AcousticFields[i].save_field(save_directory, formatSave=self.FormatSave)
 
-    def showAnimatedAcoustic(self, wave_name=None, desired_duration_ms=5000, save_dir=None):
+    def show_animated_acoustic(self, wave_name=None, desired_duration_ms=5000, save_dir=None, figsize=(12, 5)):
         """
         Plot synchronized animations of A_matrix slices for selected angles.
         Args:
@@ -308,9 +314,6 @@ class Experiment(ABC):
         Returns:
             ani: Matplotlib FuncAnimation object
         """
-        if not MATPLOTLIB_AVAILABLE:
-            warnings.warn("matplotlib is not available. Cannot create animation.", UserWarning)
-            return None
         mpl.rcParams['animation.embed_limit'] = 100
         if save_dir is not None:
             os.makedirs(save_dir, exist_ok=True)
@@ -322,21 +325,21 @@ class Experiment(ABC):
             ncols = 5
             nrows = (num_plots + ncols - 1) // ncols
 
-        fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 5.3 * nrows))
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize)
         if isinstance(axes, plt.Axes):
             axes = np.array([axes])
         axes = axes.flatten()
         ims = []
 
-        fig.suptitle(f"System Matrix Animation {wave_name}", fontsize=12, y=0.98)
+        fig.suptitle(f"System Matrix Animation {wave_name}", y=0.98)
 
         for idx in range(num_plots):
             ax = axes[idx]
             im = ax.imshow(self.AcousticFields[0, :, :, idx],
                         extent=(self.params.general['Xrange'][0], self.params.general['Xrange'][1], self.params.general['Zrange'][1], self.params.general['Zrange'][0]),
                         vmax=1, aspect='equal', cmap='jet', animated=True)
-            ax.set_xlabel("x (mm)", fontsize=8)
-            ax.set_ylabel("z (mm)", fontsize=8)
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("z (mm)")
             ims.append((im, ax, idx))
 
         for j in range(num_plots, len(axes)):
@@ -348,7 +351,7 @@ class Experiment(ABC):
             artists = []
             for im, ax, idx in ims:
                 im.set_array(self.AcousticFields[frame, :, :, idx])
-                fig.suptitle(f"System Matrix Animation {wave_name} t = {frame * 25e-6 * 1000:.2f} ms", fontsize=10)
+                fig.suptitle(f"System Matrix Animation {wave_name} t = {frame * 25e-6 * 1000:.2f} ms")
                 artists.append(im)
             return artists
 
@@ -370,21 +373,21 @@ class Experiment(ABC):
         plt.close(fig)
         return ani
 
-    def generateAOsignal(self, withTumor=True, AOsignalDataPath=None):
+    def generate_AOsignal(self, withTumor=True, AOsignalDataPath=None):
 
         if AOsignalDataPath is not None:
             if not os.path.exists(AOsignalDataPath):
                 raise FileNotFoundError(f"AO file {AOsignalDataPath} not found.")
             if withTumor:
-                self.AOsignal_withTumor = loadAOSignal(AOsignalDataPath)
+                self.AOsignal_withTumor = load_AOsignal(AOsignalDataPath)
                 if self.AOsignal_withTumor.shape[0] != self.AcousticFields[0].field.shape[0]:
                     print(f"AO signal shape {self.AOsignal_withTumor.shape} does not match the expected shape {self.AcousticFields[0].field.shape}. Resizing Acoustic fields...")
-                    self.cutAcousticFields(max_t=self.AOsignal_withTumor.shape[0] / float(self.params.acoustic['f_saving']), min_t=0)
+                    self.cut_acoustic_fields(max_t=self.AOsignal_withTumor.shape[0] / float(self.params.acoustic['f_saving']), min_t=0)
             else:
-                self.AOsignal_withoutTumor = loadAOSignal(AOsignalDataPath)
+                self.AOsignal_withoutTumor = load_AOsignal(AOsignalDataPath)
                 if self.AOsignal_withoutTumor.shape[0] != self.AcousticFields[0].field.shape[0]:
                     print(f"AO signal shape {self.AOsignal_withoutTumor.shape} does not match the expected shape {self.AcousticFields[0].field.shape}. Resizing Acoustic fields...")
-                    self.cutAcousticFields(max_t=self.AOsignal_withoutTumor.shape[0] / float(self.params.acoustic['f_saving']), min_t=0)
+                    self.cut_acoustic_fields(max_t=self.AOsignal_withoutTumor.shape[0] / float(self.params.acoustic['f_saving']), min_t=0)
         else:    
             if self.AcousticFields is None:
                 raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
@@ -394,7 +397,7 @@ class Experiment(ABC):
             
             if not all(field.field.shape == self.AcousticFields[0].field.shape for field in self.AcousticFields):
                 minShape = min([field.field.shape[0] for field in self.AcousticFields])
-                self.cutAcousticFields(max_t=minShape * self.params.acoustic['f_saving'])
+                self.cut_acoustic_fields(max_t=minShape * self.params.acoustic['f_saving'])
             else:
                 shape_field = self.AcousticFields[0].field.shape
 
@@ -418,7 +421,7 @@ class Experiment(ABC):
             else:
                 self.AOsignal_withoutTumor = AOsignal
 
-    def saveAOsignals_Castor(self, save_directory, withTumor=True):
+    def save_AOsignals_Castor(self, save_directory, withTumor=True):
         if withTumor:
             AO_signal = self.AOsignal_withTumor
             cdf_location = os.path.join(save_directory, "AOSignals_withTumor.cdf")
@@ -462,10 +465,7 @@ class Experiment(ABC):
 
         print(f"Files .cdf, .cdh and info.txt saved in {save_directory}")
 
-    def showAOsignal(self, withTumor=True, save_dir=None, wave_name=None):
-        if not MATPLOTLIB_AVAILABLE:
-            warnings.warn("matplotlib is not available. Cannot display AO signal.", UserWarning)
-            return
+    def show_AOsignal(self, withTumor=True, save_dir=None, wave_name=None, figsize=(12, 5)):
         if withTumor and self.AOsignal_withTumor is None:
             raise ValueError("AO signal with tumor is not generated. Please generate it first.")
         if not withTumor and self.AOsignal_withoutTumor is None:
@@ -485,7 +485,7 @@ class Experiment(ABC):
             ncols = 5
             nrows = (num_plots + ncols - 1) // ncols
 
-        fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 5.3 * nrows))
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize)
         if isinstance(axes, plt.Axes):
             axes = np.array([axes])
         axes = axes.flatten()
@@ -495,13 +495,13 @@ class Experiment(ABC):
         else:
             title = f"AO Signal -- {wave_name}"
 
-        fig.suptitle(title, fontsize=12, y=0.98)
+        fig.suptitle(title, y=0.98)
 
         for idx in range(num_plots):
             ax = axes[idx]
             ax.plot(time_axis, AOsignal[:, idx])
-            ax.set_xlabel("Time (µs)", fontsize=8)
-            ax.set_ylabel("Value", fontsize=8)
+            ax.set_xlabel("Time (µs)")
+            ax.set_ylabel("Value")
 
         for j in range(num_plots, len(axes)):
             fig.delaxes(axes[j])
@@ -520,10 +520,7 @@ class Experiment(ABC):
         plt.show()
         plt.close(fig)
 
-    def showAnimatedAll(self, fileOfAcousticField=None, save_dir=None, desired_duration_ms=5000):
-        if not MATPLOTLIB_AVAILABLE:
-            warnings.warn("matplotlib is not available. Cannot create animation.", UserWarning)
-            return None
+    def showAnimatedAll(self, fileOfAcousticField=None, save_dir=None, desired_duration_ms=5000, figsize=(12, 5), wave_name=None):
         mpl.rcParams['animation.embed_limit'] = 100
         pattern_str = StructuredWave.getPattern(fileOfAcousticField)
         angle = StructuredWave.getAngle(fileOfAcousticField)
@@ -540,11 +537,11 @@ class Experiment(ABC):
         if wave_name is None:
             wave_name = f"Pattern structure {pattern_str}"
 
-        fig, axs = plt.subplots(1, 2, figsize=(6 * 2, 5.3 * 1))
+        fig, axs = plt.subplots(1, 2, figsize=figsize)
         if isinstance(axs, plt.Axes):
             axs = np.array([axs])
 
-        fig.suptitle(f"AO Signal Animation {wave_name} | Angle {angle}°", fontsize=12, y=0.98)
+        fig.suptitle(f"AO Signal Animation {wave_name} | Angle {angle}°", y=0.98)
 
         axs[0].imshow(self.OpticImage.T, cmap='hot', alpha=1, origin='upper',
                     extent=(self.params.general['Xrange'][0], self.params.general['Xrange'][1], self.params.general['Zrange'][1], self.params.general['Zrange'][0]),
@@ -554,17 +551,17 @@ class Experiment(ABC):
                                 extent=(self.params.general['Xrange'][0], self.params.general['Xrange'][1], self.params.general['Zrange'][1], self.params.general['Zrange'][0]),
                                 vmax=1, vmin=0.01, alpha=0.8, aspect='equal')
 
-        axs[0].set_title(f"{wave_name} | Angle {angle}° | t = 0.00 ms", fontsize=10)
-        axs[0].set_xlabel("x (mm)", fontsize=8)
-        axs[0].set_ylabel("z (mm)", fontsize=8)
+        axs[0].set_title(f"{wave_name} | Angle {angle}° | t = 0.00 ms")
+        axs[0].set_xlabel("x (mm)")
+        axs[0].set_ylabel("z (mm)")
 
         time_axis = np.arange(self.AOsignal.shape[0]) * 25e-6 * 1000
         line_y, = axs[1].plot(time_axis, self.AOsignal[:, idx])
         vertical_line, = axs[1].plot([time_axis[0], time_axis[0]], [0, self.AOsignal[0, idx]], 'r--')
 
-        axs[1].set_xlabel("Time (ms)", fontsize=8)
-        axs[1].set_ylabel("Value", fontsize=8)
-        axs[1].set_title(f"{wave_name} | Angle {angle}° | t = 0.00 ms", fontsize=10)
+        axs[1].set_xlabel("Time (ms)")
+        axs[1].set_ylabel("Value")
+        axs[1].set_title(f"{wave_name} | Angle {angle}° | t = 0.00 ms")
 
         plt.tight_layout(rect=[0, 0, 1, 0.95])
 
@@ -573,7 +570,7 @@ class Experiment(ABC):
             frame_data = fieldToPlot[frame, :, :, idx]
             masked_data = np.where(frame_data > 0.02, frame_data, np.nan)
             im_field.set_data(masked_data)
-            axs[0].set_title(f"{wave_name} | Angle {angle}° | t = {current_time_ms:.2f} ms", fontsize=10)
+            axs[0].set_title(f"{wave_name} | Angle {angle}° | t = {current_time_ms:.2f} ms")
 
             y_vals = self.AOsignal[:, idx]
             y_copy = np.full_like(y_vals, np.nan)
@@ -581,7 +578,7 @@ class Experiment(ABC):
             line_y.set_data(time_axis, y_copy)
 
             vertical_line.set_data([time_axis[frame], time_axis[frame]], [0, y_vals[frame]])
-            axs[1].set_title(f"{wave_name} | Angle {angle}° | t = {current_time_ms:.2f} ms", fontsize=10)
+            axs[1].set_title(f"{wave_name} | Angle {angle}° | t = {current_time_ms:.2f} ms")
 
             return [im_field, vertical_line, line_y]
 
@@ -609,10 +606,28 @@ class Experiment(ABC):
         Displays the optical phantom with absorbers.
         """
         try:
-            self.OpticImage.show_phantom(withROI=False, figsize=figsize)
+            self.OpticImage.show_phantom(withROI=withROI, figsize=figsize)
         except Exception as e:
             raise RuntimeError(f"Error plotting phantom: {e}")
-        
+    
+    def showLaser(self, figsize=(4,4)):
+        """
+        Displays the laser intensity distribution.
+        """
+        try:
+            self.OpticImage.laser.show_laser(figsize=figsize)
+        except Exception as e:
+            raise RuntimeError(f"Error plotting laser: {e}")
+    
+    def showMedium(self, figsize=(8,4)):
+        """
+        Displays the medium properties.
+        """
+        try:
+            self.medium.plot_medium_properties(figsize=figsize)
+        except Exception as e:
+            raise RuntimeError(f"Error plotting medium: {e}")
+
     @abstractmethod
     def check(self):
         """

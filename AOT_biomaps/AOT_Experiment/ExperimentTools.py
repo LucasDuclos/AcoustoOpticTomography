@@ -195,7 +195,7 @@ def add_sincos_cpu(R, decimation, theta):
 
     return Iout, theta_u, decim_u
 
-def loadAOSignal(AOsignalPath):
+def load_AOsignal(AOsignalPath):
     """
     Load AO signal from a file.
 

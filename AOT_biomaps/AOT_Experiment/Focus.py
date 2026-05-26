@@ -6,6 +6,7 @@ from tqdm import trange
 import os
 import numpy as np
 from scipy.ndimage import zoom
+import matplotlib.pyplot as plt
 
 
 class Focus(Experiment):
@@ -55,7 +56,7 @@ class Focus(Experiment):
 
         return True, "Experiment is correctly initialized."
 
-    def generateAcousticFields(self, fieldDataPath=None, show_log=False, nameBlock=None):
+    def generate_acoustic_fields(self, fieldDataPath=None, show_log=False, nameBlock=None):
         """
         Generate a list of focused acoustic fields for each probe element.
         Uses trange to display a progress bar and manages memory.
@@ -109,7 +110,7 @@ class Focus(Experiment):
 
         self.AcousticFields = listAcousticFields
 
-    def reconFocus(self, withTumor=True, signals_AO=None):
+    def recon_focus(self, withTumor=True, signals_AO=None):
         """
         Reconstruct the focused zone image from AO signals.
         AO signals are already in the form of a NumPy array with dimensions (times, N).
@@ -151,3 +152,33 @@ class Focus(Experiment):
         recon_image = (recon_image - np.min(recon_image)) / (np.max(recon_image) - np.min(recon_image) + 1e-9)
 
         return recon_image
+    
+    def show_recon(self, withTumor=True, save_dir=None, wave_name=None, figsize=(12, 5)):
+        """
+        Show the reconstructed focused image.
+
+        Parameters:
+            withTumor (bool): If True, shows image with tumor. If False, shows image without tumor.
+            save_dir (str): Optional directory to save the figure.
+            wave_name (str): Optional name for the figure file.
+            figsize (tuple): Size of the figure.
+
+        Returns:
+            Reconstructed image.
+        """
+        recon_image = self.recon_focus(withTumor=withTumor)
+
+        fig, ax = plt.subplots(figsize=figsize)
+        im = ax.imshow(recon_image.T, extent=[self.params.general['Xrange'][0]*1e3, self.params.general['Xrange'][1]*1e3,
+                                              self.params.general['Zrange'][1]*1e3, self.params.general['Zrange'][0]*1e3],
+                       cmap='hot', aspect='auto')
+        ax.set_xlabel('X (mm)')
+        ax.set_ylabel('Z (mm)')
+        ax.set_title('Reconstructed Focused Image' + (' with Tumor' if withTumor else ' without Tumor'))
+        fig.colorbar(im, ax=ax)
+
+        if save_dir is not None and wave_name is not None:
+            os.makedirs(save_dir, exist_ok=True)
+            fig_path = os.path.join(save_dir, f"recon_focus_{wave_name}_{'withTumor' if withTumor else 'withoutTumor'}.png")
+            plt.savefig(fig_path)
+            print(f"Reconstructed image saved at {fig_path}")

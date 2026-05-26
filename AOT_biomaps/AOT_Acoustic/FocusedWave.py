@@ -31,7 +31,7 @@ class FocusedWave(AcousticField):
         self.focal_line = focal_line
         self.delayedSignal = self._apply_delay()
 
-    def getName_field(self):
+    def get_name_field(self):
         """
         Generate the file name for the field based on the focal line.
 
@@ -120,7 +120,7 @@ class FocusedWave(AcousticField):
             print(f"Error applying delays: {e}")
             return None
 
-    def plot_delay(self):
+    def plot_delay(self, figsize=(4,3)):
         """
         Plot the time of the maximum of each delayed signal to visualize the wavefront.
         """
@@ -138,7 +138,7 @@ class FocusedWave(AcousticField):
             min_active_time = np.min(max_times[max_times > 0])
 
             # Plot the times of the maxima
-            plt.figure(figsize=(10, 6))
+            plt.figure(figsize=figsize)
             plt.plot(element_indices, max_times, 'o-')
             plt.title('Time of Maximum for Each Delayed Signal')
             plt.xlabel('Transducer Element Index')
@@ -151,7 +151,7 @@ class FocusedWave(AcousticField):
         except Exception as e:
             print(f"Error plotting max times: {e}")
 
-    def _SetUpSource(self, source, Nx, dt, dx, c0, factorT):
+    def _set_up_source(self, source, Nx, dt, dx, c0, factorT):
         """
         Configure the k-Wave source for a focused wave in 2D.
         Applies parabolic delays and selects active elements around the focal point.

@@ -77,22 +77,28 @@ export PYTHONPATH=".:$PYTHONPATH"
 
 | Package | Version | Description |
 |---------|---------|-------------|
-| numpy | ≥ 1.20 | Core numerical computing |
+| numpy | ≥ 1.26.4 | Core numerical computing |
+| scipy | ≥ 1.13.1 | Signal processing |
+| tqdm | ≥ 4.60.0 | Progress bars |
+| matplotlib | ≥ 3.9.2 | Visualization |
 
-### Optional Dependencies (Recommended)
+### Default Dependencies (Included)
 
-| Package | Version | Description | Installation |
-|---------|---------|-------------|-------------|
-| cupy | ≥ 10.0 | GPU acceleration | `pip install cupy-cuda11x` |
-| matplotlib | ≥ 3.0 | Visualization | `pip install matplotlib` |
-| tqdm | ≥ 4.0 | Progress bars | `pip install tqdm` |
-| scipy | ≥ 1.7 | Signal processing | `pip install scipy` |
-| kwave | - | Acoustic simulation | See below |
+By default, the following packages are automatically included:
 
-### CuPy Installation
+| Package | Version | Description |
+|---------|---------|-------------|
+| cupy | ≥ 12.0 | GPU acceleration (auto-detected) |
+| kwave | ≥ 0.3.5 | Acoustic simulation |
 
-CuPy requires CUDA and cuDNN. Choose the appropriate version for your GPU:
+### CuPy Installation (Automatic)
 
+✅ **CuPy is automatically included** if CUDA is detected on your system. The installer will:
+1. Check if CUDA is available (via `nvcc`)
+2. Detect your CUDA version
+3. Install the appropriate CuPy package (`cupy-cuda11x`, `cupy-cuda12x`, etc.)
+
+**Manual installation (if automatic detection fails):**
 ```bash
 # For CUDA 11.x
 pip install cupy-cuda11x
@@ -100,15 +106,50 @@ pip install cupy-cuda11x
 # For CUDA 12.x
 pip install cupy-cuda12x
 
-# CPU-only version (for development)
-pip install cupy
+# For CUDA 13.x
+pip install cupy-cuda13x
+
+# For CUDA 14.x (latest)
+pip install cupy-cuda14x
 ```
 
 Verify installation:
 ```python
 import cupy as cp
 print(cp.cuda.runtime.getVersion())  # Should print CUDA version
+print(cp.__version__)  # Should print CuPy version
 ```
+
+### CPU-Only Installation
+
+To install without GPU support:
+```bash
+pip install aot-biomaps --cpu
+# or
+AOT_BIOMAPS_CPU_ONLY=true pip install aot-biomaps
+```
+
+### Without Acoustic Simulation
+
+To install without kWave:
+```bash
+pip install aot-biomaps --without-acoustic
+# or
+AOT_BIOMAPS_WITHOUT_ACOUSTIC=true pip install aot-biomaps
+```
+
+### Python Version Compatibility
+
+| Python Version | CuPy Support | Status |
+|----------------|--------------|--------|
+| 3.8 | CuPy 10.x - 12.x | ✅ Supported (limited in CuPy 13+) |
+| 3.9 | CuPy 11.x - 14.x | ✅ Fully supported |
+| 3.10 | CuPy 12.x - 14.x | ✅ Fully supported |
+| 3.11 | CuPy 12.x - 14.x | ✅ Fully supported |
+| 3.12 | CuPy 13.x - 14.x | ✅ Supported |
+| 3.13+ | - | ⚠️ Not yet supported by CuPy |
+
+**Note**: If you use Python 3.13+, you will get a warning on import. The library will still work in CPU mode.
 
 ### kWave Installation (Optional)
 

@@ -48,6 +48,32 @@ cd AcoustoOpticTomography
 
 # Install in development mode
 pip install -e .
+
+### GPU Support (Included by Default)
+
+By default, **CuPy** is automatically included if CUDA is detected on your system. The installer will detect your CUDA version and install the appropriate CuPy package.
+
+To manually specify your CUDA version:
+
+```bash
+# For CUDA 11.x
+pip install cupy-cuda11x
+
+# For CUDA 12.x
+pip install cupy-cuda12x
+
+# For CUDA 13.x
+pip install cupy-cuda13x
+
+# For CUDA 14.x
+pip install cupy-cuda14x
+```
+
+**CPU-only installation:**
+```bash
+pip install aot-biomaps --cpu
+# or
+AOT_BIOMAPS_CPU_ONLY=true pip install aot-biomaps
 ```
 
 ## 📖 Documentation

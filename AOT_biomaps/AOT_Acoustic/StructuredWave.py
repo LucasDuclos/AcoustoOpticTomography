@@ -1,13 +1,11 @@
 from AOT_biomaps.Config import config
 from ._mainAcoustic import AcousticField
 from .AcousticEnums import TypeSim, WaveType
-from .AcousticTools import detect_space_0_and_space_1, getAngle, getFrequency
-from .AcousticTools import hex_to_binary_profile
+from .AcousticTools import detect_space_0_and_space_1, get_angle, get_frequency, format_angle
 
 import os
 import numpy as np
-from tqdm import trange
-import warnings
+import matplotlib.pyplot as plt
 
 # Optional cupy import for GPU acceleration
 try:
@@ -16,12 +14,9 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
 
-# Optional matplotlib import for visualization
-try:
-    import matplotlib.pyplot as plt
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
+
+    
+
 
 class StructuredWave(AcousticField):
 
@@ -107,12 +102,12 @@ class StructuredWave(AcousticField):
             """
             return f"Pattern structure: {self.to_string()}"
 
-    def __init__(self, fileName = None, angle_deg = None, space_0 = None, space_1 = None, move_head_0_2tail = None, move_tail_1_2head = None, **kwargs):
+    def __init__(self, fileName = None, angle = None, space_0 = None, space_1 = None, move_head_0_2tail = None, move_tail_1_2head = None, **kwargs):
         """
         Initialize the StructuredWave object.
 
         Args:
-            angle_deg (float): Angle in degrees.
+            angle (float): Angle in degrees.
             fileName (str): Name of the file containing the hexadecimal active list and the angle (format : activelisthEXA_Angle)
             space_0 (int): Number of zeros in the pattern.
             space_1 (int): Number of ones in the pattern.
@@ -125,20 +120,20 @@ class StructuredWave(AcousticField):
             self.waveType = WaveType.StructuredWave
             if  self.params.general['Nt'] is None:
                 self.medium.kgrid.setTime(int(self.medium.kgrid.Nt*1.5),self.medium.kgrid.dt) # Extend the time grid to allow for delays
-            if space_0 is not None and space_1 is not None and move_head_0_2tail is not None and move_tail_1_2head is not None and angle_deg is not None:
+            if space_0 is not None and space_1 is not None and move_head_0_2tail is not None and move_tail_1_2head is not None and angle is not None:
                 self.pattern = self.PatternParams(space_0, space_1, move_head_0_2tail, move_tail_1_2head, self.params.acoustic['probe']['num_elements'] // 4)
-                self.angle = angle_deg
+                self.angle = angle
                 self.pattern.activeList = self.pattern.generate_pattern()
             elif fileName is not None:
                 self.pattern = self.PatternParams(0,0,0,0,self.params.acoustic['probe']['num_elements'] // 4)
                 self.pattern.space_0, self.pattern.space_1 = detect_space_0_and_space_1(fileName.split('_')[0])
-                self.angle = getAngle(fileName)
+                self.angle = get_angle(fileName)
                 self.pattern.activeList = fileName.split('_')[0]
             else:
                 raise ValueError("Invalid pattern parameters, must provide either fileName or all space/move parameters.")
             
             self.pattern.len_hex = self.params.acoustic['probe']['num_elements'] // 4
-            self.f_s = getFrequency(fileName, self.params.acoustic['probe']['num_elements'], self.params.general['dx'])
+            self.f_s = get_frequency(self.pattern.activeList, self.params.acoustic['probe']['num_elements'], self.params.general['dx'])
 
             if len(self.pattern.activeList) != self.params.acoustic['probe']['num_elements'] // 4:
                 raise ValueError(f"Active list string must be {self.params.acoustic['probe']['num_elements'] // 4} characters long.")
@@ -147,7 +142,7 @@ class StructuredWave(AcousticField):
         except Exception as e:
             print(f"Error initializing StructuredWave: {e}")
 
-    def getName_field(self):
+    def get_name_field(self):
         """
         Generate the list of system matrix .hdr file paths for this wave.
 
@@ -156,25 +151,37 @@ class StructuredWave(AcousticField):
         """
         try:
             pattern_str = self.pattern.activeList
-            angle_str = self._format_angle()
+            angle_str = format_angle(self.angle)
             return f"field_{pattern_str}_{angle_str}"
         except Exception as e:
             print(f"Error generating file path: {e}")
             return None
+    
+    def plot_delay(self,figsize=(4,3)):
+        """
+        Plot the time of the maximum of each delayed signal to visualize the wavefront.
+        """
+        try:
+            # Find the index of the maximum for each delayed signal
+            max_indices = np.argmax(self.delayedSignal, axis=1)
+            element_indices = np.linspace(0, self.params.acoustic['probe']['num_elements'] - 1, self.delayedSignal.shape[0])
+            # Convert indices to time
+            max_times = max_indices / self.params.acoustic['f_AQ']
+
+            # Plot the times of the maxima
+            plt.figure(figsize=figsize)
+            plt.plot(element_indices, max_times, 'o-')
+            plt.title('Time of Maximum for Each Delayed Signal')
+            plt.xlabel('Transducer Element Index')
+            plt.ylabel('Time of Maximum (s)')
+            plt.grid(True)
+            plt.show()
+        except Exception as e:
+            print(f"Error plotting max times: {e}")
+
 
     ## PRIVATE METHODS ##
 
-    def _format_angle(self):
-        """
-        Format an angle into a 3-digit code like '120' for -20°, '020' for +20°.
-
-        Args:
-            angle (float): Angle in degrees.
-
-        Returns:
-            str: Formatted angle string.
-        """
-        return f"{'1' if self.angle < 0 else '0'}{abs(self.angle):02d}"
 
     def _apply_delay(self,dt=None,dx=None,c0=None):
         """
@@ -219,31 +226,6 @@ class StructuredWave(AcousticField):
         except Exception as e:
             print(f"Error applying delay: {e}")
             return None
-
-    def plot_delay(self):
-        """
-        Plot the time of the maximum of each delayed signal to visualize the wavefront.
-        """
-        if not MATPLOTLIB_AVAILABLE:
-            warnings.warn("matplotlib is not available. Cannot plot delay.", UserWarning)
-            return
-        try:
-            # Find the index of the maximum for each delayed signal
-            max_indices = np.argmax(self.delayedSignal, axis=1)
-            element_indices = np.linspace(0, self.params.acoustic['probe']['num_elements'] - 1, self.delayedSignal.shape[0])
-            # Convert indices to time
-            max_times = max_indices / self.params.acoustic['f_AQ']
-
-            # Plot the times of the maxima
-            plt.figure(figsize=(10, 6))
-            plt.plot(element_indices, max_times, 'o-')
-            plt.title('Time of Maximum for Each Delayed Signal')
-            plt.xlabel('Transducer Element Index')
-            plt.ylabel('Time of Maximum (s)')
-            plt.grid(True)
-            plt.show()
-        except Exception as e:
-            print(f"Error plotting max times: {e}")
 
     def _save2D_HDR_IMG(self, pathFolder):
         """
@@ -324,7 +306,7 @@ class StructuredWave(AcousticField):
         except Exception as e:
             print(f"Error saving HDR/IMG files: {e}")
 
-    def _SetUpSource(self, source, Nx, dt, dx, c0, factorT):
+    def _set_up_source(self, source, Nx, dt, dx, c0, factorT):
         """
         Set up the k-Wave source for the acoustic field simulation.
         Configures the source mask and applies delayed signals to active elements.

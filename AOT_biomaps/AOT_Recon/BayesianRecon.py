@@ -1,7 +1,7 @@
 from AOT_biomaps.AOT_Recon.AlgebraicRecon import AlgebraicRecon
 from AOT_biomaps.AOT_Recon.ReconEnums import ReconType, OptimizerType, PotentialType, ProcessType
 from .ReconTools import check_gpu_memory, calculate_memory_requirement
-from .AOT_Optimizers import MAPEM, MAPEM_STOP, DEPIERRO
+from .AOT_Optimizers import MAPEM, DEPIERRO
 from AOT_biomaps.Config import config
 
 import warnings
@@ -201,20 +201,18 @@ class BayesianRecon(AlgebraicRecon):
             if self.experiment.AOsignal_withTumor is None:
                 raise ValueError("AO signal with tumor is not available. Please generate AO signal with tumor the experiment first in the experiment object.")
             if self.optimizer.value ==  OptimizerType.PPGMLEM.value:
-                self.reconPhantom, self.indices = MAPEM_STOP(
+                self.reconPhantom, self.indices = MAPEM(
                     SMatrix=self.SMatrix, 
                     y=self.experiment.AOsignal_withTumor, 
-                    Omega=self.potentialFunction,
-                    beta=self.beta,
-                    delta=self.delta,
-                    gamma=self.gamma,
-                    sigma=self.sigma,
+                    potential_type=self.potentialFunction,
+                    alpha=self.beta if self.beta else 1.0,
+                    beta=self.delta if self.delta else 1.0,
+                    delta=self.gamma if self.gamma else 0.01,
                     numIterations=self.numIterations,
                     isSavingEachIteration=self.isSavingEachIteration,
                     withTumor=withTumor,
-                    device=self.device,
                     max_saves=5000,
-                    show_logs=True)
+                    show_logs=show_logs)
             elif self.optimizer.value == OptimizerType.PGC.value:
                 self.reconPhantom, self.indices = MAPEM(SMatrix=self.SMatrix, y=self.experiment.AOsignal_withTumor, withTumor=withTumor, show_logs=show_logs)
             elif self.optimizer.value == OptimizerType.DEPIERRO95.value:
@@ -225,7 +223,18 @@ class BayesianRecon(AlgebraicRecon):
             if self.experiment.AOsignal_withoutTumor is None:
                 raise ValueError("AO signal without tumor is not available. Please generate AO signal without tumor the experiment first in the experiment object.")
             if self.optimizer.value ==  OptimizerType.PPGMLEM.value:
-                self.reconLaser, self.indices = MAPEM_STOP(SMatrix=self.SMatrix, y=self.experiment.AOsignal_withoutTumor, withTumor=withTumor, show_logs=show_logs)
+                self.reconLaser, self.indices = MAPEM(
+                    SMatrix=self.SMatrix, 
+                    y=self.experiment.AOsignal_withoutTumor,
+                    potential_type=self.potentialFunction,
+                    alpha=self.beta if self.beta else 1.0,
+                    beta=self.delta if self.delta else 1.0,
+                    delta=self.gamma if self.gamma else 0.01,
+                    numIterations=self.numIterations,
+                    isSavingEachIteration=self.isSavingEachIteration,
+                    withTumor=withTumor,
+                    max_saves=5000,
+                    show_logs=show_logs)
             elif self.optimizer.value == OptimizerType.PGC.value:
                 self.reconLaser, self.indices = MAPEM(SMatrix=self.SMatrix, y=self.experiment.AOsignal_withoutTumor, withTumor=withTumor, show_logs=show_logs)
             elif self.optimizer.value == OptimizerType.DEPIERRO95.value:
