@@ -696,4 +696,62 @@ def check_cuda_available():
     return CUPY_AVAILABLE
 
 
+# ============================================================================
+# DENSE MATRIX OPERATIONS
+# ============================================================================
+
+def allocate_dense_matrix_gpu(manip, device=None):
+    """
+    Allocate and fill a dense matrix on GPU from acoustic fields.
+    
+    Args:
+        manip: Manipulation object containing acoustic fields
+        device: 'cpu' or 'gpu' (auto-detected if None)
+        
+    Returns:
+        Tuple of (dense_matrix_gpu, norm_factor_inv_gpu)
+    """
+    if not (device == 'gpu' and CUPY_AVAILABLE):
+        raise ValueError("GPU and CuPy are required for this operation")
+    
+    N = len(manip.AcousticFields)
+    T = manip.AcousticFields[0].field.shape[0]
+    Z = manip.AcousticFields[0].field.shape[1]
+    X = manip.AcousticFields[0].field.shape[2]
+    
+    # Allocate dense matrix on GPU
+    dense_matrix_gpu = cp.zeros((T, N, Z, X), dtype=cp.float32)
+    
+    # Fill the dense matrix from acoustic fields
+    for n in range(N):
+        field = manip.AcousticFields[n].field
+        for t in range(T):
+            dense_matrix_gpu[t, n] = cp.asarray(field[t].astype(np.float32))
+    
+    # Calculate normalization factor on GPU
+    sum_abs = cp.sum(cp.abs(dense_matrix_gpu))
+    norm_factor_inv_gpu = 1.0 / (sum_abs + 1e-12)
+    
+    return dense_matrix_gpu, norm_factor_inv_gpu
+
+
+def compute_norm_factor_dense_gpu(dense_matrix_gpu, device=None):
+    """
+    Compute the normalization factor for dense matrix: 1 / (sum(|A|) + eps).
+    
+    Args:
+        dense_matrix_gpu: Dense matrix on GPU (CuPy array)
+        device: 'cpu' or 'gpu' (auto-detected if None)
+        
+    Returns:
+        Normalization factor (CuPy array)
+    """
+    if not (device == 'gpu' and CUPY_AVAILABLE):
+        raise ValueError("GPU and CuPy are required for this operation")
+    
+    sum_abs = cp.sum(cp.abs(dense_matrix_gpu))
+    norm_factor_inv_gpu = 1.0 / (sum_abs + 1e-12)
+    return norm_factor_inv_gpu
+
+
 
