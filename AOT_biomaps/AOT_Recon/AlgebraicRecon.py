@@ -61,7 +61,7 @@ ALGORITHM_FORMULAS = {
         },
         "notes": "H_U is the Hessian diagonal of the potential function"
     },
-    OptimizerType.DEPIERRO95: {
+    OptimizerType.DEPIERRO: {
         "formula": r"theta^(k+1) = theta^(k) * (A^T * (y / (A*theta^(k) + epsilon))) / (A^T * 1 + sigma * beta * I)",
         "description": "De Pierro's quadratic regularization for EM",
         "reference": "De Pierro, IEEE TMI, 1995",
@@ -122,7 +122,7 @@ class AlgebraicRecon(Recon):
     Algebraic reconstruction class for AOT_biomaps.
     
     This class provides a unified interface for all iterative reconstruction algorithms,
-    including MLEM, LS, MAPEM, DEPIERRO95, PPGMLEM, PGC, and PDHG.
+    including MLEM, LS, MAPEM, DEPIERRO, PPGMLEM, PGC, and PDHG.
     
     Features:
     - Support for multiple optimizer types
@@ -145,7 +145,7 @@ class AlgebraicRecon(Recon):
             optimizer=OptimizerType.MAPEM,
             numIterations=500,
             alpha=1.0, beta=0.1,
-            potentialFunction=PotentialType.HUBER_PIECEWISE
+            potentialFunction=PotentialType.HUBER
         )
         recon.generate_SMatrix()
         recon.run(processType=ProcessType.PYTHON, withTumor=True)
@@ -242,8 +242,8 @@ class AlgebraicRecon(Recon):
             self.potentialFunction = potentialFunction
         else:
             # Default potential function based on optimizer
-            if optimizer in (OptimizerType.PPGMLEM, OptimizerType.PGC, OptimizerType.DEPIERRO95):
-                self.potentialFunction = PotentialType.HUBER_PIECEWISE
+            if optimizer in (OptimizerType.PPGMLEM, OptimizerType.PGC, OptimizerType.DEPIERRO):
+                self.potentialFunction = PotentialType.HUBER
             else:
                 self.potentialFunction = None
         
@@ -313,18 +313,17 @@ class AlgebraicRecon(Recon):
         POTENTIAL_COMPATIBILITY = {
             PotentialType.QUADRATIC: [
                 OptimizerType.MLEM, OptimizerType.LS, OptimizerType.MAPEM,
-                OptimizerType.DEPIERRO95, OptimizerType.PPGMLEM, OptimizerType.PGC,
-                OptimizerType.PDHG, OptimizerType.LBFGS
+                OptimizerType.DEPIERRO, OptimizerType.PPGMLEM, OptimizerType.PGC,
+                OptimizerType.PDHG
             ],
-            PotentialType.HUBER_PIECEWISE: [
+            PotentialType.HUBER: [
                 OptimizerType.MAPEM, OptimizerType.PPGMLEM, OptimizerType.PGC,
-                OptimizerType.PDHG, OptimizerType.LBFGS
+                OptimizerType.PDHG
             ],
-            PotentialType.NUYTS_RELATIVE: [
-                OptimizerType.MAPEM, OptimizerType.PPGMLEM, OptimizerType.PGC,
-                OptimizerType.LBFGS
+            PotentialType.RELATIVE_DIFFERENCE: [
+                OptimizerType.MAPEM, OptimizerType.PPGMLEM, OptimizerType.PGC
             ],
-            PotentialType.TV: [
+            PotentialType.TOTAL_VARIATION: [
                 OptimizerType.PDHG
             ],
         }
@@ -345,22 +344,22 @@ class AlgebraicRecon(Recon):
             )
         
         # Additional specific validations
-        if self.potentialFunction == PotentialType.TV:
-            # TV requires PDHG-specific parameters
+        if self.potentialFunction == PotentialType.TOTAL_VARIATION:
+            # TOTAL_VARIATION requires PDHG-specific parameters
             if self.alpha is None:
-                errors.append("TV potential requires alpha parameter to be set")
+                errors.append("TOTAL_VARIATION potential requires alpha parameter to be set")
             if self.beta is None:
-                errors.append("TV potential requires beta parameter to be set")
+                errors.append("TOTAL_VARIATION potential requires beta parameter to be set")
         
-        if self.potentialFunction == PotentialType.HUBER_PIECEWISE:
+        if self.potentialFunction == PotentialType.HUBER:
             # Huber requires delta parameter
             if self.delta is None:
-                errors.append("HUBER_PIECEWISE potential requires delta parameter to be set")
+                errors.append("HUBER potential requires delta parameter to be set")
         
-        if self.potentialFunction == PotentialType.NUYTS_RELATIVE:
-            # Nuyts relative requires beta parameter
+        if self.potentialFunction == PotentialType.RELATIVE_DIFFERENCE:
+            # Relative difference requires beta parameter
             if self.beta is None:
-                errors.append("NUYTS_RELATIVE potential requires beta parameter to be set")
+                errors.append("RELATIVE_DIFFERENCE potential requires beta parameter to be set")
 
     def _validate_hyperparameters(self):
         """
@@ -529,7 +528,7 @@ class AlgebraicRecon(Recon):
             self._run_LS(y=y, withTumor=withTumor, show_logs=show_logs)
         elif self.optimizer == OptimizerType.MAPEM:
             self._run_MAPEM(y=y, withTumor=withTumor, show_logs=show_logs)
-        elif self.optimizer == OptimizerType.DEPIERRO95:
+        elif self.optimizer == OptimizerType.DEPIERRO:
             self._run_DEPIERRO(y=y, withTumor=withTumor, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PPGMLEM:
             self._run_PPGMLEM(y=y, withTumor=withTumor, show_logs=show_logs)
@@ -618,7 +617,7 @@ class AlgebraicRecon(Recon):
                 cmd.extend(["-alpha", str(self.alpha)])
             if self.beta is not None:
                 cmd.extend(["-beta", str(self.beta)])
-        elif self.optimizer == OptimizerType.DEPIERRO95:
+        elif self.optimizer == OptimizerType.DEPIERRO:
             if self.beta is not None:
                 cmd.extend(["-beta", str(self.beta)])
             if self.sigma is not None:
@@ -774,7 +773,7 @@ class AlgebraicRecon(Recon):
             )
 
     def _run_DEPIERRO(self, y, withTumor: bool = True, show_logs: bool = True):
-        """Run DEPIERRO95 reconstruction."""
+        """Run DEPIERRO reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices = DEPIERRO(
                 SMatrix=self.SMatrix,
@@ -1544,7 +1543,7 @@ class AlgebraicRecon(Recon):
                 gamma_str = f'_Gamma_{self.gamma}'
                 sigma_str = f'_Sigma_{self.sigma}'
                 dir_pattern += f'{beta_str}{delta_str}{gamma_str}{sigma_str}'
-            elif optimizer in (OptimizerType.PGC, OptimizerType.DEPIERRO95):
+            elif optimizer in (OptimizerType.PGC, OptimizerType.DEPIERRO):
                 beta_str = f'_Beta_{self.beta}'
                 sigma_str = f'_Sigma_{self.sigma}'
                 dir_pattern += f'{beta_str}{sigma_str}'

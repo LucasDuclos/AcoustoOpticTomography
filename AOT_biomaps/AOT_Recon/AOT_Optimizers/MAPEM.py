@@ -49,7 +49,7 @@ def MAPEM(
         SMatrix: SMatrix instance (already allocated)
         y: Measurement data
         numIterations: Number of iterations
-        potential_type: Type of potential function (QUADRATIC, HUBER_PIECEWISE, NUYTS_RELATIVE, TV)
+        potential_type: Type of potential function (QUADRATIC, HUBER, RELATIVE_DIFFERENCE, TOTAL_VARIATION)
         alpha: Regularization weight
         beta: Additional parameter for potential functions
         delta: Parameter for Huber potential
@@ -91,9 +91,9 @@ def MAPEM(
     def get_potential(U):
         if potential_type == PotentialType.QUADRATIC:
             return quadratic_potential(SMatrix, U, alpha)
-        elif potential_type == PotentialType.HUBER_PIECEWISE:
+        elif potential_type == PotentialType.HUBER:
             return huber_potential(SMatrix, U, alpha, delta)
-        elif potential_type == PotentialType.NUYTS_RELATIVE:
+        elif potential_type == PotentialType.RELATIVE_DIFFERENCE:
             return relative_difference_potential(SMatrix, U, alpha, beta)
         else:
             raise ValueError(f"Unsupported potential type: {potential_type}")

@@ -27,7 +27,7 @@ except ImportError:
     CUPY_AVAILABLE = False
 
 # Non-differentiable potentials that LBFGS cannot handle
-_NON_DIFFERENTIABLE_POTENTIALS = {PotentialType.TV}
+_NON_DIFFERENTIABLE_POTENTIALS = {PotentialType.TOTAL_VARIATION}
 
 
 def LBFGS(
@@ -57,7 +57,7 @@ def LBFGS(
         SMatrix: SMatrix instance (already allocated)
         y: Measurement data
         numIterations: Number of iterations
-        potential_type: Type of potential function (QUADRATIC, HUBER_PIECEWISE, NUYTS_RELATIVE)
+        potential_type: Type of potential function (QUADRATIC, HUBER, RELATIVE_DIFFERENCE)
         alpha: Regularization weight
         beta: Additional parameter for potential functions
         delta: Parameter for Huber potential
@@ -108,9 +108,9 @@ def LBFGS(
     def get_potential(U):
         if potential_type == PotentialType.QUADRATIC:
             return quadratic_potential(SMatrix, U, alpha)
-        elif potential_type == PotentialType.HUBER_PIECEWISE:
+        elif potential_type == PotentialType.HUBER:
             return huber_potential(SMatrix, U, alpha, delta)
-        elif potential_type == PotentialType.NUYTS_RELATIVE:
+        elif potential_type == PotentialType.RELATIVE_DIFFERENCE:
             return relative_difference_potential(SMatrix, U, alpha, beta)
         else:
             raise ValueError(f"Unsupported potential type: {potential_type}")
