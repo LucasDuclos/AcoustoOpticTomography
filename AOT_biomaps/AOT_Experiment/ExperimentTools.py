@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 from itertools import groupby
 from tqdm import trange
 
@@ -248,3 +250,13 @@ def load_AOsignal(AOsignalPath):
         return np.load(AOsignalPath)  # Assumed to be in the correct format
     else:
         raise ValueError("Unsupported file format. Use .cdh/.cdf or .npy.")
+    
+def create_dark_transparent_hot_cmap(vmin=0.0, opacity=1.0):
+    n_colors = 256
+    hot_cmap = plt.cm.get_cmap('hot', n_colors)
+    colors = [hot_cmap(i)[:3] + (opacity,) for i in range(n_colors)]
+    colors = [
+        (0, 0, 0, 0) if i/n_colors < vmin else colors[i]
+        for i in range(n_colors)
+    ]
+    return LinearSegmentedColormap.from_list('dark_transparent_hot', colors)

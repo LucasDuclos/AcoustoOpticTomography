@@ -1,5 +1,5 @@
 """
-SparseSMatrix_SELL.py
+SMatrix_SELL.py
 
 SELL-C-sigma sparse matrix construction and operations.
 Supports both CPU (NumPy) and GPU (CuPy) implementations.
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     import cupy as cp
 
 
-class SparseSMatrix_SELL:
+class SMatrix_SELL:
     """
     Sparse matrix in SELL-C-sigma format for efficient GPU operations.
     
@@ -36,7 +36,7 @@ class SparseSMatrix_SELL:
     - Non-zero values and column indices are stored in flattened arrays
     
     Usage:
-        S = SparseSMatrix_SELL(manip, device='gpu')  # or 'cpu'
+        S = SMatrix_SELL(manip, device='gpu')  # or 'cpu'
         S.allocate()
     
     After allocate(), the following attributes are available:
@@ -385,7 +385,7 @@ class SparseSMatrix_SELL:
             self.norm_factor_inv_gpu = cp.cuda.alloc(self.norm_factor_inv.nbytes)
             cp.cuda.memcpy_htod(self.norm_factor_inv_gpu, self.norm_factor_inv)
 
-    def projection(self, theta: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
+    def forward_projection(self, theta: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
         """
         Perform forward projection: q = A * theta
         
@@ -438,7 +438,7 @@ class SparseSMatrix_SELL:
             
             return q
 
-    def backprojection(self, e: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
+    def backward_projection(self, e: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
         """
         Perform backprojection: c = A^T * e
         
@@ -528,7 +528,7 @@ class SparseSMatrix_SELL:
                 if col < len(window_cpu):
                     self.sell_values[i] *= window_cpu[col]
 
-    def getMatrixSize(self) -> dict:
+    def get_matrix_size(self) -> dict:
         """
         Returns the total size of the SELL-C-sigma matrix in GB.
         
@@ -603,7 +603,7 @@ class SparseSMatrix_SELL:
         except Exception as e:
             warnings.warn(f"Error freeing GPU memory: {e}")
 
-    def flipAngle(self):
+    def flip_angle(self):
         """
         Permute the columns of the SELL-C-sigma matrix corresponding to opposite angles.
         Assumes N is even and angles are symmetrically organized.

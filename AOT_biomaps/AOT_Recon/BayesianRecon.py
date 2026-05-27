@@ -38,7 +38,7 @@ class BayesianRecon(AlgebraicRecon):
         if not isinstance(self.potentialFunction, PotentialType):
             raise TypeError(f"Potential functions must be of type PotentialType, got {type(self.potentialFunction)}")  
 
-    def checkExistingFile(self, date=None, withTumor=True):
+    def check_existing_file(self, date=None, withTumor=True):
         """
         Check if the reconstruction file already exists, based on current instance parameters.
 

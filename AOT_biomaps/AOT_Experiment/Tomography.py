@@ -48,7 +48,7 @@ class Tomography(Experiment):
             return False, "AOsignal with and without tumor must have the same shape."
         for field in self.AcousticFields:
             if field.field.shape[0] != self.AOsignal_withTumor.shape[0]:
-                return False, f"Field {field.getName_field()} has an invalid Time shape: {field.field.shape[0]}. Expected time shape to be {self.AOsignal_withTumor.shape[0]}."
+                return False, f"Field {field.get_name_field()} has an invalid Time shape: {field.field.shape[0]}. Expected time shape to be {self.AOsignal_withTumor.shape[0]}."
         if not all(field.field.shape == self.AcousticFields[0].field.shape for field in self.AcousticFields):
             return False, "All AcousticFields must have the same shape."
         if self.OpticImage is None:
@@ -411,7 +411,7 @@ class Tomography(Experiment):
         newAcousticFields = []
         index = []
         for i, field in enumerate(self.AcousticFields):
-            phase = get_phase_deterministic(hex_to_binary_profile(field.getName_field()[6:-4], self.params.acoustic['probe']['num_elements']))
+            phase = get_phase_deterministic(hex_to_binary_profile(field.get_name_field()[6:-4], self.params.acoustic['probe']['num_elements']))
             if phase in shift_rads:
                 newAcousticFields.append(field)
                 index.append(i)
@@ -843,23 +843,23 @@ class Tomography(Experiment):
             if fieldDataPath is None:
                 pathField = None
             else:
-                pathField = os.path.join(fieldDataPath, AcousticField.getName_field() + self.FormatSave.value)
+                pathField = os.path.join(fieldDataPath, AcousticField.get_name_field() + self.FormatSave.value)
             if pathField is not None and os.path.exists(pathField) and self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
-                progress_bar.set_postfix_str(f"Loading field - {AcousticField.getName_field()}")
+                progress_bar.set_postfix_str(f"Loading field - {AcousticField.get_name_field()}")
                 try:
                     AcousticField.load_field(fieldDataPath, self.FormatSave, nameBlock)
                 except:
-                    progress_bar.set_postfix_str(f"Error loading field -> Generating field - {AcousticField.getName_field()} ---- processing on {config.get_process().upper()} ----")
+                    progress_bar.set_postfix_str(f"Error loading field -> Generating field - {AcousticField.get_name_field()} ---- processing on {config.get_process().upper()} ----")
                     AcousticField.generate_field(show_log=show_log)
                     if not os.path.exists(pathField):
-                        progress_bar.set_postfix_str(f"Saving field - {AcousticField.getName_field()}")
+                        progress_bar.set_postfix_str(f"Saving field - {AcousticField.get_name_field()}")
                         os.makedirs(os.path.dirname(pathField), exist_ok=True)
                         AcousticField.save_field(fieldDataPath)
             else:
-                progress_bar.set_postfix_str(f"Generating field - {AcousticField.getName_field()} ---- processing on {config.get_process().upper()} ----")
+                progress_bar.set_postfix_str(f"Generating field - {AcousticField.get_name_field()} ---- processing on {config.get_process().upper()} ----")
                 AcousticField.generate_field(show_log=show_log)
                 if pathField is not None and not os.path.exists(pathField) and self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
-                    progress_bar.set_postfix_str(f"Saving field - {AcousticField.getName_field()}")
+                    progress_bar.set_postfix_str(f"Saving field - {AcousticField.get_name_field()}")
                     os.makedirs(os.path.dirname(pathField), exist_ok=True)
                     AcousticField.save_field(fieldDataPath)
             listAcousticFields.append(AcousticField)
@@ -1044,7 +1044,7 @@ class Tomography(Experiment):
         # 1. Grouping and Averaging
         for i in trange(len(self.AcousticFields), desc="Organizing Acoustic Fields"):
             field_obj = self.AcousticFields[i]
-            label = field_obj.getName_field()
+            label = field_obj.get_name_field()
             parts = label.split("_")
             hex_pattern = parts[1]
             angle_code = parts[-1]

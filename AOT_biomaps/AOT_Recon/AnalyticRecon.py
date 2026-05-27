@@ -38,7 +38,7 @@ class AnalyticRecon(Recon):
         else:
             raise ValueError(f"Unknown analytic reconstruction type: {processType}")
         
-    def checkExistingFile(self, date=None, withTumor=True):
+    def check_existing_file(self, date=None, withTumor=True):
         """
         Check if the reconstruction file already exists, based on current instance parameters.
 

@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     import cupy as cp
 
 
-class SparseSMatrix_DENSE:
+class SMatrix_DENSE:
     """
     Construction of a DENSE matrix from a `manip` object.
     
@@ -32,7 +32,7 @@ class SparseSMatrix_DENSE:
     - On CPU: Uses NumPy arrays
     
     Usage:
-        S = SparseSMatrix_DENSE(manip, device='gpu')  # or 'cpu'
+        S = SMatrix_DENSE(manip, device='gpu')  # or 'cpu'
         S.allocate()
     
     After allocate(), the following attributes are available:
@@ -119,7 +119,7 @@ class SparseSMatrix_DENSE:
         # Build dense matrix from acoustic fields
         self.dense_matrix = np.zeros((self.T, self.N, self.Z, self.X), dtype=np.float32)
         
-        for n in range(self.N):
+        for n in trange(self.N):
             field = self.manip.AcousticFields[n].field
             for t in range(self.T):
                 self.dense_matrix[t, n] = field[t].astype(np.float32)
@@ -161,4 +161,4 @@ class SparseSMatrix_DENSE:
         self.sparse_mod = None
 
     def __repr__(self):
-        return f"SparseSMatrix_DENSE(device={self.device}, shape=({self.T}, {self.N}, {self.Z}, {self.X}))"
+        return f"SMatrix_DENSE(device={self.device}, shape=({self.T}, {self.N}, {self.Z}, {self.X}))"

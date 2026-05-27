@@ -4,7 +4,9 @@ from AOT_biomaps.Config import config
 from ._mainRecon import Recon
 from .ReconEnums import ReconType, OptimizerType, ProcessType, SMatrixType
 from .AOT_Optimizers import MLEM, LS
-from .AOT_SMatrix import SMatrix_CSR, SMatrix_SELL
+from .AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
+from .AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
+from .AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
 
 import os
 import subprocess
@@ -12,26 +14,19 @@ import numpy as np
 from datetime import datetime
 from tempfile import gettempdir
 import math
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
-# Check for matplotlib availability
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib.animation as animation
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    plt = None
-    animation = None
-    MATPLOTLIB_AVAILABLE = False
 
 class AlgebraicRecon(Recon):
     """
     This class implements the Algebraic reconstruction process.
     It currently does not perform any operations but serves as a template for future implementations.
     """
-    def __init__(self, opti = OptimizerType.MLEM, numIterations = 10000, numSubsets = 1, isSavingEachIteration=True, maxSaves = 5000, denominatorThreshold = 1e-6, smatrixType = SMatrixType.SELL, sparseThreshold=0.1, isComplexeRecon = False, device = None, **kwargs):
+    def __init__(self, optimizer = OptimizerType.MLEM, numIterations = 10000, numSubsets = 1, isSavingEachIteration=True, maxSaves = 5000, denominatorThreshold = 1e-6, smatrixType = SMatrixType.SELL, sparseThreshold=0.1, isComplexeRecon = False, device = None, **kwargs):
         super().__init__(**kwargs)
         self.reconType = ReconType.Algebraic
-        self.optimizer = opti
+        self.optimizer = optimizer
         self.reconPhantom = []
         self.reconLaser = []
         self.indices = []
@@ -57,7 +52,7 @@ class AlgebraicRecon(Recon):
         if type(self.numSubsets) is not int:
             raise TypeError("Number of subsets must be an integer.")
         
-        print("Generating system matrix (processing acoustic fields)...")
+        
         if self.isComplexeRecon:
             if self.experiment.AOsignal_withTumor is not None:
                 self.experiment.AOsignal_withTumor_demodulated = self.experiment.parse_and_demodulate(withTumor=True)
@@ -67,12 +62,12 @@ class AlgebraicRecon(Recon):
                 raise ValueError("No AO signal available for demodulation. Please provide at least one signal, with or without tumor.")
             self.experiment.AcousticFields_demodulated = self.experiment.demodulate_acoustic_fields()
 
-        if self.smatrixType == SMatrixType.DENSE:
-            self.SMatrix = self._fillDenseSMatrix()
-        else:
-            self.SMatrix = self._fillSparseSMatrix(isShowLogs=True)
+        
 
     # PUBLIC METHODS
+    def generate_SMatrix(self, isShowLogs=True):
+        print("Generating system matrix (processing acoustic fields)...")
+        self.SMatrix = self._fillSMatrix(isShowLogs=True)
 
     def run(self, processType = ProcessType.PYTHON, withTumor= True, show_logs=True):
         """
@@ -616,7 +611,7 @@ class AlgebraicRecon(Recon):
 
         plt.show()
 
-    def checkExistingFile(self, date=None, withTumor=True):
+    def check_existing_file(self, date=None, withTumor=True):
         """
         Check if the reconstruction file already exists, based on current instance parameters.
 
@@ -758,8 +753,20 @@ class AlgebraicRecon(Recon):
         self.SMatrix = self.SMatrix / (float(self.experiment.params.acoustic['emission']['voltage'])*float(self.experiment.params.acoustic['emission']['sensitivity']))  
 
     # PRIVATE METHODS
-
-    def _fillDenseSMatrix(self):
+         
+    def _fillSMatrix(self, isShowLogs=True):
+        if self.smatrixType == SMatrixType.DENSE:
+            return self._fillSMatrix_DENSE()
+        elif self.smatrixType == SMatrixType.CSR:
+            return self._fillSMatrix_CSR(isShowLogs=isShowLogs)
+        elif self.smatrixType == SMatrixType.COO:
+            raise NotImplementedError("COO sparse matrix not implemented yet.")
+        elif self.smatrixType == SMatrixType.SELL:
+            return self._fillSMatrix_SELL(isShowLogs=isShowLogs)
+        else:
+            raise ValueError(f"Unsupported SMatrix type: {self.smatrixType}")
+    
+    def _fillSMatrix_DENSE(self):
         """
         Construit une matrice dense en mémoire.
         """
@@ -771,36 +778,26 @@ class AlgebraicRecon(Recon):
         with concurrent.futures.ThreadPoolExecutor() as ex:
             ex.map(copy_block, range(N))
         return S
-           
-    def _fillSparseSMatrix(self, isShowLogs=True):
-        if self.smatrixType == SMatrixType.CSR:
-            return self._fillSparseSMatrix_CSR(isShowLogs=isShowLogs)
-        if self.smatrixType == SMatrixType.COO:
-            raise NotImplementedError("COO sparse matrix not implemented yet.")
-        if self.smatrixType == SMatrixType.SELL:
-            return self._fillSparseSMatrix_SELL(isShowLogs=isShowLogs)
     
-    def _fillSparseSMatrix_CSR(self, isShowLogs=True):
+    def _fillSMatrix_CSR(self, isShowLogs=True):
         """
-        Construit une matrice sparse CSR par morceaux sans concaténation intermédiaire.
-        Libère toute la mémoire temporaire à chaque étape.
+        Built a sparse CSR matrix in chunks without intermediate concatenation.
+        Frees all temporary memory at each step.
         """
-        sparse_matrix = SparseSMatrix_CSR(self.experiment,relative_threshold=self.sparseThreshold,device=self.device)
+        sparse_matrix = SMatrix_CSR(self.experiment,relative_threshold=self.sparseThreshold,device=self.device)
         sparse_matrix.allocate()
         if isShowLogs:
             print(f" Sparse matrix size: {sparse_matrix.getMatrixSize()} GB")
             print(f"Sparse matrix density: {sparse_matrix.compute_density()}")
         return sparse_matrix
     
-    def _fillSparseSMatrix_SELL(self, isShowLogs=True):
+    def _fillSMatrix_SELL(self, isShowLogs=True):
         """
-        Construit une matrice sparse SELL par morceaux sans concaténation intermédiaire.
-        Libère toute la mémoire temporaire à chaque étape.
+        Built a sparse SELL matrix in chunks without intermediate concatenation.
+        Frees all temporary memory at each step.
         """
-        sparse_matrix = SparseSMatrix_SELL(self.experiment,relative_threshold=self.sparseThreshold,device=self.device)
+        sparse_matrix = SMatrix_SELL(self.experiment,relative_threshold=self.sparseThreshold,device=self.device)
         sparse_matrix.allocate()
-        # fenetre_gpu = get_apodization_vector_gpu(sparse_matrix)
-        # sparse_matrix.apply_apodization_gpu(fenetre_gpu)
         if isShowLogs:
             print(f" Sparse matrix size: {sparse_matrix.getMatrixSize()} GB")
             print(f"Sparse matrix density: {sparse_matrix.compute_density()}")
@@ -958,9 +955,10 @@ class AlgebraicRecon(Recon):
             print("Reconstruction terminée avec succès.")
         self.load_reconCASToR(withTumor=withTumor)
     
-    def flipAngle(self):
+    def flip_angle(self):
         if self.smatrixType == SMatrixType.CSR:
             self.SMatrix.flip_angle()
+    
     # STATIC METHODS
     @staticmethod
     def plot_mse_comparison(recon_list, figSize=(4.5, 3.5), labels=None):

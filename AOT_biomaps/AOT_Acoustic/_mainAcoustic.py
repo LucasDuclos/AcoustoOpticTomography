@@ -207,7 +207,7 @@ class AcousticField(ABC):
             elif self.params.acoustic['typeSim'] == TypeSim.KWAVE.value or self.params.acoustic['typeSim'] == TypeSim.SIMPLE_SIM.value:
                 if formatSave.value == FormatSave.HDR_IMG.value: 
                     if self.params.acoustic["dim"] == Dim.D2.value:
-                        self._load_fieldKWAVE_XZ(os.path.join(folderPath,self.getName_field()+formatSave.value))
+                        self._load_fieldKWAVE_XZ(os.path.join(folderPath,self.get_name_field()+formatSave.value))
                     elif self.params.acoustic["dim"] == Dim.D3.value:
                         raise NotImplementedError("3D KWAVE field loading is not implemented yet.")
                 elif formatSave.value == FormatSave.H5.value:
@@ -217,7 +217,7 @@ class AcousticField(ABC):
                         raise NotImplementedError("H5 KWAVE field loading is not implemented yet.")
                 elif formatSave.value == FormatSave.NPY.value:
                     if self.params.acoustic["dim"] == Dim.D2.value:
-                        self.field = np.load(os.path.join(folderPath,self.getName_field()+formatSave.value))
+                        self.field = np.load(os.path.join(folderPath,self.get_name_field()+formatSave.value))
                     elif self.params.acoustic["dim"] == Dim.D3.value:
                         raise NotImplementedError("3D NPY KWAVE field loading is not implemented yet.")
             elif self.params.acoustic['typeSim'] == TypeSim.HYDRO.value:
@@ -226,9 +226,9 @@ class AcousticField(ABC):
                     raise ValueError("HDR_IMG format is not supported for Hydrophone acquisition.")
                 if formatSave.value == FormatSave.H5.value:
                     if self.params.acoustic["dim"] == Dim.D2.value:
-                        self.field, self.params.general['Xrange'], self.params.general['Zrange'] = self._load_fieldHYDRO_XZ(os.path.join(folderPath, self.getName_field() + '.h5'),  os.path.join(folderPath, "PARAMS_" +self.getName_field() + '.mat'))
+                        self.field, self.params.general['Xrange'], self.params.general['Zrange'] = self._load_fieldHYDRO_XZ(os.path.join(folderPath, self.get_name_field() + '.h5'),  os.path.join(folderPath, "PARAMS_" +self.get_name_field() + '.mat'))
                     elif self.params.acoustic["dim"] == Dim.D3.value: 
-                        self._load_fieldHYDRO_XYZ(os.path.join(folderPath, self.getName_field() + '.h5'),  os.path.join(folderPath, "PARAMS_" +self.getName_field() + '.mat'))
+                        self._load_fieldHYDRO_XYZ(os.path.join(folderPath, self.get_name_field() + '.h5'),  os.path.join(folderPath, "PARAMS_" +self.get_name_field() + '.mat'))
                 elif formatSave.value == FormatSave.NPY.value:
                     if self.params.acoustic["dim"] == Dim.D2.value:
                         self.field = np.load(folderPath)
@@ -242,7 +242,7 @@ class AcousticField(ABC):
             raise
 
     @abstractmethod
-    def getName_field(self):
+    def get_name_field(self):
         pass
 
     ## DISPLAY METHODS ##
@@ -600,7 +600,7 @@ class AcousticField(ABC):
         try:
             if nameBlock is None:
                 nameBlock = 'data'
-            with h5py.File(os.path.join(filePath, self.getName_field()+".h5"), 'r') as f:
+            with h5py.File(os.path.join(filePath, self.get_name_field()+".h5"), 'r') as f:
                 self.field = f[nameBlock][:]
         except Exception as e:
             print(f"Error in _load_field_h5 method: {e}")
@@ -614,7 +614,7 @@ class AcousticField(ABC):
         - filePath (str): The path where the file will be saved.
         """
         try:
-            with h5py.File(filePath+self.getName_field()+"h5", 'w') as f:
+            with h5py.File(filePath+self.get_name_field()+"h5", 'w') as f:
                 for key, value in self.__dict__.items():
                     if key != 'field':
                         f.create_dataset(key, data=value)
@@ -631,7 +631,7 @@ class AcousticField(ABC):
         - filePath (str): The path where the file will be saved.
         """
         try:
-            np.save(filePath+self.getName_field()+"npy", self.field)
+            np.save(filePath+self.get_name_field()+"npy", self.field)
         except Exception as e:
             print(f"Error in _save2D_NPY method: {e}")
             raise

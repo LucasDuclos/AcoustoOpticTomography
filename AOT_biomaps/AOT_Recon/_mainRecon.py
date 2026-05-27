@@ -7,14 +7,10 @@ import os
 import numpy as np
 from abc import ABC, abstractmethod
 from tqdm import trange
+import matplotlib.pyplot as plt
 
-# Check for matplotlib availability
-try:
-    import matplotlib.pyplot as plt
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    plt = None
-    MATPLOTLIB_AVAILABLE = False
+    
+
 
 class Recon(ABC):
     def __init__(self, experiment, saveDir = None, isGPU = config.get_process() == 'gpu', isMultiCPU = True):
@@ -48,7 +44,7 @@ class Recon(ABC):
         Warnings:
             reconPhantom and reconLaser are lists of 2D numpy arrays, each array corresponding to one iteration.
         """
-        isExisting, filepath = self.checkExistingFile(date=date, withTumor=withTumor)
+        isExisting, filepath = self.check_existing_file(date=date, withTumor=withTumor)
         if isExisting and not overwrite:
             return
         
@@ -72,10 +68,10 @@ class Recon(ABC):
             print(f"Reconstruction results saved to {os.path.dirname(filepath)}")
 
     @abstractmethod
-    def checkExistingFile(self, date=None, withTumor=True):
+    def check_existing_file(self, date=None, withTumor=True):
         pass
 
-    def calculateCRC(self, use_ROI=True):
+    def calculate_CRC(self, use_ROI=True):
         """
         Computes the Contrast Recovery Coefficient (CRC) for all ROIs combined or globally.
         For analytic reconstruction: returns a single CRC value.
@@ -132,7 +128,7 @@ class Recon(ABC):
 
             self.CRC = crc_list
 
-    def calculateMSE(self,withTumor=True):
+    def calculate_MSE(self,withTumor=True):
         """
         Calculate the Mean Squared Error (MSE) of the reconstruction.
 
@@ -155,7 +151,7 @@ class Recon(ABC):
                 for theta in self.reconLaser:
                     self.MSE.append(mse(self.experiment.OpticImage.laser.intensity, theta))
 
-    def calculateSSIM(self, withTumor=True, show_log=False):
+    def calculate_SSIM(self, withTumor=True, show_log=False):
         """
         Calculate SSIM without normalizing images, using original data_range.
         """
@@ -192,7 +188,6 @@ class Recon(ABC):
                 current_data_range = max(data_range, theta_max - theta_min)  # Use the larger range
                 self.SSIM.append(ssim(ref_img, theta, data_range=current_data_range))
 
-    
     def show(self, withTumor=True, savePath=None, scale='same'):
         """
         Display the reconstructed images.
@@ -204,8 +199,6 @@ class Recon(ABC):
         Note:
             Requires matplotlib to be installed. If matplotlib is not available, this method will raise an ImportError.
         """
-        if not MATPLOTLIB_AVAILABLE:
-            raise ImportError("matplotlib is required for the show() method. Please install it with: pip install matplotlib")
         if withTumor:
             if self.reconPhantom is None:
                 raise ValueError("Reconstructed phantom with tumor is empty. Run reconstruction first.")

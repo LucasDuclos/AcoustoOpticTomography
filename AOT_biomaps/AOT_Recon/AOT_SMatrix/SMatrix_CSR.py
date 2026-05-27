@@ -1,5 +1,5 @@
 """
-SparseSMatrix_CSR.py
+SMatrix_CSR.py
 
 CSR (Compressed Sparse Row) sparse matrix construction and operations.
 Supports both CPU (NumPy) and GPU (CuPy) implementations.
@@ -34,7 +34,7 @@ except ImportError:
     KERNELS_AVAILABLE = False
 
 
-class SparseSMatrix_CSR:
+class SMatrix_CSR:
     """
     Construction of a CSR matrix from a `manip` object.
     
@@ -43,7 +43,7 @@ class SparseSMatrix_CSR:
     - On CPU: Uses NumPy arrays and CPU implementations
     
     Usage:
-        S = SparseSMatrix_CSR(manip, device='gpu')  # or 'cpu'
+        S = SMatrix_CSR(manip, device='gpu')  # or 'cpu'
         S.allocate()
     
     After allocate(), the following attributes are available:
@@ -356,7 +356,7 @@ class SparseSMatrix_CSR:
             self.norm_factor_inv_gpu = cp.cuda.alloc(self.norm_factor_inv.nbytes)
             cp.cuda.memcpy_htod(self.norm_factor_inv_gpu, self.norm_factor_inv)
 
-    def projection(self, theta: Union[np.ndarray, "cp.ndarray"]) -> Union[np.ndarray, "cp.ndarray"]:
+    def forward_projection(self, theta: Union[np.ndarray, "cp.ndarray"]) -> Union[np.ndarray, "cp.ndarray"]:
         """
         Perform forward projection: q = A * theta
         
@@ -395,9 +395,9 @@ class SparseSMatrix_CSR:
                 q[i] = np.sum(self.h_values[start:end] * theta_cpu[self.h_col_ind[start:end]])
             return q
 
-    def backprojection(self, e: Union[np.ndarray, "cp.ndarray"]) -> Union[np.ndarray, "cp.ndarray"]:
+    def backward_projection(self, e: Union[np.ndarray, "cp.ndarray"]) -> Union[np.ndarray, "cp.ndarray"]:
         """
-        Perform backprojection: c = A^T * e
+        Perform backward projection: c = A^T * e
         
         Args:
             e: Input vector (N*T,)

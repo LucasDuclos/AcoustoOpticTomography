@@ -1,6 +1,6 @@
 from AOT_biomaps.AOT_Recon.AlgebraicRecon import AlgebraicRecon
 from AOT_biomaps.AOT_Recon.ReconEnums import ReconType, ProcessType, SMatrixType, NoiseType
-from AOT_biomaps.AOT_Recon.AOT_Optimizers import PDHG
+from AOT_biomaps.AOT_Recon.AOT_Optimizers.PDHG import PDHG
 from AOT_biomaps.AOT_Recon.ReconEnums import OptimizerType
 
 import os
@@ -44,7 +44,7 @@ class PrimalDualRecon(AlgebraicRecon):
         raise NotImplementedError("CASToR convex reconstruction is not implemented yet.")
 
 
-    def checkExistingFile(self, date=None, withTumor=True):
+    def check_existing_file(self, date=None, withTumor=True):
         """
         Check if the file already exists, based on current instance parameters.
         Returns:
@@ -164,102 +164,53 @@ class PrimalDualRecon(AlgebraicRecon):
                 print(f"Loaded reconstruction results and indices from {results_dir}")
 
     def _convexReconPython(self, withTumor,show_logs=True):
-        if self.optimizer == OptimizerType.CP_TV:
-            if withTumor:
-                self.reconPhantom, self.indices = CP_TV(
-                                                    SMatrix = self.SMatrix, 
-                                                    y = self.experiment.AOsignal_withTumor, 
-                                                    alpha=self.alpha,               
-                                                    beta=self.beta,             
-                                                    theta=self.theta,
-                                                    numIterations=self.numIterations, 
-                                                    isSavingEachIteration=self.isSavingEachIteration,
-                                                    L=self.L, 
-                                                    withTumor=withTumor,
-                                                    device=self.device,
-                                                    max_saves=self.maxSaves,
-                                                    show_logs=show_logs,
-                                                    smatrixType= self.smatrixType,
-                                                    k_security=self.k_security,
-                                                    use_power_method=self.use_power_method,
-                                                    auto_alpha_gamma=self.auto_alpha_gamma,   
-                                                    apply_positivity_clamp=self.apply_positivity_clamp,
-                                                    tikhonov_as_gradient=self.tikhonov_as_gradient, 
-                                                    use_laplacian=self.use_laplacian,        
-                                                    laplacian_beta_scale=self.laplacian_beta_scale
-                )
-            else:
-                self.reconLaser, self.indices = CP_TV(
-                                                    SMatrix = self.SMatrix, 
-                                                    y = self.experiment.AOsignal_withoutTumor, 
-                                                    alpha=self.alpha,               
-                                                    beta=self.beta,             
-                                                    theta=self.theta,
-                                                    numIterations=self.numIterations, 
-                                                    isSavingEachIteration=self.isSavingEachIteration,
-                                                    L=self.L, 
-                                                    withTumor=withTumor,
-                                                    device=self.device,
-                                                    max_saves=self.maxSaves,
-                                                    show_logs=show_logs,
-                                                    smatrixType= self.smatrixType,
-                                                    k_security=self.k_security,
-                                                    use_power_method=self.use_power_method,
-                                                    auto_alpha_gamma=self.auto_alpha_gamma,   
-                                                    apply_positivity_clamp=self.apply_positivity_clamp,
-                                                    tikhonov_as_gradient=self.tikhonov_as_gradient, 
-                                                    use_laplacian=self.use_laplacian,        
-                                                    laplacian_beta_scale=self.laplacian_beta_scale
-                )
-        elif self.optimizer == OptimizerType.CP_KL:
-            if withTumor:
-                self.reconPhantom, self.indices = CP_KL(
-                                                    SMatrix = self.SMatrix, 
-                                                    y = self.experiment.AOsignal_withTumor, 
-                                                    alpha=self.alpha,               
-                                                    beta=self.beta,             
-                                                    theta=self.theta,
-                                                    numIterations=self.numIterations, 
-                                                    isSavingEachIteration=self.isSavingEachIteration,
-                                                    L=self.L, 
-                                                    withTumor=withTumor,
-                                                    device=self.device,
-                                                    max_saves=self.maxSaves,
-                                                    show_logs=show_logs,
-                                                    smatrixType= self.smatrixType,
-                                                    k_security=self.k_security,
-                                                    use_power_method=self.use_power_method,
-                                                    auto_alpha_gamma=self.auto_alpha_gamma,   
-                                                    apply_positivity_clamp=self.apply_positivity_clamp,
-                                                    tikhonov_as_gradient=self.tikhonov_as_gradient, 
-                                                    use_laplacian=self.use_laplacian,        
-                                                    laplacian_beta_scale=self.laplacian_beta_scale
-                )
-            else:
-                self.reconLaser, self.indices = CP_KL(
-                                                    SMatrix = self.SMatrix, 
-                                                    y = self.experiment.AOsignal_withoutTumor, 
-                                                    alpha=self.alpha,               
-                                                    beta=self.beta,             
-                                                    theta=self.theta,
-                                                    numIterations=self.numIterations, 
-                                                    isSavingEachIteration=self.isSavingEachIteration,
-                                                    L=self.L, 
-                                                    withTumor=withTumor,
-                                                    device=self.device,
-                                                    max_saves=self.maxSaves,
-                                                    show_logs=show_logs,
-                                                    smatrixType= self.smatrixType,
-                                                    k_security=self.k_security,
-                                                    use_power_method=self.use_power_method,
-                                                    auto_alpha_gamma=self.auto_alpha_gamma,   
-                                                    apply_positivity_clamp=self.apply_positivity_clamp,
-                                                    tikhonov_as_gradient=self.tikhonov_as_gradient, 
-                                                    use_laplacian=self.use_laplacian,        
-                                                    laplacian_beta_scale=self.laplacian_beta_scale
-                )
+
+        if withTumor:
+            self.reconPhantom, self.indices = PDHG(
+                                                SMatrix = self.SMatrix, 
+                                                y = self.experiment.AOsignal_withTumor, 
+                                                alpha=self.alpha,               
+                                                beta=self.beta,             
+                                                theta=self.theta,
+                                                numIterations=self.numIterations, 
+                                                isSavingEachIteration=self.isSavingEachIteration,
+                                                L=self.L, 
+                                                withTumor=withTumor,
+                                                device=self.device,
+                                                max_saves=self.maxSaves,
+                                                show_logs=show_logs,
+                                                smatrixType= self.smatrixType,
+                                                k_security=self.k_security,
+                                                use_power_method=self.use_power_method,
+                                                auto_alpha_gamma=self.auto_alpha_gamma,   
+                                                apply_positivity_clamp=self.apply_positivity_clamp,
+                                                tikhonov_as_gradient=self.tikhonov_as_gradient, 
+                                                use_laplacian=self.use_laplacian,        
+                                                laplacian_beta_scale=self.laplacian_beta_scale
+            )
         else:
-            raise ValueError(f"Optimizer value must be CP_TV or CP_KL, got {self.optimizer}")
+            self.reconLaser, self.indices = PDHG(
+                                                SMatrix = self.SMatrix, 
+                                                y = self.experiment.AOsignal_withoutTumor, 
+                                                alpha=self.alpha,               
+                                                beta=self.beta,             
+                                                theta=self.theta,
+                                                numIterations=self.numIterations, 
+                                                isSavingEachIteration=self.isSavingEachIteration,
+                                                L=self.L, 
+                                                withTumor=withTumor,
+                                                device=self.device,
+                                                max_saves=self.maxSaves,
+                                                show_logs=show_logs,
+                                                smatrixType= self.smatrixType,
+                                                k_security=self.k_security,
+                                                use_power_method=self.use_power_method,
+                                                auto_alpha_gamma=self.auto_alpha_gamma,   
+                                                apply_positivity_clamp=self.apply_positivity_clamp,
+                                                tikhonov_as_gradient=self.tikhonov_as_gradient, 
+                                                use_laplacian=self.use_laplacian,        
+                                                laplacian_beta_scale=self.laplacian_beta_scale
+            )
 
             
 

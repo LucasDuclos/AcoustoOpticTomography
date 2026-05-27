@@ -40,7 +40,7 @@ class Focus(Experiment):
             return False, "AOsignal with and without tumor must have the same shape."
         for field in self.AcousticFields:
             if field.field.shape[0] != self.AOsignal_withTumor.shape[0]:
-                return False, f"Field {field.getName_field()} has an invalid Time shape: {field.field.shape[0]}. Expected time shape to be {self.AOsignal_withTumor.shape[0]}."
+                return False, f"Field {field.get_name_field()} has an invalid Time shape: {field.field.shape[0]}. Expected time shape to be {self.AOsignal_withTumor.shape[0]}."
         if not all(field.field.shape == self.AcousticFields[0].field.shape for field in self.AcousticFields):
             return False, "All AcousticFields must have the same shape."
         if self.OpticImage is None:
