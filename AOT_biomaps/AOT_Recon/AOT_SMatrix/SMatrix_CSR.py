@@ -22,17 +22,6 @@ except ImportError:
 if TYPE_CHECKING:
     import cupy as cp
 
-# Import kernel utilities
-try:
-    from AOT_biomaps.AOT_Recon.AOT_Kernels import (
-        check_cuda_available,
-        check_pycuda_available,
-        sparse_matrix_vector_product_csr
-    )
-    KERNELS_AVAILABLE = True
-except ImportError:
-    KERNELS_AVAILABLE = False
-
 
 class SMatrix_CSR:
     """

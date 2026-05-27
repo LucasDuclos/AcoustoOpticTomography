@@ -24,7 +24,172 @@
 #include <stdint.h>
 #include <stdio.h>
 
+// MEMORY MANAGEMENT UTILITIES
 // ============================================================================
+
+/**
+ * Function: get_device_memory_info
+ * Purpose: Get available and total GPU memory
+ */
+extern "C" cudaError_t get_device_memory_info(size_t* free, size_t* total) {
+    return cudaMemGetInfo(free, total);
+}
+
+/**
+ * Function: check_cuda_error
+ * Purpose: Check CUDA error and print message
+ */
+extern "C" bool check_cuda_error(cudaError_t err, const char* message) {
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR [%s]: %s\n", message, cudaGetErrorString(err));
+        return true;
+    }
+    return false;
+}
+=======
+// ============================================================================
+// DENSE MATRIX KERNELS
+// ============================================================================
+
+/**
+ * Kernel: fill_dense_matrix
+ * Purpose: Fill dense matrix from acoustic fields on GPU
+ * Used for: DENSE matrix construction
+ */
+extern "C" __global__ void fill_dense_matrix_kernel(
+    float* __restrict__ dense_matrix,
+    const float* __restrict__ field_data,
+    int T,
+    int N,
+    int Z,
+    int X,
+    int field_size
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= T * N * Z * X) return;
+    
+    // Calculate position in output matrix
+    int t = idx / (N * Z * X);
+    int remaining = idx % (N * Z * X);
+    int n = remaining / (Z * X);
+    int zx = remaining % (Z * X);
+    int z = zx / X;
+    int x = zx % X;
+    
+    // Calculate position in input field data
+    int field_idx = n * T * Z * X + t * Z * X + z * X + x;
+    
+    if (field_idx < T * N * Z * X) {
+        dense_matrix[idx] = field_data[field_idx];
+    }
+}
+
+/**
+ * Kernel: compute_norm_factor_dense
+ * Purpose: Compute normalization factor for dense matrix: 1 / (sum(|A|) + eps)
+ * Used for: DENSE matrix normalization
+ */
+extern "C" __global__ void compute_norm_factor_dense_kernel(
+    const float* __restrict__ dense_matrix,
+    float* __restrict__ norm_factor_inv,
+    int T,
+    int N,
+    int Z,
+    int X
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= Z * X) return;
+    
+    // Each thread computes sum of absolute values for one column
+    float sum_abs = 0.0f;
+    for (int t = 0; t < T; t++) {
+        for (int n = 0; n < N; n++) {
+            int pos = t * N * Z * X + n * Z * X + idx;
+            sum_abs += fabsf(dense_matrix[pos]);
+        }
+    }
+    
+    // Store sum for this column
+    float* sum_buffer = norm_factor_inv; // Reuse buffer for sum
+    sum_buffer[idx] = sum_abs;
+    
+    __syncthreads();
+    
+    // Reduction in shared memory (simplified - actual reduction would need more work)
+    // For now, we'll do this in Python after kernel execution
+}
+
+/**
+ * Kernel: projection_dense
+ * Purpose: Forward projection using DENSE format: q = A * theta
+ */
+extern "C" __global__ void projection_kernel__DENSE(
+    float* __restrict__ q_out,
+    const float* __restrict__ dense_matrix,
+    const float* __restrict__ theta,
+    int T,
+    int N,
+    int Z,
+    int X
+) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row >= T * N) return;
+    
+    float sum = 0.0f;
+    for (int col = 0; col < Z * X; col++) {
+        int pos = row * Z * X + col;
+        sum += dense_matrix[pos] * theta[col];
+    }
+    q_out[row] = sum;
+}
+
+/**
+ * Kernel: backprojection_dense
+ * Purpose: Backprojection using DENSE format: c += A^T * e
+ */
+extern "C" __global__ void backprojection_kernel__DENSE(
+    float* __restrict__ c_out,
+    const float* __restrict__ dense_matrix,
+    const float* __restrict__ e,
+    int T,
+    int N,
+    int Z,
+    int X
+) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (col >= Z * X) return;
+    
+    float sum = 0.0f;
+    for (int row = 0; row < T * N; row++) {
+        int pos = row * Z * X + col;
+        sum += dense_matrix[pos] * e[row];
+    }
+    c_out[col] = sum;
+}
+
+// ============================================================================
+// MEMORY MANAGEMENT UTILITIES
+// ============================================================================
+
+/**
+ * Function: get_device_memory_info
+ * Purpose: Get available and total GPU memory
+ */
+extern "C" cudaError_t get_device_memory_info(size_t* free, size_t* total) {
+    return cudaMemGetInfo(free, total);
+}
+
+/**
+ * Function: check_cuda_error
+ * Purpose: Check CUDA error and print message
+ */
+extern "C" bool check_cuda_error(cudaError_t err, const char* message) {
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR [%s]: %s\n", message, cudaGetErrorString(err));
+        return true;
+    }
+    return false;
+}============================================================================
 // UTILITY KERNELS
 // ============================================================================
 

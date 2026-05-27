@@ -2,7 +2,8 @@
 SMatrix_DENSE.py
 
 Dense matrix construction and operations.
-Supports both CPU (NumPy) and GPU (CuPy) implementations.
+Supports both CPU (NumPy) and GPU (CuPy/CUDA) implementations.
+Follows the same pattern as SMatrix_SELL and SMatrix_CSR.
 """
 
 import os
@@ -36,8 +37,12 @@ class SMatrix_DENSE:
         S.allocate()
     
     After allocate(), the following attributes are available:
-    - dense_matrix: Dense matrix array (host)
-    - For GPU: dense_matrix_gpu
+    - dense_matrix: Dense matrix array (host) with shape (T, N, Z, X)
+    - norm_factor_inv: Normalization factor (host)
+    - For GPU: dense_matrix_gpu, norm_factor_inv_gpu
+    - matrix_type: 'DENSE'
+    - device: 'cpu' or 'gpu'
+    - Z, X: Image dimensions
     """
 
     def __init__(self, manip, device: Optional[str] = None):
@@ -59,6 +64,7 @@ class SMatrix_DENSE:
         self.T = manip.AcousticFields[0].field.shape[0]
         self.Z = manip.AcousticFields[0].field.shape[1]
         self.X = manip.AcousticFields[0].field.shape[2]
+        self.matrix_type = 'DENSE'
         
         # Initialize attributes
         self.dense_matrix = None
@@ -79,7 +85,7 @@ class SMatrix_DENSE:
     def __exit__(self, exc_type, exc, tb):
         self.free()
 
-    def _check_gpu_available(self):
+    def _check_gpu_available(self) -> bool:
         """Check if GPU operations are available."""
         if self.device != 'gpu':
             return False
@@ -89,10 +95,8 @@ class SMatrix_DENSE:
             return False
         return True
 
-    def load_precompiled_module(self):
-        """
-        Load the pre-compiled CUDA module (.cubin) using CuPy.
-        """
+    def load_module(self):
+        """Load the pre-compiled CUDA module (.cubin) using CuPy."""
         if not self._check_gpu_available():
             return
             
@@ -110,17 +114,15 @@ class SMatrix_DENSE:
             warnings.warn(f"Failed to load CUDA module: {e}. Falling back to CPU.")
             self.device = 'cpu'
 
-    def allocate(self, **kwargs):
+    def allocate(self):
         """
-        Allocate memory for the dense matrix.
-        
-        For DENSE matrices, we store the full (T, N, Z, X) matrix.
+        Allocate and fill the DENSE matrix.
         Uses GPU if available, otherwise falls back to CPU.
         """
         # Try GPU first
         if self._check_gpu_available():
             try:
-                self.load_precompiled_module()
+                self.load_module()
                 if self.sparse_mod is not None:
                     self._allocate_gpu()
                     return
@@ -132,28 +134,60 @@ class SMatrix_DENSE:
         self._allocate_cpu()
 
     def _allocate_gpu(self):
-        """Allocate and fill the dense matrix on GPU."""
-        from AOT_Kernels import allocate_dense_matrix_gpu
+        """Allocate and fill the DENSE matrix on GPU using custom kernels."""
+        num_rows = int(self.N * self.T)
+        num_cols = int(self.Z * self.X)
         
-        # Use the GPU kernel to allocate and fill the matrix
-        self.dense_matrix_gpu, _ = allocate_dense_matrix_gpu(
-            self.manip, device='gpu'
-        )
+        # Allocate dense matrix on GPU
+        self.dense_matrix_gpu = cp.cuda.alloc(self.T * self.N * self.Z * self.X * np.dtype(np.float32).itemsize)
+        
+        # Prepare host buffer for field data
+        field_host = np.empty((self.T, self.Z, self.X), dtype=np.float32)
+        
+        # Fill dense matrix using CUDA kernel
+        fill_kernel = self.sparse_mod.get_function("fill_dense_matrix_kernel")
+        
+        # Process in blocks for better memory efficiency
+        block_size = 256
+        total_elements = self.T * self.N * self.Z * self.X
+        
+        for n in trange(self.N, desc="Filling DENSE (GPU)"):
+            # Copy field data for this angle to host buffer
+            for t in range(self.T):
+                field_host[t] = self.manip.AcousticFields[n].field[t].astype(np.float32)
+            
+            # Allocate device memory for this field
+            field_gpu = cp.cuda.alloc(field_host.nbytes)
+            cp.cuda.memcpy_htod(field_gpu, field_host)
+            
+            # Launch kernel for this field
+            threads = 256
+            blocks = (self.T * self.Z * self.X + threads - 1) // threads
+            
+            fill_kernel(
+                grid=(blocks, 1, 1), block=(threads, 1, 1),
+                args=[self.dense_matrix_gpu, field_gpu, np.int32(self.T), np.int32(self.N), 
+                      np.int32(self.Z), np.int32(self.X), np.int32(self.T * self.Z * self.X)]
+            )
+            cp.cuda.Stream.null.synchronize()
+            
+            field_gpu.free()
         
         # Copy back to host for CPU access
-        self.dense_matrix = cp.asnumpy(self.dense_matrix_gpu)
+        self.dense_matrix = np.empty((self.T, self.N, self.Z, self.X), dtype=np.float32)
+        cp.cuda.memcpy_dtoh(self.dense_matrix, self.dense_matrix_gpu)
         
-        # Compute normalization factor using GPU
+        # Compute normalization factor
         self.compute_norm_factor()
         
         print(f"DENSE matrix allocated on GPU: shape=({self.T}, {self.N}, {self.Z}, {self.X})")
 
     def _allocate_cpu(self):
-        """Allocate and fill the dense matrix on CPU."""
+        """Allocate and fill the DENSE matrix on CPU."""
         # Build dense matrix from acoustic fields
         self.dense_matrix = np.zeros((self.T, self.N, self.Z, self.X), dtype=np.float32)
         
-        for n in trange(self.N, desc="Building dense matrix (CPU)"):
+        for n in trange(self.N, desc="Filling DENSE (CPU)"):
             field = self.manip.AcousticFields[n].field
             for t in range(self.T):
                 self.dense_matrix[t, n] = field[t].astype(np.float32)
@@ -165,20 +199,55 @@ class SMatrix_DENSE:
 
     def compute_norm_factor(self):
         """
-        Compute the normalization factor: norm_factor_inv = 1 / (sum(|A|) + eps).
+        Compute the normalization factor: norm_factor_inv = 1 / (A^T * 1).
         Uses GPU if available, otherwise falls back to CPU.
         """
-        if self._check_gpu_available() and self.dense_matrix_gpu is not None:
-            # GPU implementation
-            from AOT_Kernels import compute_norm_factor_dense_gpu
-            self.norm_factor_inv_gpu = compute_norm_factor_dense_gpu(
-                self.dense_matrix_gpu, device='gpu'
+        ZX = int(self.Z * self.X)
+        TN = int(self.T * self.N)
+        
+        if self._check_gpu_available() and self.sparse_mod is not None and self.dense_matrix_gpu is not None:
+            # GPU implementation using CUDA kernel
+            # First compute column sums (A^T * 1)
+            ones_gpu = cp.cuda.alloc(TN * np.dtype(np.float32).itemsize)
+            cp.cuda.memset_d32(ones_gpu, 0x3f800000, TN)  # 1.0f bit pattern
+            
+            c_gpu = cp.cuda.alloc(ZX * np.dtype(np.float32).itemsize)
+            cp.cuda.memset_d32(c_gpu, 0, ZX)
+            
+            bp_kernel = self.sparse_mod.get_function("backprojection_kernel__DENSE")
+            threads = 256
+            blocks = (ZX + threads - 1) // threads
+            
+            bp_kernel(
+                grid=(blocks, 1, 1), block=(threads, 1, 1),
+                args=[c_gpu, self.dense_matrix_gpu, ones_gpu, np.int32(self.T), 
+                      np.int32(self.N), np.int32(self.Z), np.int32(self.X)]
             )
-            self.norm_factor_inv = cp.asnumpy(self.norm_factor_inv_gpu)
+            cp.cuda.Stream.null.synchronize()
+            
+            # Copy result to host
+            c_host = np.empty(ZX, dtype=np.float32)
+            cp.cuda.memcpy_dtoh(c_host, c_gpu)
+            
+            ones_gpu.free()
+            c_gpu.free()
+            
+            # Compute normalization factor
+            c_host = np.maximum(c_host, 1e-6)
+            self.norm_factor_inv = (1.0 / c_host).astype(np.float32)
+            
+            # Copy to GPU
+            self.norm_factor_inv_gpu = cp.cuda.alloc(self.norm_factor_inv.nbytes)
+            cp.cuda.memcpy_htod(self.norm_factor_inv_gpu, self.norm_factor_inv)
         else:
             # CPU implementation
-            sum_abs = np.sum(np.abs(self.dense_matrix))
-            self.norm_factor_inv = 1.0 / (sum_abs + 1e-12)
+            ones = np.ones(TN, dtype=np.float32)
+            c_host = self.backprojection(ones)
+            
+            c_host = np.maximum(c_host, 1e-6)
+            self.norm_factor_inv = (1.0 / c_host).astype(np.float32)
+            
+            # Copy to GPU if available
             if self._check_gpu_available():
                 self.norm_factor_inv_gpu = cp.array(self.norm_factor_inv, dtype=np.float32)
 
@@ -199,6 +268,100 @@ class SMatrix_DENSE:
             }
         else:
             return {'error': 'Matrix not allocated'}
+
+    def forward_projection(self, theta: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
+        """
+        Perform forward projection: q = A * theta
+        
+        Args:
+            theta: Input vector (Z*X,)
+            
+        Returns:
+            Projection result (N*T,)
+        """
+        if self._check_gpu_available() and self.sparse_mod is not None and self.dense_matrix_gpu is not None:
+            # GPU implementation
+            theta_gpu = cp.asarray(theta) if not isinstance(theta, cp.ndarray) else theta
+            q_gpu = cp.zeros(self.N * self.T, dtype=np.float32)
+            
+            proj_kernel = self.sparse_mod.get_function('projection_kernel__DENSE')
+            threads = 256
+            blocks = (self.N * self.T + threads - 1) // threads
+            
+            proj_kernel(
+                grid=(blocks, 1), block=(threads, 1, 1),
+                args=[q_gpu.data.ptr, self.dense_matrix_gpu, theta_gpu.data.ptr, 
+                      np.int32(self.T), np.int32(self.N), np.int32(self.Z), np.int32(self.X)]
+            )
+            cp.cuda.Stream.null.synchronize()
+            return q_gpu
+        else:
+            # CPU implementation
+            theta_cpu = np.asarray(theta) if not isinstance(theta, np.ndarray) else theta
+            if isinstance(theta_cpu, cp.ndarray):
+                theta_cpu = cp.asnumpy(theta_cpu)
+            
+            q = np.zeros(self.N * self.T, dtype=np.float32)
+            
+            # Reshape dense_matrix for efficient computation
+            # dense_matrix has shape (T, N, Z, X), we need to compute q[row] = sum_col(A[row, col] * theta[col])
+            for t in range(self.T):
+                for n in range(self.N):
+                    row_idx = t * self.N + n
+                    for z in range(self.Z):
+                        for x in range(self.X):
+                            col_idx = z * self.X + x
+                            q[row_idx] += self.dense_matrix[t, n, z, x] * theta_cpu[col_idx]
+            
+            return q
+
+    def backward_projection(self, e: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
+        """
+        Perform backward projection: c = A^T * e
+        
+        Args:
+            e: Input vector (N*T,)
+            
+        Returns:
+            Backprojection result (Z*X,)
+        """
+        if self._check_gpu_available() and self.sparse_mod is not None and self.dense_matrix_gpu is not None:
+            # GPU implementation
+            e_gpu = cp.asarray(e) if not isinstance(e, cp.ndarray) else e
+            c_gpu = cp.zeros(self.Z * self.X, dtype=np.float32)
+            
+            bp_kernel = self.sparse_mod.get_function('backprojection_kernel__DENSE')
+            threads = 256
+            blocks = (self.Z * self.X + threads - 1) // threads
+            
+            bp_kernel(
+                grid=(blocks, 1), block=(threads, 1, 1),
+                args=[c_gpu.data.ptr, self.dense_matrix_gpu, e_gpu.data.ptr, 
+                      np.int32(self.T), np.int32(self.N), np.int32(self.Z), np.int32(self.X)]
+            )
+            cp.cuda.Stream.null.synchronize()
+            return c_gpu
+        else:
+            # CPU implementation
+            e_cpu = np.asarray(e) if not isinstance(e, np.ndarray) else e
+            if isinstance(e_cpu, cp.ndarray):
+                e_cpu = cp.asnumpy(e_cpu)
+            
+            c = np.zeros(self.Z * self.X, dtype=np.float32)
+            
+            # Reshape dense_matrix for efficient computation
+            for t in range(self.T):
+                for n in range(self.N):
+                    row_idx = t * self.N + n
+                    e_val = e_cpu[row_idx]
+                    if e_val == 0.0:
+                        continue
+                    for z in range(self.Z):
+                        for x in range(self.X):
+                            col_idx = z * self.X + x
+                            c[col_idx] += self.dense_matrix[t, n, z, x] * e_val
+            
+            return c
 
     def free(self):
         """Free allocated memory."""

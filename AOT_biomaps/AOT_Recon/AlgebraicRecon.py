@@ -393,12 +393,23 @@ class AlgebraicRecon(Recon):
             error_msg += f"\n{'='*80}\n"
             raise ValueError(error_msg)
 
-        
-
     # PUBLIC METHODS
     def generate_SMatrix(self, isShowLogs=True):
-        print("Generating system matrix (processing acoustic fields)...")
-        self.SMatrix = self._fillSMatrix(isShowLogs=True)
+        if self.smatrixType == SMatrixType.DENSE:
+            return self._fill_SMatrix_DENSE(isShowLogs=isShowLogs)
+        elif self.smatrixType == SMatrixType.CSR:
+            return self._fill_SMatrix_CSR(isShowLogs=isShowLogs)
+        elif self.smatrixType == SMatrixType.COO:
+            raise NotImplementedError("COO sparse matrix not implemented yet.")
+        elif self.smatrixType == SMatrixType.SELL:
+            return self._fill_SMatrix_SELL(isShowLogs=isShowLogs)
+        else:
+            raise ValueError(f"Unsupported SMatrix type: {self.smatrixType}")
+    
+    def flip_angle(self):
+        if self.smatrixType == SMatrixType.CSR:
+            self.SMatrix.flip_angle()
+    
 
     def run(self, processType: ProcessType = ProcessType.PYTHON, withTumor: bool = True, show_logs: bool = True):
         """
@@ -1520,20 +1531,8 @@ class AlgebraicRecon(Recon):
         self.SMatrix = self.SMatrix / (float(self.experiment.params.acoustic['emission']['voltage'])*float(self.experiment.params.acoustic['emission']['sensitivity']))  
 
     # PRIVATE METHODS
-         
-    def _fillSMatrix(self, isShowLogs=True):
-        if self.smatrixType == SMatrixType.DENSE:
-            return self._fillSMatrix_DENSE(isShowLogs=isShowLogs)
-        elif self.smatrixType == SMatrixType.CSR:
-            return self._fillSMatrix_CSR(isShowLogs=isShowLogs)
-        elif self.smatrixType == SMatrixType.COO:
-            raise NotImplementedError("COO sparse matrix not implemented yet.")
-        elif self.smatrixType == SMatrixType.SELL:
-            return self._fillSMatrix_SELL(isShowLogs=isShowLogs)
-        else:
-            raise ValueError(f"Unsupported SMatrix type: {self.smatrixType}")
-    
-    def _fillSMatrix_DENSE(self, isShowLogs=True):
+             
+    def _fill_SMatrix_DENSE(self, isShowLogs=True):
         """
         Build a dense matrix using SMatrix_DENSE class.
         Frees all temporary memory at each step.
@@ -1544,7 +1543,7 @@ class AlgebraicRecon(Recon):
             print(f" Dense matrix size: {dense_matrix.getMatrixSize()} GB")
         return dense_matrix
     
-    def _fillSMatrix_CSR(self, isShowLogs=True):
+    def _fill_SMatrix_CSR(self, isShowLogs=True):
         """
         Built a sparse CSR matrix in chunks without intermediate concatenation.
         Frees all temporary memory at each step.
@@ -1556,7 +1555,7 @@ class AlgebraicRecon(Recon):
             print(f"Sparse matrix density: {sparse_matrix.compute_density()}")
         return sparse_matrix
     
-    def _fillSMatrix_SELL(self, isShowLogs=True):
+    def _fill_SMatrix_SELL(self, isShowLogs=True):
         """
         Built a sparse SELL matrix in chunks without intermediate concatenation.
         Frees all temporary memory at each step.
@@ -1568,12 +1567,6 @@ class AlgebraicRecon(Recon):
             print(f"Sparse matrix density: {sparse_matrix.compute_density()}")
         return sparse_matrix
         
-
-    
-    def flip_angle(self):
-        if self.smatrixType == SMatrixType.CSR:
-            self.SMatrix.flip_angle()
-    
     # STATIC METHODS
     @staticmethod
     def plot_mse_comparison(recon_list, figSize=(4.5, 3.5), labels=None):
