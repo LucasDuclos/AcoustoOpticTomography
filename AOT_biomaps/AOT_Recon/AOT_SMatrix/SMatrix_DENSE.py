@@ -29,7 +29,7 @@ class SMatrix_DENSE:
     Construction of a DENSE matrix from a `manip` object.
     
     Supports both CPU and GPU implementations:
-    - On GPU: Uses CuPy for memory management and custom CUDA kernels
+    - On GPU: Uses CuPy for memory management and custom CUDA kernels (compiled from source)
     - On CPU: Uses NumPy arrays
     
     Usage:
@@ -44,6 +44,9 @@ class SMatrix_DENSE:
     - device: 'cpu' or 'gpu'
     - Z, X: Image dimensions
     """
+    
+    # Class-level cache for compiled CUDA module
+    _compiled_module = None
 
     def __init__(self, manip, device: Optional[str] = None):
         """
@@ -75,9 +78,9 @@ class SMatrix_DENSE:
         self.norm_factor_inv_gpu = None
         self.sparse_mod = None
         
-        # Path to CUDA module
-        cubin_parent_dir = os.path.dirname(os.path.dirname(__file__))
-        self.module_path = os.path.join(cubin_parent_dir, "AOT_biomaps_kernels.cubin")
+        # Path to CUDA source file
+        cuda_parent_dir = os.path.dirname(os.path.dirname(__file__))
+        self.cuda_source_path = os.path.join(cuda_parent_dir, "AOT_biomaps_kernels.cu")
 
     def __enter__(self):
         return self
@@ -96,23 +99,35 @@ class SMatrix_DENSE:
         return True
 
     def load_module(self):
-        """Load the pre-compiled CUDA module (.cubin) using CuPy."""
+        """Compile and load CUDA kernels from source using CuPy."""
         if not self._check_gpu_available():
             return
+        
+        # Use global cache to avoid recompiling multiple times
+        if SMatrix_DENSE._compiled_module is None:
+            if not os.path.exists(self.cuda_source_path):
+                warnings.warn(
+                    f"CUDA source file {os.path.basename(self.cuda_source_path)} not found at: {self.cuda_source_path}. "
+                    "Falling back to CPU implementation."
+                )
+                self.device = 'cpu'
+                return
             
-        if not os.path.exists(self.module_path):
-            warnings.warn(
-                f"CUDA module {os.path.basename(self.module_path)} not found at: {self.module_path}. "
-                "Falling back to CPU implementation."
-            )
-            self.device = 'cpu'
-            return
-            
-        try:
-            self.sparse_mod = cp.cuda.runtime.moduleFromFile(self.module_path)
-        except Exception as e:
-            warnings.warn(f"Failed to load CUDA module: {e}. Falling back to CPU.")
-            self.device = 'cpu'
+            try:
+                # Read CUDA source code
+                with open(self.cuda_source_path, 'r', encoding='utf-8') as f:
+                    cuda_source = f.read()
+                
+                # Compile with CuPy (uses cache automatically)
+                SMatrix_DENSE._compiled_module = cp.cuda.compile_with_cache(cuda_source)
+                
+            except Exception as e:
+                warnings.warn(f"Failed to compile CUDA module: {e}. Falling back to CPU.")
+                self.device = 'cpu'
+                return
+        
+        # Use the cached compiled module
+        self.sparse_mod = SMatrix_DENSE._compiled_module
 
     def allocate(self):
         """
