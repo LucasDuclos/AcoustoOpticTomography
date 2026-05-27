@@ -270,83 +270,86 @@ class OptimizerType(Enum):
     """
 
 class PotentialType(Enum):
-    """The potential function actually penalizes the difference between the voxel of interest and a neighbor:
+    """
+    Enum for potential functions used in regularization.
+    
+    All potential functions penalize differences between neighboring voxels:
     p(u, v) = p(u - v)
-
-    Descriptions of potential functions:
-    - Quadratic: p(u, v) = 0.5 * (u - v)^2
-    - Geman-McClure: p(u, v, d) = (u - v)^2 / (d^2 + (u - v)^2)
-    - Hebert-Leahy: p(u, v, m) = log(1 + (u - v)^2 / m^2)
-    - Green's log-cosh: p(u, v, d) = log(cosh((u - v) / d))
-    - Huber piecewise: p(u, v, d) = d * |u - v| - 0.5 * d^2 if |u - v| > d, else 0.5 * (u - v)^2
-    - Nuyts relative: p(u, v, g) = (u - v)^2 / (u + v + g * |u - v|)
+    
+    Compatibility with optimizers:
+    - QUADRATIC: Compatible with all optimizers (MLEM, LS, MAPEM, DEPIERRO, PPGMLEM, PGC, PDHG, LBFGS)
+    - HUBER_PIECEWISE: Compatible with MAPEM, PPGMLEM, PGC, LBFGS (differentiable)
+    - NUYTS_RELATIVE: Compatible with MAPEM, PPGMLEM, PGC, LBFGS (differentiable)
+    - TV: Compatible with PDHG only (non-differentiable, not suitable for gradient-based methods)
+    
+    Note: TV (Total Variation) is non-differentiable at zero and returns a subgradient.
+    It is NOT compatible with LBFGS, MLEM, LS, or other gradient-based optimizers that require
+    differentiable potential functions.
     """
 
     QUADRATIC = 'QUADRATIC'
     """
-    Quadratic potential:
-    p(u, v) = 0.5 * (u - v)^2
-
+    Quadratic potential: p(u, v) = 0.5 * alpha * (u - v)^2
+    
+    Properties:
+    - Differentiable: Yes
+    - Convex: Yes
+    - Compatible optimizers: All (MLEM, LS, MAPEM, DEPIERRO, PPGMLEM, PGC, PDHG, LBFGS)
+    
     Reference: Geman and Geman, IEEE Trans. Pattern Anal. Machine Intell., vol. PAMI-6, pp. 721-741, 1984.
-    """
-
-    GEMAN_MCCLURE = 'GEMAN_MCCLURE'
-    """
-    Geman-McClure potential:
-    p(u, v, d) = (u - v)^2 / (d^2 + (u - v)^2)
-
-    The parameter 'd' can be set using the 'deltaGMC' keyword.
-
-    Reference: Geman and McClure, Proc. Amer. Statist. Assoc., 1985.
-    """
-
-    HEBERT_LEAHY = 'HEBERT_LEAHY'
-    """
-    Hebert-Leahy potential:
-    p(u, v, m) = log(1 + (u - v)^2 / m^2)
-
-    The parameter 'm' can be set using the 'muHL' keyword.
-
-    Reference: Hebert and Leahy, IEEE Trans. Med. Imaging, vol. 8, pp. 194-202, 1989.
-    """
-
-    GREEN_LOGCOSH = 'GREEN_LOGCOSH'
-    """
-    Green's log-cosh potential:
-    p(u, v, d) = log(cosh((u - v) / d))
-
-    The parameter 'd' can be set using the 'deltaLogCosh' keyword.
-
-    Reference: Green, IEEE Trans. Med. Imaging, vol. 9, pp. 84-93, 1990.
     """
 
     HUBER_PIECEWISE = 'HUBER_PIECEWISE'
     """
     Huber piecewise potential:
-    p(u, v, d) = d * |u - v| - 0.5 * d^2 if |u - v| > d, else 0.5 * (u - v)^2
-
-    The parameter 'd' can be set using the 'deltaHuber' keyword.
-
-    Reference: e.g. Mumcuoglu et al, Phys. Med. Biol., vol. 41, pp. 1777-1807, 1996.
+    p(u, v, delta) = 
+        - 0.5 * (u - v)^2, if |u - v| <= delta
+        - delta * |u - v| - 0.5 * delta^2, otherwise
+    
+    Properties:
+    - Differentiable: Yes (with continuous derivative at delta)
+    - Convex: Yes
+    - Compatible optimizers: MAPEM, PPGMLEM, PGC, LBFGS, PDHG
+    - Not compatible: DEPIERRO (uses different formulation)
+    
+    Parameters:
+    - delta: Threshold for switching between quadratic and linear behavior (default: 0.01)
+    
+    Reference: Mumcuoglu et al, Phys. Med. Biol., vol. 41, pp. 1777-1807, 1996.
     """
 
-    RELATIVE_DIFFERENCE = 'NUYTS_RELATIVE'
+    NUYTS_RELATIVE = 'NUYTS_RELATIVE'
     """
-    Nuyts relative potential:
-    p(u, v, g) = (u - v)^2 / (u + v + g * |u - v|)
-
-    The parameter 'g' can be set using the 'gammaRD' keyword.
-
+    Nuyts relative difference potential:
+    p(u, v, beta) = alpha * (u - v)^2 / (u + v + beta * |u - v|)
+    
+    Properties:
+    - Differentiable: Yes (where u + v + beta * |u - v| > 0)
+    - Convex: No (edge-preserving, non-convex)
+    - Compatible optimizers: MAPEM, PPGMLEM, PGC, LBFGS
+    - Not compatible: DEPIERRO, PDHG
+    
+    Parameters:
+    - beta: Regularization parameter for the denominator (default: 1.0)
+    
     Reference: Nuyts et al, IEEE Trans. Nucl. Sci., vol. 49, pp. 56-60, 2002.
     """
 
     TV = 'TV'
     """
-    Total Variation potential:
-    p(u, v) = |u - v| (anisotropic) or sqrt((u-v)^2 + (u-w)^2) (isotropic)
-
-    Non-differentiable at zero. Returns subgradient.
-    Not compatible with LBFGS (requires differentiable potentials).
+    Total Variation potential (anisotropic):
+    p(u, v) = alpha * |u - v|
+    
+    Properties:
+    - Differentiable: No (non-differentiable at zero, returns subgradient)
+    - Convex: Yes
+    - Compatible optimizers: PDHG only
+    - Not compatible: MLEM, LS, MAPEM, DEPIERRO, PPGMLEM, PGC, LBFGS
+    
+    Note: TV regularization preserves edges while reducing noise.
+    It requires primal-dual methods like PDHG that can handle non-differentiable functions.
+    
+    Reference: Chambolle and Pock, J. Math. Imaging Vis., 2011.
     """
 
 class ProcessType(Enum):

@@ -46,6 +46,218 @@ extern "C" bool check_cuda_error(cudaError_t err, const char* message) {
     }
     return false;
 }
+
+// ============================================================================
+// POTENTIAL FUNCTION KERNELS
+// ============================================================================
+
+/**
+ * Kernel: quadratic_potential
+ * Purpose: Compute quadratic potential: grad_U = alpha * U, hess_U = alpha, U_value = 0.5 * alpha * sum(U^2)
+ */
+extern "C" __global__ void quadratic_potential_kernel(
+    float* __restrict__ grad_U,
+    float* __restrict__ hess_U,
+    float* __restrict__ U_value,
+    const float* __restrict__ U,
+    float alpha,
+    int N
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= N) return;
+    
+    // Gradient: d/du (0.5 * alpha * u^2) = alpha * u
+    grad_U[idx] = alpha * U[idx];
+    
+    // Hessian: d^2/du^2 (0.5 * alpha * u^2) = alpha
+    hess_U[idx] = alpha;
+    
+    // Energy: 0.5 * alpha * u^2
+    if (idx == 0) {
+        float sum_sq = 0.0f;
+        for (int i = 0; i < N; i++) {
+            sum_sq += U[i] * U[i];
+        }
+        U_value[0] = 0.5f * alpha * sum_sq;
+    }
+}
+
+/**
+ * Kernel: huber_potential
+ * Purpose: Compute Huber potential gradient, Hessian, and energy
+ */
+extern "C" __global__ void huber_potential_kernel(
+    float* __restrict__ grad_U,
+    float* __restrict__ hess_U,
+    float* __restrict__ U_value,
+    const float* __restrict__ U,
+    float alpha,
+    float delta,
+    int N
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= N) return;
+    
+    float u = U[idx];
+    float abs_u = fabsf(u);
+    
+    // Huber potential and derivatives
+    if (abs_u <= delta) {
+        // Quadratic region
+        grad_U[idx] = alpha * u;
+        hess_U[idx] = alpha;
+    } else {
+        // Linear region
+        grad_U[idx] = alpha * delta * (u > 0 ? 1.0f : -1.0f);
+        hess_U[idx] = 0.0f;
+    }
+    
+    // Compute energy (reduction in separate kernel or on CPU)
+}
+
+/**
+ * Kernel: huber_potential_energy
+ * Purpose: Compute Huber potential energy (separate kernel for reduction)
+ */
+extern "C" __global__ void huber_potential_energy_kernel(
+    float* __restrict__ partial_sums,
+    const float* __restrict__ U,
+    float alpha,
+    float delta,
+    int N
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= N) return;
+    
+    float u = U[idx];
+    float abs_u = fabsf(u);
+    
+    if (abs_u <= delta) {
+        partial_sums[idx] = 0.5f * alpha * u * u;
+    } else {
+        partial_sums[idx] = alpha * delta * (abs_u - 0.5f * delta);
+    }
+}
+
+/**
+ * Kernel: relative_difference_potential
+ * Purpose: Compute relative difference potential for edge-preserving regularization
+ */
+extern "C" __global__ void relative_difference_potential_kernel(
+    float* __restrict__ grad_U,
+    float* __restrict__ hess_U,
+    float* __restrict__ U_value,
+    const float* __restrict__ U,
+    const int* __restrict__ adj_indices,
+    float alpha,
+    float beta,
+    int N,
+    int num_edges
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= N) return;
+    
+    // Initialize gradient and hessian for this voxel
+    if (idx == 0) {
+        for (int i = 0; i < N; i++) {
+            grad_U[i] = 0.0f;
+            hess_U[i] = 0.0f;
+        }
+        U_value[0] = 0.0f;
+    }
+    __syncthreads();
+    
+    // Each thread processes one edge
+    if (idx < num_edges) {
+        int i = adj_indices[2 * idx];
+        int j = adj_indices[2 * idx + 1];
+        
+        float diff = U[i] - U[j];
+        float denom = sqrtf(U[i] * U[i] + U[j] * U[j] + beta * beta);
+        
+        // Gradient contributions
+        float grad_contrib = alpha * diff / denom;
+        atomicAdd(&grad_U[i], grad_contrib);
+        atomicAdd(&grad_U[j], -grad_contrib);
+        
+        // Energy
+        atomicAdd(&U_value[0], alpha * (denom - beta));
+    }
+    __syncthreads();
+    
+    // Approximate Hessian (simplified)
+    if (idx < N) {
+        hess_U[idx] = alpha;
+    }
+}
+
+/**
+ * Kernel: tv_potential
+ * Purpose: Compute Total Variation potential (anisotropic)
+ */
+extern "C" __global__ void tv_potential_kernel(
+    float* __restrict__ grad_U,
+    float* __restrict__ U_value,
+    const float* __restrict__ U,
+    float alpha,
+    int Z,
+    int X
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total_pixels = Z * X;
+    
+    if (idx >= total_pixels) return;
+    
+    // Initialize gradient
+    if (idx == 0) {
+        for (int i = 0; i < total_pixels; i++) {
+            grad_U[i] = 0.0f;
+        }
+        U_value[0] = 0.0f;
+    }
+    __syncthreads();
+    
+    int z = idx / X;
+    int x = idx % X;
+    
+    // Right neighbor difference
+    if (x < X - 1) {
+        int right_idx = idx + 1;
+        float diff_x = U[right_idx] - U[idx];
+        float abs_diff_x = fabsf(diff_x);
+        
+        // TV energy
+        atomicAdd(&U_value[0], alpha * abs_diff_x);
+        
+        // Subgradient for x component
+        if (diff_x > 0) {
+            atomicAdd(&grad_U[idx], -alpha);
+            atomicAdd(&grad_U[right_idx], alpha);
+        } else if (diff_x < 0) {
+            atomicAdd(&grad_U[idx], alpha);
+            atomicAdd(&grad_U[right_idx], -alpha);
+        }
+    }
+    
+    // Down neighbor difference
+    if (z < Z - 1) {
+        int down_idx = idx + X;
+        float diff_z = U[down_idx] - U[idx];
+        float abs_diff_z = fabsf(diff_z);
+        
+        // TV energy
+        atomicAdd(&U_value[0], alpha * abs_diff_z);
+        
+        // Subgradient for z component
+        if (diff_z > 0) {
+            atomicAdd(&grad_U[idx], -alpha);
+            atomicAdd(&grad_U[down_idx], alpha);
+        } else if (diff_z < 0) {
+            atomicAdd(&grad_U[idx], alpha);
+            atomicAdd(&grad_U[down_idx], -alpha);
+        }
+    }
+}
 =======
 // ============================================================================
 // DENSE MATRIX KERNELS

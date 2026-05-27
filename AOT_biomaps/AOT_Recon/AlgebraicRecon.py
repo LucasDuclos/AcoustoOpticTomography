@@ -302,6 +302,66 @@ class AlgebraicRecon(Recon):
                 raise ValueError("No AO signal available for demodulation. Please provide at least one signal, with or without tumor.")
             self.experiment.AcousticFields_demodulated = self.experiment.demodulate_acoustic_fields()
     
+    def _validate_potential_compatibility(self, errors: list):
+        """
+        Validate that the selected potential function is compatible with the optimizer.
+        
+        Args:
+            errors: List to append error messages to
+        """
+        # Define compatibility matrix: which potential functions work with which optimizers
+        POTENTIAL_COMPATIBILITY = {
+            PotentialType.QUADRATIC: [
+                OptimizerType.MLEM, OptimizerType.LS, OptimizerType.MAPEM,
+                OptimizerType.DEPIERRO95, OptimizerType.PPGMLEM, OptimizerType.PGC,
+                OptimizerType.PDHG, OptimizerType.LBFGS
+            ],
+            PotentialType.HUBER_PIECEWISE: [
+                OptimizerType.MAPEM, OptimizerType.PPGMLEM, OptimizerType.PGC,
+                OptimizerType.PDHG, OptimizerType.LBFGS
+            ],
+            PotentialType.NUYTS_RELATIVE: [
+                OptimizerType.MAPEM, OptimizerType.PPGMLEM, OptimizerType.PGC,
+                OptimizerType.LBFGS
+            ],
+            PotentialType.TV: [
+                OptimizerType.PDHG
+            ],
+        }
+        
+        # Check if potential function is in compatibility matrix
+        if self.potentialFunction not in POTENTIAL_COMPATIBILITY:
+            errors.append(f"Unknown potential function: {self.potentialFunction}")
+            return
+        
+        # Check if optimizer is compatible with this potential function
+        compatible_optimizers = POTENTIAL_COMPATIBILITY[self.potentialFunction]
+        if self.optimizer not in compatible_optimizers:
+            compatible_names = [opt.value for opt in compatible_optimizers]
+            errors.append(
+                f"Potential function {self.potentialFunction.value} is not compatible with "
+                f"optimizer {self.optimizer.value}. "
+                f"Compatible optimizers: {', '.join(compatible_names)}"
+            )
+        
+        # Additional specific validations
+        if self.potentialFunction == PotentialType.TV:
+            # TV requires PDHG-specific parameters
+            if self.alpha is None:
+                errors.append("TV potential requires alpha parameter to be set")
+            if self.beta is None:
+                errors.append("TV potential requires beta parameter to be set")
+        
+        if self.potentialFunction == PotentialType.HUBER_PIECEWISE:
+            # Huber requires delta parameter
+            if self.delta is None:
+                errors.append("HUBER_PIECEWISE potential requires delta parameter to be set")
+        
+        if self.potentialFunction == PotentialType.NUYTS_RELATIVE:
+            # Nuyts relative requires beta parameter
+            if self.beta is None:
+                errors.append("NUYTS_RELATIVE potential requires beta parameter to be set")
+
     def _validate_hyperparameters(self):
         """
         Validate all hyperparameters for the selected optimizer.
@@ -367,6 +427,10 @@ class AlgebraicRecon(Recon):
                 errors.append(f"theta must be in [1.0, 2.0], got {self.theta}")
             if not (0 < self.k_security <= 1):
                 errors.append(f"k_security must be in (0, 1], got {self.k_security}")
+        
+        # Validate potential function compatibility with optimizer
+        if self.potentialFunction is not None:
+            self._validate_potential_compatibility(errors)
         
         # If there are errors, raise ValueError with detailed message
         if errors:
