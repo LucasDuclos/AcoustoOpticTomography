@@ -94,6 +94,12 @@ class SMatrix_SELL:
         self.slice_len_gpu = None
         self.norm_factor_inv_gpu = None
         
+        # Preconditioner attributes
+        self.preconditioner = None
+        self.preconditioner_inv = None
+        self.preconditioner_gpu = None
+        self.preconditioner_inv_gpu = None
+        
         # Path to CUDA source file
         cuda_parent_dir = os.path.dirname(os.path.dirname(__file__))
         self.cuda_source_path = os.path.join(cuda_parent_dir, "AOT_biomaps_kernels.cu")
@@ -399,6 +405,97 @@ class SMatrix_SELL:
         if self._check_gpu_available():
             self.norm_factor_inv_gpu = cp.cuda.alloc(self.norm_factor_inv.nbytes)
             cp.cuda.memcpy_htod(self.norm_factor_inv_gpu, self.norm_factor_inv)
+
+    def compute_preconditioner(self, preconditioner_type='diagonal'):
+        """
+        Compute preconditioner for the system matrix.
+        
+        Args:
+            preconditioner_type: Type of preconditioner ('diagonal' or 'none')
+            
+        Returns:
+            tuple: (preconditioner, preconditioner_inv) on appropriate device
+        """
+        from AOT_biomaps.AOT_Recon.ReconEnums import PreconditionerType
+        
+        if preconditioner_type == PreconditionerType.NONE or preconditioner_type == 'none':
+            self.preconditioner = None
+            self.preconditioner_inv = None
+            self.preconditioner_gpu = None
+            self.preconditioner_inv_gpu = None
+            return None, None
+        
+        ZX = int(self.Z * self.X)
+        TN = int(self.T * self.N)
+        
+        if self._check_gpu_available() and self.sparse_mod is not None:
+            # GPU implementation
+            ones_gpu = cp.cuda.alloc(TN * np.dtype(np.float32).itemsize)
+            cp.cuda.memset_d32(ones_gpu, 0x3f800000, TN)  # 1.0f bit pattern
+            
+            c_gpu = cp.cuda.alloc(ZX * np.dtype(np.float32).itemsize)
+            cp.cuda.memset_d32(c_gpu, 0, ZX)
+            
+            bp_kernel = self.sparse_mod.get_function("backprojection_kernel__SELL")
+            threads = 256
+            blocks = (TN + threads - 1) // threads
+            
+            bp_kernel(
+                grid=(blocks, 1, 1), block=(threads, 1, 1),
+                args=[self.sell_values_gpu, self.sell_colinds_gpu, self.slice_ptr_gpu,
+                      self.slice_len_gpu, ones_gpu, c_gpu, np.int32(TN), np.int32(self.slice_height)]
+            )
+            cp.cuda.Stream.null.synchronize()
+            
+            c_host = np.empty(ZX, dtype=np.float32)
+            cp.cuda.memcpy_dtoh(c_host, c_gpu)
+            ones_gpu.free()
+            c_gpu.free()
+            
+            # Store preconditioner
+            self.preconditioner = c_host.copy()
+            self.preconditioner = np.maximum(self.preconditioner, 1e-6)
+            self.preconditioner_inv = (1.0 / self.preconditioner).astype(np.float32)
+            
+            # Copy to GPU
+            self.preconditioner_gpu = cp.cuda.alloc(self.preconditioner.nbytes)
+            self.preconditioner_inv_gpu = cp.cuda.alloc(self.preconditioner_inv.nbytes)
+            cp.cuda.memcpy_htod(self.preconditioner_gpu, self.preconditioner)
+            cp.cuda.memcpy_htod(self.preconditioner_inv_gpu, self.preconditioner_inv)
+            
+            return self.preconditioner_gpu, self.preconditioner_inv_gpu
+        else:
+            # CPU implementation
+            ones = np.ones(TN, dtype=np.float32)
+            c_host = self.backprojection(ones)
+            
+            # Store preconditioner
+            self.preconditioner = c_host.copy()
+            self.preconditioner = np.maximum(self.preconditioner, 1e-6)
+            self.preconditioner_inv = (1.0 / self.preconditioner).astype(np.float32)
+            
+            return self.preconditioner, self.preconditioner_inv
+
+    def apply_preconditioner(self, U):
+        """
+        Apply preconditioner to a vector.
+        
+        Args:
+            U: Vector to precondition
+            
+        Returns:
+            Preconditioned vector
+        """
+        if self._check_gpu_available() and self.preconditioner_inv_gpu is not None:
+            U_gpu = cp.asarray(U) if not isinstance(U, cp.ndarray) else U
+            return U_gpu * cp.asarray(self.preconditioner_inv_gpu)
+        elif self.preconditioner_inv is not None:
+            U_cpu = np.asarray(U) if not isinstance(U, np.ndarray) else U
+            if isinstance(U_cpu, cp.ndarray):
+                U_cpu = cp.asnumpy(U_cpu)
+            return U_cpu * self.preconditioner_inv
+        else:
+            return U
 
     def forward_projection(self, theta: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
         """

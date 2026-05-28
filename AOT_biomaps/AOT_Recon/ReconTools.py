@@ -843,3 +843,111 @@ def filter_radon(f, N, filter_type, Fc):
     FILTER = FILTER * np.exp(-2 * (np.abs(f) / Fc)**10)
 
     return FILTER
+
+
+# =============================================================================
+# PRECONDITIONERS
+# =============================================================================
+
+def compute_diagonal_preconditioner(SMatrix):
+    """
+    Compute diagonal preconditioner: M = diag(A^T * 1)
+    
+    The diagonal preconditioner is computed as the sum of absolute values of each column
+    of the system matrix A, which equals A^T * 1.
+    
+    This is commonly used in iterative reconstruction to normalize the sensitivity.
+    
+    Args:
+        SMatrix: SMatrix instance (DENSE, CSR, or SELL) - must be allocated
+        
+    Returns:
+        tuple: (preconditioner, preconditioner_inv) on the same device as SMatrix
+        - preconditioner: Diagonal vector (Z*X,) with A^T * 1 values
+        - preconditioner_inv: Inverse of preconditioner (safe division, clamped to avoid zeros)
+        
+    Compatible with: All SMatrix types (DENSE, CSR, SELL) and all devices (CPU, GPU)
+    """
+    device = SMatrix.device
+    xp = _get_array_module(device)
+    
+    Z = SMatrix.Z
+    X = SMatrix.X
+    ZX = Z * X
+    
+    # Compute A^T * 1 (column sums)
+    ones = xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32)
+    
+    if device == 'gpu' and CUPY_AVAILABLE:
+        # Use GPU backprojection
+        if hasattr(SMatrix, 'backward_projection'):
+            preconditioner = SMatrix.backward_projection(ones)
+        else:
+            # Fallback: use CPU and convert
+            preconditioner_cpu = SMatrix.backward_projection(cp.asnumpy(ones))
+            preconditioner = cp.asarray(preconditioner_cpu)
+    else:
+        # Use CPU backprojection
+        preconditioner = SMatrix.backward_projection(ones)
+    
+    # Ensure preconditioner is on correct device
+    if device == 'gpu' and CUPY_AVAILABLE:
+        preconditioner = cp.asarray(preconditioner)
+    else:
+        preconditioner = np.asarray(preconditioner)
+    
+    # Clamp to avoid division by zero
+    preconditioner = xp.maximum(preconditioner, 1e-10)
+    
+    # Compute inverse
+    preconditioner_inv = 1.0 / preconditioner
+    
+    return preconditioner, preconditioner_inv
+
+
+def apply_diagonal_preconditioner(U, preconditioner_inv, SMatrix):
+    """
+    Apply diagonal preconditioner to a vector: U -> M^-1 * U
+    
+    Args:
+        U: Vector to precondition (Z*X,)
+        preconditioner_inv: Inverse diagonal preconditioner (Z*X,)
+        SMatrix: SMatrix instance (for device information)
+        
+    Returns:
+        Preconditioned vector on the same device as input
+        
+    Compatible with: All SMatrix types and all devices (CPU, GPU)
+    """
+    device = SMatrix.device
+    xp = _get_array_module(device)
+    
+    # Ensure arrays are on the same device
+    U = xp.asarray(U)
+    preconditioner_inv = xp.asarray(preconditioner_inv)
+    
+    # Apply diagonal preconditioning: element-wise multiplication
+    return U * preconditioner_inv
+
+
+def build_preconditioner(SMatrix, preconditioner_type):
+    """
+    Build preconditioner based on type.
+    
+    Args:
+        SMatrix: SMatrix instance (must be allocated)
+        preconditioner_type: PreconditionerType enum value
+        
+    Returns:
+        tuple: (preconditioner, preconditioner_inv) or (None, None) if NONE
+        
+    Compatible with: All SMatrix types and all devices (CPU, GPU)
+    """
+    from AOT_biomaps.AOT_Recon.ReconEnums import PreconditionerType
+    
+    if preconditioner_type == PreconditionerType.NONE:
+        return None, None
+    elif preconditioner_type == PreconditionerType.DIAGONAL:
+        return compute_diagonal_preconditioner(SMatrix)
+    else:
+        raise ValueError(f"Unknown preconditioner type: {preconditioner_type}")

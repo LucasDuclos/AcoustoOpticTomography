@@ -36,6 +36,7 @@ def PDHG(
     delta=0.01,
     noise_type=NoiseType.POISSON,
     potential_type=PotentialType.TOTAL_VARIATION,
+    preconditioner_type=PreconditionerType.NONE,
     isSavingEachIteration=True,
     isCostFunction=False,
     withTumor=True,
@@ -54,6 +55,10 @@ def PDHG(
     - RELATIVE_DIFFERENCE: p(u,v,beta) = alpha * (u-v)^2 / (u+v+beta*|u-v|)
     - TOTAL_VARIATION: p(u,v) = alpha * |u-v| (non-differentiable)
     
+    Supports preconditioning:
+    - NONE: No preconditioning
+    - DIAGONAL: Diagonal preconditioning using A^T * 1
+    
     Args:
         SMatrix: SMatrix instance (already allocated)
         y: Measurement data
@@ -63,6 +68,7 @@ def PDHG(
         delta: Parameter for HUBER potential (threshold)
         noise_type: Type of noise (POISSON or GAUSSIAN)
         potential_type: Type of potential function to use
+        preconditioner_type: Type of preconditioner to use (default: NONE)
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
         withTumor: Boolean for description only
@@ -115,6 +121,11 @@ def PDHG(
         else:
             raise ValueError(f"Unsupported potential type: {potential_type}")
     
+    # Compute preconditioner if requested
+    preconditioner, preconditioner_inv = None, None
+    if preconditioner_type != PreconditionerType.NONE:
+        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
+    
     # PDHG parameters
     tau = 0.1
     sigma = 0.1
@@ -154,6 +165,11 @@ def PDHG(
         
         # Primal update: x = prox_{tau * G}(x - tau * grad_f)
         x_flat = x_flat - tau * grad_f - tau * grad_U
+        
+        # Apply diagonal preconditioning if enabled
+        if preconditioner_inv is not None:
+            x_flat = apply_diagonal_preconditioner(x_flat, preconditioner_inv, SMatrix)
+        
         x_flat = clamp_positive(SMatrix, x_flat)
         
         # Dual update

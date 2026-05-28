@@ -33,6 +33,7 @@ def MAPEM(
     alpha=1.0,
     beta=1.0,
     delta=0.01,
+    preconditioner_type=PreconditionerType.NONE,
     isSavingEachIteration=True,
     isCostFunction=False,
     withTumor=True,
@@ -45,6 +46,10 @@ def MAPEM(
     Uses ReconTools functions for all matrix operations, so it works with
     any SMatrix type (CSR, SELL, DENSE) and any device (CPU, GPU).
     
+    Supports preconditioning:
+    - NONE: No preconditioning
+    - DIAGONAL: Diagonal preconditioning using A^T * 1
+    
     Args:
         SMatrix: SMatrix instance (already allocated)
         y: Measurement data
@@ -53,6 +58,7 @@ def MAPEM(
         alpha: Regularization weight
         beta: Additional parameter for potential functions
         delta: Parameter for Huber potential
+        preconditioner_type: Type of preconditioner to use (default: NONE)
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
         withTumor: Boolean for description only
@@ -98,6 +104,11 @@ def MAPEM(
         else:
             raise ValueError(f"Unsupported potential type: {potential_type}")
     
+    # Compute preconditioner if requested
+    preconditioner, preconditioner_inv = None, None
+    if preconditioner_type != PreconditionerType.NONE:
+        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
+    
     # Setup save indices
     if numIterations <= max_saves:
         save_indices = list(range(numIterations))
@@ -129,6 +140,10 @@ def MAPEM(
         
         # MAP-EM update
         theta_flat = theta_flat * c_flat / (1 + hess_U)
+        
+        # Apply diagonal preconditioning if enabled
+        if preconditioner_inv is not None:
+            theta_flat = apply_diagonal_preconditioner(theta_flat, preconditioner_inv, SMatrix)
         
         # Clamp to non-negative
         theta_flat = clamp_positive(SMatrix, theta_flat)

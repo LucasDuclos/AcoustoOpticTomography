@@ -35,6 +35,7 @@ def DEPIERRO(
     sigma=1.0,
     delta=0.01,
     potential_type=PotentialType.QUADRATIC,
+    preconditioner_type=PreconditionerType.NONE,
     isSavingEachIteration=True,
     isCostFunction=False,
     withTumor=True,
@@ -52,6 +53,10 @@ def DEPIERRO(
     - HUBER: p(u,v,delta) = huber piecewise function
     - RELATIVE_DIFFERENCE: p(u,v,beta) = beta * (u-v)^2 / (u+v+beta*|u-v|)
     
+    Supports preconditioning:
+    - NONE: No preconditioning
+    - DIAGONAL: Diagonal preconditioning using A^T * 1
+    
     Args:
         SMatrix: SMatrix instance (already allocated)
         y: Measurement data
@@ -60,6 +65,7 @@ def DEPIERRO(
         sigma: Additional parameter for DEPIERRO
         delta: Parameter for HUBER potential (threshold)
         potential_type: Type of potential function to use
+        preconditioner_type: Type of preconditioner to use (default: NONE)
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
         withTumor: Boolean for description only
@@ -109,6 +115,11 @@ def DEPIERRO(
         else:
             raise ValueError(f"DEPIERRO does not support potential type: {potential_type}. Use QUADRATIC, HUBER, or RELATIVE_DIFFERENCE.")
     
+    # Compute preconditioner if requested
+    preconditioner, preconditioner_inv = None, None
+    if preconditioner_type != PreconditionerType.NONE:
+        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
+    
     # Setup save indices
     if numIterations <= max_saves:
         save_indices = list(range(numIterations))
@@ -140,6 +151,10 @@ def DEPIERRO(
         
         # DEPIERRO update
         theta_flat = theta_flat * c_flat / (1 + sigma * hess_U)
+        
+        # Apply diagonal preconditioning if enabled
+        if preconditioner_inv is not None:
+            theta_flat = apply_diagonal_preconditioner(theta_flat, preconditioner_inv, SMatrix)
         
         # Clamp to non-negative
         theta_flat = clamp_positive(SMatrix, theta_flat)

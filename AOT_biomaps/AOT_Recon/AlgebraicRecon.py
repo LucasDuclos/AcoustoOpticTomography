@@ -3,11 +3,12 @@ import warnings
 from AOT_biomaps.Config import config
 
 from ._mainRecon import Recon
-from .ReconEnums import ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, NoiseType
+from .ReconEnums import ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, NoiseType, PreconditionerType
 from .AOT_Optimizers import MLEM, LS, MAPEM, DEPIERRO, PDHG
 from .AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from .AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from .AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
+from .ReconTools import build_preconditioner, apply_diagonal_preconditioner
 
 import os
 import subprocess
@@ -174,6 +175,8 @@ class AlgebraicRecon(Recon):
         sparseThreshold: float = 0.1,
         isComplexeRecon: bool = False,
         device: Optional[str] = None,
+        # Preconditioning
+        preconditionerType: PreconditionerType = PreconditionerType.NONE,
         # Regularization parameters
         alpha: Optional[float] = None,
         beta: Optional[float] = None,
@@ -210,6 +213,7 @@ class AlgebraicRecon(Recon):
             sparseThreshold: Threshold for sparse matrix construction (default: 0.1)
             isComplexeRecon: Whether to perform complex reconstruction (default: False)
             device: Device to use ('cpu' or 'gpu') (default: auto-detected)
+            preconditionerType: Type of preconditioner (PreconditionerType.NONE or DIAGONAL, default: NONE)
             alpha: Regularization weight for MAPEM, DEPIERRO, PPGMLEM, PGC (default: None)
             beta: Regularization parameter for MAPEM, DEPIERRO, PPGMLEM, PGC, PDHG (default: None)
             gamma: Preconditioning parameter for PPGMLEM (default: None)
@@ -258,6 +262,7 @@ class AlgebraicRecon(Recon):
         self.SMatrix = None
         self.smatrixType = smatrixType
         self.sparseThreshold = sparseThreshold
+        self.preconditionerType = preconditionerType
         
         # Store regularization parameters
         self.alpha = alpha
@@ -746,6 +751,7 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 alpha=self.alpha if self.alpha is not None else 1.0,
                 beta=self.beta if self.beta is not None else 1.0,
                 delta=self.delta if self.delta is not None else 0.01,
@@ -762,6 +768,7 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 alpha=self.alpha if self.alpha is not None else 1.0,
                 beta=self.beta if self.beta is not None else 1.0,
                 delta=self.delta if self.delta is not None else 0.01,
@@ -798,6 +805,7 @@ class AlgebraicRecon(Recon):
                 sigma=self.sigma if self.sigma is not None else 1.0,
                 delta=self.delta if self.delta is not None else 0.01,
                 potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 numIterations=self.numIterations,
                 isSavingEachIteration=self.isSavingEachIteration,
                 withTumor=withTumor,
@@ -814,6 +822,7 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 alpha=self.alpha if self.alpha is not None else 1.0,
                 beta=self.beta if self.beta is not None else 1.0,
                 delta=self.delta if self.delta is not None else 0.01,
@@ -831,6 +840,7 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 alpha=self.alpha if self.alpha is not None else 1.0,
                 beta=self.beta if self.beta is not None else 1.0,
                 delta=self.delta if self.delta is not None else 0.01,
@@ -851,6 +861,7 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 alpha=self.alpha if self.alpha is not None else 1.0,
                 beta=self.beta if self.beta is not None else 1.0,
                 numIterations=self.numIterations,
@@ -866,6 +877,7 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 alpha=self.alpha if self.alpha is not None else 1.0,
                 beta=self.beta if self.beta is not None else 1.0,
                 numIterations=self.numIterations,
@@ -892,6 +904,7 @@ class AlgebraicRecon(Recon):
                 L=self.L,
                 withTumor=withTumor,
                 potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 device=self.device,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
@@ -917,6 +930,7 @@ class AlgebraicRecon(Recon):
                 L=self.L,
                 withTumor=withTumor,
                 potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 device=self.device,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
