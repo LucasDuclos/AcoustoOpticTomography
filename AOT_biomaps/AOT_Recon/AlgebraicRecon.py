@@ -310,18 +310,20 @@ class AlgebraicRecon(Recon):
             errors: List to append error messages to
         """
         # Define compatibility matrix: which potential functions work with which optimizers
+        # Note: MLEM and LS are non-regularized algorithms and should NOT use any potential function
+        # PDHG is primal-dual and can handle all potential functions (including non-differentiable ones)
         POTENTIAL_COMPATIBILITY = {
             PotentialType.QUADRATIC: [
-                OptimizerType.MLEM, OptimizerType.LS, OptimizerType.MAPEM,
-                OptimizerType.DEPIERRO, OptimizerType.PPGMLEM, OptimizerType.PGC,
-                OptimizerType.PDHG
+                OptimizerType.MAPEM, OptimizerType.DEPIERRO, OptimizerType.PPGMLEM,
+                OptimizerType.PGC, OptimizerType.PDHG
             ],
             PotentialType.HUBER: [
                 OptimizerType.MAPEM, OptimizerType.PPGMLEM, OptimizerType.PGC,
                 OptimizerType.PDHG
             ],
             PotentialType.RELATIVE_DIFFERENCE: [
-                OptimizerType.MAPEM, OptimizerType.PPGMLEM, OptimizerType.PGC
+                OptimizerType.MAPEM, OptimizerType.PPGMLEM, OptimizerType.PGC,
+                OptimizerType.PDHG
             ],
             PotentialType.TOTAL_VARIATION: [
                 OptimizerType.PDHG
@@ -794,6 +796,8 @@ class AlgebraicRecon(Recon):
                 y=y,
                 beta=self.beta if self.beta is not None else 1.0,
                 sigma=self.sigma if self.sigma is not None else 1.0,
+                delta=self.delta if self.delta is not None else 0.01,
+                potential_type=self.potentialFunction,
                 numIterations=self.numIterations,
                 isSavingEachIteration=self.isSavingEachIteration,
                 withTumor=withTumor,
@@ -881,11 +885,13 @@ class AlgebraicRecon(Recon):
                 y=y,
                 alpha=self.alpha,
                 beta=self.beta,
+                delta=self.delta,
                 theta=self.theta,
                 numIterations=self.numIterations,
                 isSavingEachIteration=self.isSavingEachIteration,
                 L=self.L,
                 withTumor=withTumor,
+                potential_type=self.potentialFunction,
                 device=self.device,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
@@ -904,11 +910,13 @@ class AlgebraicRecon(Recon):
                 y=y,
                 alpha=self.alpha,
                 beta=self.beta,
+                delta=self.delta,
                 theta=self.theta,
                 numIterations=self.numIterations,
                 isSavingEachIteration=self.isSavingEachIteration,
                 L=self.L,
                 withTumor=withTumor,
+                potential_type=self.potentialFunction,
                 device=self.device,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
