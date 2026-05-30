@@ -8,13 +8,8 @@ Single unified function that works with any SMatrix type (CSR, SELL, DENSE) and 
 Supports all potential functions: QUADRATIC, HUBER, RELATIVE_DIFFERENCE, TOTAL_VARIATION
 """
 
-from AOT_biomaps.AOT_Recon.ReconTools import (
-    projection, backprojection, clamp_positive, calculate_memory_requirement, 
-    check_gpu_memory, zeros, build_adjacency_indices,
-    quadratic_potential, huber_potential, relative_difference_potential, tv_potential
-)
-from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, NoiseType
-from AOT_biomaps.Config import config
+from AOT_biomaps.AOT_Recon.ReconTools import forward_projection, backward_projection, clamp_positive, huber_potential, quadratic_potential, relative_difference_potential, tv_potential, build_preconditioner, apply_diagonal_preconditioner
+from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, NoiseType, PreconditionerType
 
 import numpy as np
 from tqdm import trange
@@ -91,18 +86,20 @@ def PDHG(
     Z = SMatrix.Z
     X = SMatrix.X
     ZX = Z * X
-    TN = SMatrix.N * SMatrix.T
+    
+    if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
+        raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
     
     # Convert y to appropriate format
     if device == 'gpu' and CUPY_AVAILABLE:
         y_flat = cp.asarray(y.T.flatten().astype(np.float32))
-        theta_flat = cp.zeros(ZX, dtype=cp.float32)
+        lambda_flat = cp.zeros(ZX, dtype=cp.float32)
         x_flat = cp.zeros(ZX, dtype=cp.float32)
         y_flat_pos = cp.maximum(y_flat, 1e-10)
         array_module = cp
     else:
         y_flat = np.asarray(y.T.flatten().astype(np.float32))
-        theta_flat = np.zeros(ZX, dtype=np.float32)
+        lambda_flat = np.zeros(ZX, dtype=np.float32)
         x_flat = np.zeros(ZX, dtype=np.float32)
         y_flat_pos = np.maximum(y_flat, 1e-10)
         array_module = np
@@ -122,9 +119,9 @@ def PDHG(
             raise ValueError(f"Unsupported potential type: {potential_type}")
     
     # Compute preconditioner if requested
-    preconditioner, preconditioner_inv = None, None
+    _, preconditioner_inv = None, None
     if preconditioner_type != PreconditionerType.NONE:
-        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
+        _, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
     
     # PDHG parameters
     tau = 0.1
@@ -139,7 +136,7 @@ def PDHG(
         if save_indices[-1] != numIterations - 1:
             save_indices.append(numIterations - 1)
     
-    saved_theta = []
+    saved_lambda = []
     saved_indices_list = []
     cost_history = [] if isCostFunction else None
     
@@ -153,12 +150,12 @@ def PDHG(
         # Compute gradient of data fidelity term
         if noise_type == NoiseType.POISSON:
             # For Poisson: gradient is A^T * (1 - y / (A*x + eps))
-            Ax = projection(SMatrix, x_flat)
-            grad_f = backprojection(SMatrix, 1.0 - y_flat / (Ax + 1e-10))
+            Ax = forward_projection(SMatrix, x_flat)
+            grad_f = backward_projection(SMatrix, 1.0 - y_flat / (Ax + 1e-10))
         else:  # GAUSSIAN
             # For Gaussian: gradient is A^T * (A*x - y)
-            Ax = projection(SMatrix, x_flat)
-            grad_f = backprojection(SMatrix, Ax - y_flat)
+            Ax = forward_projection(SMatrix, x_flat)
+            grad_f = backward_projection(SMatrix, Ax - y_flat)
         
         # Get potential gradient
         grad_U, _, _ = get_potential(x_flat)
@@ -173,11 +170,11 @@ def PDHG(
         x_flat = clamp_positive(SMatrix, x_flat)
         
         # Dual update
-        theta_flat = theta_flat + sigma * (projection(SMatrix, x_flat) - y_flat_pos)
+        lambda_flat = lambda_flat + sigma * (forward_projection(SMatrix, x_flat) - y_flat_pos)
         
         # Compute cost function if requested
         if isCostFunction:
-            Ax = projection(SMatrix, x_flat)
+            Ax = forward_projection(SMatrix, x_flat)
             if noise_type == NoiseType.POISSON:
                 # Poisson log-likelihood
                 likelihood = array_module.sum(y_flat * array_module.log(Ax + 1e-10) - Ax)
@@ -192,18 +189,18 @@ def PDHG(
         
         if isSavingEachIteration and it in save_indices:
             if device == 'gpu' and CUPY_AVAILABLE:
-                saved_theta.append(cp.asnumpy(x_flat.reshape(Z, X)))
+                saved_lambda.append(cp.asnumpy(lambda_flat.reshape(Z, X)))
             else:
-                saved_theta.append(x_flat.reshape(Z, X).copy())
+                saved_lambda.append(lambda_flat.reshape(Z, X).copy())
             saved_indices_list.append(it)
     
     if device == 'gpu' and CUPY_AVAILABLE:
         cp.cuda.Stream.null.synchronize()
-        final_result = cp.asnumpy(x_flat.reshape(Z, X))
+        final_result = cp.asnumpy(lambda_flat.reshape(Z, X))
     else:
-        final_result = x_flat.reshape(Z, X)
+        final_result = lambda_flat.reshape(Z, X)
     
     if isSavingEachIteration:
-        return saved_theta, saved_indices_list, cost_history
+        return saved_lambda, saved_indices_list, cost_history
     else:
         return final_result, None, cost_history

@@ -4,10 +4,14 @@ LS.py
 Least Squares reconstruction algorithms.
 Uses ReconTools functions for all matrix operations.
 Single unified function that works with any SMatrix type (CSR, SELL, DENSE) and any device (CPU, GPU).
-"""
 
+Supports preconditioning:
+- NONE: No preconditioning
+- DIAGONAL: Diagonal preconditioning using A^T * 1
+"""
 import numpy as np
 from tqdm import trange
+from typing import Optional, Union, Tuple
 
 # Check for CuPy availability
 try:
@@ -16,18 +20,24 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
 
+from AOT_biomaps.AOT_Recon.ReconTools import cost_function, forward_projection, backward_projection, minus_axpy, clamp_positive, build_preconditioner, apply_diagonal_preconditioner
+from AOT_biomaps.AOT_Recon.ReconEnums import PreconditionerType
+from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
+from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
+from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
 
 def LS(
-    SMatrix,
-    y,
-    numIterations=100,
-    alpha=0.01,
-    isSavingEachIteration=True,
-    isCostFunction=False,
-    withTumor=True,
-    max_saves=5000,
-    show_logs=True,
-):
+    SMatrix : Union[SMatrix_DENSE, SMatrix_CSR, SMatrix_SELL],
+    y: Union[np.ndarray, 'cp.ndarray'],
+    numIterations: int = 100,
+    alpha: float = 0.01,
+    preconditioner_type: PreconditionerType = PreconditionerType.NONE,
+    isSavingEachIteration: bool = True,
+    isCostFunction: bool = False,
+    withTumor: bool = True,
+    max_saves: int = 5000,
+    show_logs: bool = True,
+) -> Tuple[Union[np.ndarray, list], Optional[list], Optional[list]]:
     """
     Least Squares reconstruction using Projected Gradient Descent (PGD).
     
@@ -44,18 +54,14 @@ def LS(
         withTumor: Boolean for description only
         max_saves: Maximum number of intermediate saves
         show_logs: If True, shows progress bar
+        preconditioner_type: Type of preconditioner to use (default: NONE)
         
     Returns:
         tuple: (reconstructed_image, saved_indices, cost_history)
         - reconstructed_image: Final or list of images (Z, X)
         - saved_indices: List of saved iteration indices (None if not saving)
         - cost_history: List of cost function values (None if not requested)
-    """
-    from AOT_biomaps.AOT_Recon.ReconTools import (
-        projection, backprojection, axpby, minus_axpy, dot_product,
-        clamp_positive, zeros
-    )
-    
+    """   
     tumor_str = "WITH" if withTumor else "WITHOUT"
     
     # Get device from SMatrix
@@ -66,17 +72,24 @@ def LS(
     Z = SMatrix.Z
     X = SMatrix.X
     ZX = Z * X
-    TN = SMatrix.N * SMatrix.T
+    
+    if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
+        raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
     
     # Convert y to appropriate format
     if device == 'gpu' and CUPY_AVAILABLE:
         y_flat = cp.asarray(y.T.flatten().astype(np.float32))
-        theta_flat = cp.full(ZX, 0.1, dtype=cp.float32)
+        lambda_flat = cp.full(ZX, 0.1, dtype=cp.float32)
         array_module = cp
     else:
         y_flat = np.asarray(y.T.flatten().astype(np.float32))
-        theta_flat = np.full(ZX, 0.1, dtype=np.float32)
+        lambda_flat = np.full(ZX, 0.1, dtype=np.float32)
         array_module = np
+    
+    # Compute preconditioner if requested
+    preconditioner, preconditioner_inv = None, None
+    if preconditioner_type != PreconditionerType.NONE:
+        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
     
     # Setup save indices
     if numIterations <= max_saves:
@@ -87,7 +100,7 @@ def LS(
         if save_indices[-1] != numIterations - 1:
             save_indices.append(numIterations - 1)
     
-    saved_theta = []
+    saved_lambda = []
     saved_indices_list = []
     cost_history = [] if isCostFunction else None
     
@@ -95,37 +108,39 @@ def LS(
     iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
     
     for it in iterator:
-        # Compute gradient: g = A^T * (A * theta - y)
-        q_flat = projection(SMatrix, theta_flat)
-        r_flat = minus_axpy(SMatrix, y_flat, q_flat, -1.0)  # r = y - A*theta
-        g_flat = backprojection(SMatrix, r_flat)  # g = A^T * r
+        # Compute gradient: g = A^T * (A * λ - y)
+        q_flat = forward_projection(SMatrix, lambda_flat)
+        r_flat = minus_axpy(SMatrix, y_flat, q_flat, -1.0)  # r = y - A*λ
+        g_flat = backward_projection(SMatrix, r_flat)  # g = A^T * r
         
         # Compute cost function if requested
         if isCostFunction:
-            # LS cost: 0.5 * ||A*theta - y||^2
-            cost = 0.5 * float(array_module.sum(r_flat**2))
-            cost_history.append(cost)
+            cost_history.append(cost_function(SMatrix, lambda_flat, y_flat, array_module=array_module))
+
+        # Update: λ = λ - alpha * g
+        lambda_flat = minus_axpy(SMatrix, lambda_flat, g_flat, alpha)
         
-        # Update: theta = theta - alpha * g
-        theta_flat = minus_axpy(SMatrix, theta_flat, g_flat, alpha)
+        # Apply diagonal preconditioning if enabled
+        if preconditioner_inv is not None:
+            lambda_flat = apply_diagonal_preconditioner(lambda_flat, preconditioner_inv, SMatrix)
         
         # Clamp to non-negative
-        theta_flat = clamp_positive(SMatrix, theta_flat)
+        lambda_flat = clamp_positive(SMatrix, lambda_flat)
         
         if isSavingEachIteration and it in save_indices:
             if device == 'gpu' and CUPY_AVAILABLE:
-                saved_theta.append(cp.asnumpy(theta_flat.reshape(Z, X)))
+                saved_lambda.append(cp.asnumpy(lambda_flat.reshape(Z, X)))
             else:
-                saved_theta.append(theta_flat.reshape(Z, X).copy())
+                saved_lambda.append(lambda_flat.reshape(Z, X).copy())
             saved_indices_list.append(it)
     
     if device == 'gpu' and CUPY_AVAILABLE:
         cp.cuda.Stream.null.synchronize()
-        final_result = cp.asnumpy(theta_flat.reshape(Z, X))
+        final_result = cp.asnumpy(lambda_flat.reshape(Z, X))
     else:
-        final_result = theta_flat.reshape(Z, X)
+        final_result = lambda_flat.reshape(Z, X)
     
     if isSavingEachIteration:
-        return saved_theta, saved_indices_list, cost_history
+        return saved_lambda, saved_indices_list, cost_history
     else:
         return final_result, None, cost_history

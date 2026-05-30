@@ -97,6 +97,12 @@ class OptimizerType(Enum):
     For non-differentiable potentials like Total Variation.
     Compatible with: all data types.
     """
+    LBFGS = 'LBFGS'
+    """
+    Limited-memory BFGS.
+    Quasi-Newton optimization algorithm with regularization support.
+    Compatible with: differentiable potential functions (QUADRATIC, HUBER, RELATIVE_DIFFERENCE).
+    """
 
 class PotentialType(Enum):
     """

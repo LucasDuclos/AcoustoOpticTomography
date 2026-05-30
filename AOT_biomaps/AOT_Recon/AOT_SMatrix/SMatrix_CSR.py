@@ -535,7 +535,7 @@ class SMatrix_CSR:
                     c[col] += self.h_values[j] * e_cpu[i]
             return c
 
-    def getMatrixSize(self) -> dict:
+    def get_matrix_size(self) -> dict:
         """
         Returns the total size of the CSR matrix in GB.
         

@@ -7,17 +7,15 @@ Manual implementation without scipy.minimize dependency.
 Single unified function that works with any SMatrix type (CSR, SELL, DENSE) and any device (CPU, GPU).
 """
 
-from AOT_biomaps.AOT_Recon.ReconTools import (
-    projection, backprojection, clamp_positive, calculate_memory_requirement, 
-    check_gpu_memory, zeros, ones, axpby, minus_axpy, dot_product, fill_array,
-    quadratic_potential, huber_potential, relative_difference_potential, build_adjacency_indices
-)
-from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType
-from AOT_biomaps.Config import config
-
 import numpy as np
 from tqdm import trange
-import warnings
+from typing import Optional, Union, Tuple
+
+from AOT_biomaps.AOT_Recon.ReconTools import cost_function, forward_projection, backward_projection, clamp_positive, axpby, minus_axpy, dot_product, build_preconditioner, apply_diagonal_preconditioner, get_potential_function
+from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, PreconditionerType
+from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
+from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
+from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
 
 # Check for CuPy availability
 try:
@@ -31,21 +29,19 @@ _NON_DIFFERENTIABLE_POTENTIALS = {PotentialType.TOTAL_VARIATION}
 
 
 def LBFGS(
-    SMatrix,
-    y,
-    numIterations=100,
-    potential_type=PotentialType.QUADRATIC,
-    alpha=1.0,
-    beta=1.0,
-    delta=0.01,
-    gamma=0.01,
-    sigma=0.01,
-    isSavingEachIteration=True,
-    isCostFunction=False,
-    withTumor=True,
-    max_saves=5000,
-    show_logs=True,
-):
+    SMatrix: Union[SMatrix_DENSE, SMatrix_CSR, SMatrix_SELL],
+    y: Union[np.ndarray, 'cp.ndarray'],
+    numIterations: int = 100,
+    beta: float = 1.0,
+    delta: float = 0.01,
+    potential_type: PotentialType = PotentialType.QUADRATIC,
+    preconditioner_type: PreconditionerType = PreconditionerType.NONE,
+    isSavingEachIteration: bool = True,
+    isCostFunction: bool = False,
+    withTumor: bool = True,
+    max_saves: int = 5000,
+    show_logs: bool = True,
+) -> Tuple[Union[np.ndarray, list], Optional[list], Optional[list]]:
     """
     L-BFGS optimization algorithm with regularization support.
     Manual implementation without scipy.minimize dependency.
@@ -53,21 +49,23 @@ def LBFGS(
     Uses ReconTools functions for all matrix operations, so it works with
     any SMatrix type (CSR, SELL, DENSE) and any device (CPU, GPU).
     
+    Supports preconditioning:
+    - NONE: No preconditioning
+    - DIAGONAL: Diagonal preconditioning using A^T * 1
+    
     Args:
-        SMatrix: SMatrix instance (already allocated)
-        y: Measurement data
+        SMatrix: SMatrix instance (already allocated) must be SMatrix_DENSE, SMatrix_CSR, or SMatrix_SELL
+        y: Measurement data (shape: (T, N))
         numIterations: Number of iterations
         potential_type: Type of potential function (QUADRATIC, HUBER, RELATIVE_DIFFERENCE)
-        alpha: Regularization weight
-        beta: Additional parameter for potential functions
+        beta: Regularization weight
         delta: Parameter for Huber potential
-        gamma: Parameter for LBFGS
-        sigma: Parameter for LBFGS
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
         withTumor: Boolean for description only
         max_saves: Maximum number of intermediate saves
         show_logs: If True, shows progress bar
+        preconditioner_type: Type of preconditioner to use (default: NONE)
         
     Returns:
         tuple: (reconstructed_image, saved_indices, cost_history)
@@ -92,34 +90,29 @@ def LBFGS(
     Z = SMatrix.Z
     X = SMatrix.X
     ZX = Z * X
-    TN = SMatrix.N * SMatrix.T
+
+    if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
+        raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
     
     # Convert y to appropriate format
     if device == 'gpu' and CUPY_AVAILABLE:
         y_flat = cp.asarray(y.T.flatten().astype(np.float32))
-        theta_flat = cp.full(ZX, 0.1, dtype=cp.float32)
-        array_module = cp
+        lambda_flat = cp.full(ZX, 0.1, dtype=cp.float32)
     else:
         y_flat = np.asarray(y.T.flatten().astype(np.float32))
-        theta_flat = np.full(ZX, 0.1, dtype=np.float32)
-        array_module = np
+        lambda_flat = np.full(ZX, 0.1, dtype=np.float32)
+
     
-    # Select potential function
-    def get_potential(U):
-        if potential_type == PotentialType.QUADRATIC:
-            return quadratic_potential(SMatrix, U, alpha)
-        elif potential_type == PotentialType.HUBER:
-            return huber_potential(SMatrix, U, alpha, delta)
-        elif potential_type == PotentialType.RELATIVE_DIFFERENCE:
-            return relative_difference_potential(SMatrix, U, alpha, beta)
-        else:
-            raise ValueError(f"Unsupported potential type: {potential_type}")
-    
+    # Compute preconditioner if requested
+    preconditioner, preconditioner_inv = None, None
+    if preconditioner_type != PreconditionerType.NONE:
+        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
+        
     # LBFGS parameters
     m = 10  # Memory size (number of previous steps to store)
     
     # Initialize LBFGS variables
-    s_history = []  # List of s vectors (theta_{k+1} - theta_k)
+    s_history = []  # List of s vectors (lambda_{k+1} - lambda_k)
     y_history = []  # List of y vectors (grad_{k+1} - grad_k)
     rho_history = []  # List of rho values (1 / y^T * s)
     
@@ -132,7 +125,7 @@ def LBFGS(
         if save_indices[-1] != numIterations - 1:
             save_indices.append(numIterations - 1)
     
-    saved_theta = []
+    saved_lambda = []
     saved_indices_list = []
     cost_history = [] if isCostFunction else None
     
@@ -140,10 +133,10 @@ def LBFGS(
     iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
     
     for it in iterator:
-        # Compute gradient: grad = A^T * (A * theta - y) + grad_U
-        q_flat = projection(SMatrix, theta_flat)
-        grad_f = backprojection(SMatrix, q_flat - y_flat)  # Gradient of data fidelity (LS)
-        grad_U, _, U_value = get_potential(theta_flat)  # Gradient of regularization
+        # Compute gradient: grad = A^T * (A * λ - y) + grad_U
+        q_flat = forward_projection(SMatrix, lambda_flat)
+        grad_f = backward_projection(SMatrix, q_flat - y_flat)  # Gradient of data fidelity (LS)
+        grad_U, _, U_value = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta, delta=delta)  # Gradient of regularization
         grad_flat = grad_f + grad_U
         
         # Compute cost function if requested
@@ -186,21 +179,14 @@ def LBFGS(
                 beta_i = rho * dot_product(SMatrix, y, d_flat)
                 d_flat = axpby(SMatrix, d_flat, s, 1.0, alpha_list[i] - beta_i)
         
-        # Line search (simple backtracking)
-        def compute_cost(theta):
-            q = projection(SMatrix, theta)
-            cost = 0.5 * float(dot_product(SMatrix, q - y_flat, q - y_flat))
-            _, _, U_val = get_potential(theta)
-            cost += float(U_val)
-            return cost
         
-        current_cost = compute_cost(theta_flat)
+        current_cost = cost_function(SMatrix, lambda_flat, y_flat, potential_type, beta=beta, delta=delta, array_module=cp if device == 'gpu' and CUPY_AVAILABLE else np)
         
         # Try step size = 1 initially
         step = 1.0
-        theta_new = axpby(SMatrix, theta_flat, d_flat, 1.0, step)
-        theta_new = clamp_positive(SMatrix, theta_new)
-        new_cost = compute_cost(theta_new)
+        lambda_new = axpby(SMatrix, lambda_flat, d_flat, 1.0, step)
+        lambda_new = clamp_positive(SMatrix, lambda_new)
+        new_cost = cost_function(SMatrix, lambda_new, y_flat, potential_type, beta=beta, delta=delta, array_module=cp if device == 'gpu' and CUPY_AVAILABLE else np)
         
         # Backtracking line search
         c1 = 1e-4
@@ -208,16 +194,16 @@ def LBFGS(
         ls_iter = 0
         while new_cost > current_cost + c1 * step * dot_product(SMatrix, grad_flat, d_flat) and ls_iter < max_ls_iter:
             step *= 0.5
-            theta_new = axpby(SMatrix, theta_flat, d_flat, 1.0, step)
-            theta_new = clamp_positive(SMatrix, theta_new)
-            new_cost = compute_cost(theta_new)
+            lambda_new = axpby(SMatrix, lambda_flat, d_flat, 1.0, step)
+            lambda_new = clamp_positive(SMatrix, lambda_new)
+            new_cost = cost_function(SMatrix, lambda_new, y_flat, potential_type, beta=beta, delta=delta, array_module=cp if device == 'gpu' and CUPY_AVAILABLE else np)
             ls_iter += 1
         
         # Update s and y for LBFGS
-        s_k = theta_new - theta_flat
-        grad_new_q = projection(SMatrix, theta_new)
-        grad_new_f = backprojection(SMatrix, grad_new_q - y_flat)
-        grad_new_U, _, _ = get_potential(theta_new)
+        s_k = lambda_new - lambda_flat
+        grad_new_q = forward_projection(SMatrix, lambda_new)
+        grad_new_f = backward_projection(SMatrix, grad_new_q - y_flat)
+        grad_new_U, _, _ = get_potential_function(potential_type, SMatrix, lambda_new, beta=beta, delta=delta)
         grad_new_flat = grad_new_f + grad_new_U
         y_k = grad_new_flat - grad_flat
         
@@ -231,23 +217,27 @@ def LBFGS(
         y_history.append(y_k)
         rho_history.append(1.0 / (dot_product(SMatrix, y_k, s_k) + 1e-12))
         
-        # Update theta
-        theta_flat = theta_new
+        # Update lambda
+        lambda_flat = lambda_new
+        
+        # Apply diagonal preconditioning if enabled
+        if preconditioner_inv is not None:
+            lambda_flat = apply_diagonal_preconditioner(lambda_flat, preconditioner_inv, SMatrix)
         
         if isSavingEachIteration and it in save_indices:
             if device == 'gpu' and CUPY_AVAILABLE:
-                saved_theta.append(cp.asnumpy(theta_flat.reshape(Z, X)))
+                saved_lambda.append(cp.asnumpy(lambda_flat.reshape(Z, X)))
             else:
-                saved_theta.append(theta_flat.reshape(Z, X).copy())
+                saved_lambda.append(lambda_flat.reshape(Z, X).copy())
             saved_indices_list.append(it)
     
     if device == 'gpu' and CUPY_AVAILABLE:
         cp.cuda.Stream.null.synchronize()
-        final_result = cp.asnumpy(theta_flat.reshape(Z, X))
+        final_result = cp.asnumpy(lambda_flat.reshape(Z, X))
     else:
-        final_result = theta_flat.reshape(Z, X)
+        final_result = lambda_flat.reshape(Z, X)
     
     if isSavingEachIteration:
-        return saved_theta, saved_indices_list, cost_history
+        return saved_lambda, saved_indices_list, cost_history
     else:
         return final_result, None, cost_history

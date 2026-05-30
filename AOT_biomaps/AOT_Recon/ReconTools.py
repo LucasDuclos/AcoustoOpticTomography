@@ -2,7 +2,7 @@
 ReconTools.py
 
 Unified reconstruction tools for AOT-BioMaps.
-All operations (projection, backprojection, vector ops, potentials) implemented as standalone functions.
+All operations (forward_projection, backward_projection, vector ops, potentials) implemented as standalone functions.
 Works with any SMatrix type (CSR, SELL, DENSE) and any device (CPU, GPU).
 
 For GPU: Uses CUDA kernels from AOT_biomaps_kernels.cu when available.
@@ -22,13 +22,8 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
 
-# Import SMatrix classes
-try:
-    from AOT_biomaps.AOT_Recon.AOT_SMatrix import SMatrix_CSR, SMatrix_SELL, SMatrix_DENSE
-except ModuleNotFoundError:
-    SMatrix_CSR = None
-    SMatrix_SELL = None
-    SMatrix_DENSE = None
+from AOT_biomaps.AOT_Recon.AOT_SMatrix import SMatrix_CSR, SMatrix_SELL, SMatrix_DENSE
+from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, PreconditionerType, OptimizerType
 
 
 def _get_array_module(device):
@@ -208,14 +203,14 @@ def apply_normalization(SMatrix, x, norm_factor):
 # These use the CUDA kernels from SMatrix classes
 # =============================================================================
 
-def projection(SMatrix, theta):
-    """Forward projection: q = A * theta. Uses SMatrix._data.projection() which calls CUDA kernels."""
-    return SMatrix._data.projection(theta)
+def forward_projection(SMatrix, theta):
+    """Forward projection: q = A * theta. Uses SMatrix._data.forward_projection() which calls CUDA kernels."""
+    return SMatrix._data.forward_projection(theta)
 
 
-def backprojection(SMatrix, e):
+def backward_projection(SMatrix, e):
     """Backprojection: c = A^T * e. Uses SMatrix._data.backprojection() which calls CUDA kernels."""
-    return SMatrix._data.backprojection(e)
+    return SMatrix._data.backward_projection(e)
 
 
 # =============================================================================
@@ -249,14 +244,111 @@ def build_adjacency_indices(SMatrix):
     else:
         return np.array(edges, dtype=np.int32)
 
+# =============================================================================
+# ALGORITHM FUNCTIONS
+# =============================================================================
 
+def cost_function(SMatrix, lambda_flat, y_flat, optimizer, array_module, potential_type=None, beta=None):
+    """
+    Compute the cost function for the given algorithm and potential type.
+    """
+    if optimizer == OptimizerType.MAPEM:
+        # MAPEM cost: -log-likelihood + potential
+        return cost_function_MAPEM(SMatrix, lambda_flat, y_flat, array_module, potential_type, beta)
+    elif optimizer == OptimizerType.DEPIERRO:
+        return cost_function_DEPIERRO(SMatrix, lambda_flat, y_flat, beta, array_module)
+    elif optimizer == OptimizerType.PDHG:
+        # PDHG cost: data fidelity + potential
+        return cost_function_PDHG(SMatrix, lambda_flat, y_flat, potential_type, beta, array_module)
+    elif optimizer == OptimizerType.LBFGS:
+        # LBFGS cost: data fidelity + potential
+        return cost_function_LBFGS(SMatrix, lambda_flat, y_flat, potential_type, beta, array_module)
+    elif optimizer == OptimizerType.LS:
+        # Least squares cost: 0.5 * ||A*λ - y||^2
+        return cost_function_LS(SMatrix, lambda_flat, y_flat, array_module)
+    elif optimizer == OptimizerType.MLEM:
+        # MLEM cost: -log-likelihood
+        return cost_function_MLEM(SMatrix, lambda_flat, y_flat, array_module)
+    else:
+        raise ValueError(f"Unsupported optimizer type: {optimizer}")
+
+def cost_function_DEPIERRO(SMatrix, lambda_flat, y_flat, beta, array_module):
+    """
+    Compute the cost function for DEPIERRO algorithm.
+    """
+    q_flat = forward_projection(SMatrix, lambda_flat)
+    # Poisson log-likelihood + quadratic regularization
+    likelihood = array_module.sum(y_flat * array_module.log(q_flat + 1e-10) - q_flat)
+    return float(-likelihood + 0.5 * beta * array_module.sum(lambda_flat**2))
+
+def cost_function_PDHG(SMatrix, lambda_flat, y_flat, potential_type, beta, array_module):
+    """
+    Compute the cost function for PDHG algorithm.
+    """
+    q_flat = forward_projection(SMatrix, lambda_flat)
+    data_fidelity = 0.5 * array_module.sum((q_flat - y_flat)**2)
+    _, _, potential_val = get_potential_function(potential_type, SMatrix, lambda_flat, beta, delta=None)
+    return float(data_fidelity + potential_val)
+
+def cost_function_LBFGS(SMatrix, lambda_flat, y_flat, potential_type, beta, array_module):
+    """
+    Compute the cost function for LBFGS algorithm.
+    """
+    q_flat = forward_projection(SMatrix, lambda_flat)
+    data_fidelity = 0.5 * array_module.sum((q_flat - y_flat)**2)
+    _, _, potential_val = get_potential_function(potential_type, SMatrix, lambda_flat, beta, delta=None)
+    return float(data_fidelity + potential_val)
+
+def cost_function_LS(SMatrix, lambda_flat, y_flat, array_module):
+    """
+    Compute the least squares cost function for any algorithm.
+    """
+    q_flat = forward_projection(SMatrix, lambda_flat)
+    data_fidelity = 0.5 * array_module.sum((q_flat - y_flat)**2)
+    return float(data_fidelity)
+
+def cost_function_MLEM(SMatrix, lambda_flat, y_flat, array_module):
+    """
+    Compute the cost function for MLEM algorithm.
+    """
+    q_flat = forward_projection(SMatrix, lambda_flat)
+    # Poisson log-likelihood
+    likelihood = array_module.sum(y_flat * array_module.log(q_flat + 1e-10) - q_flat)
+    return float(-likelihood)
+
+def cost_function_MAPEM(SMatrix, lambda_flat, y_flat, potential_type, beta, array_module):
+    """
+    Compute the cost function for MAP-EM algorithm.
+    """
+    q_flat = forward_projection(SMatrix, lambda_flat)
+    # Poisson log-likelihood + regularization
+    likelihood = array_module.sum(y_flat * array_module.log(q_flat + 1e-10) - q_flat)
+    _, _, U_val = get_potential_function(potential_type, SMatrix, lambda_flat, beta, delta=None)
+    return float(-likelihood + U_val)
 # =============================================================================
 # POTENTIAL FUNCTIONS
 # =============================================================================
 
-def quadratic_potential(SMatrix, U, alpha):
+def get_potential_function(potential_type, SMatrix, U, beta, delta=None):
     """
-    Quadratic potential: 0.5 * alpha * ||x||^2
+    Get potential function based on potential_type.
+    """
+    if potential_type == PotentialType.NONE:
+        return None, None, None
+    elif potential_type == PotentialType.QUADRATIC:
+        return quadratic_potential(SMatrix, U, beta)
+    elif potential_type == PotentialType.HUBER:
+        return huber_potential(SMatrix, U, beta, delta)
+    elif potential_type == PotentialType.RELATIVE_DIFFERENCE:
+        return relative_difference_potential(SMatrix, U, beta, delta)
+    elif potential_type == PotentialType.TOTAL_VARIATION:
+        raise ValueError("TOTAL_VARIATION is non-differentiable and not supported in get_potential_function. Use a separate implementation for TV.")
+    else:
+        raise ValueError(f"Unsupported potential type: {potential_type}")
+
+def quadratic_potential(SMatrix, U, beta):
+    """
+    Quadratic potential: 0.5 * beta * ||x||^2
     
     Returns:
         tuple: (grad_U, hess_U, U_value)
@@ -287,7 +379,7 @@ def quadratic_potential(SMatrix, U, alpha):
             kernel(
                 grid=(blocks, 1, 1), block=(threads, 1, 1),
                 args=[grad_U_gpu.data.ptr, hess_U_gpu.data.ptr, U_value_gpu.data.ptr,
-                      U.data.ptr if hasattr(U, 'data') else U, cp.float32(alpha), cp.int32(N)]
+                      U.data.ptr if hasattr(U, 'data') else U, cp.float32(beta), cp.int32(N)]
             )
             cp.cuda.Stream.null.synchronize()
             
@@ -297,14 +389,14 @@ def quadratic_potential(SMatrix, U, alpha):
             pass
     
     # CPU or fallback implementation
-    grad_U = alpha * U
-    hess_U = alpha * xp.ones_like(U)
-    U_value = 0.5 * alpha * xp.sum(U**2)
+    grad_U = beta * U
+    hess_U = beta * xp.ones_like(U)
+    U_value = 0.5 * beta * xp.sum(U**2)
     
     return grad_U, hess_U, U_value
 
 
-def huber_potential(SMatrix, U, alpha, delta=0.01):
+def huber_potential(SMatrix, U, beta, delta=0.01):
     """
     Huber potential for robust regularization.
     
@@ -341,14 +433,14 @@ def huber_potential(SMatrix, U, alpha, delta=0.01):
             grad_kernel(
                 grid=(blocks, 1, 1), block=(threads, 1, 1),
                 args=[grad_U_gpu.data.ptr, hess_U_gpu.data.ptr, cp.zeros(1, dtype=cp.float32).data.ptr,
-                      U.data.ptr if hasattr(U, 'data') else U, cp.float32(alpha), cp.float32(delta), cp.int32(N)]
+                      U.data.ptr if hasattr(U, 'data') else U, cp.float32(beta), cp.float32(delta), cp.int32(N)]
             )
             
             # Compute energy on CPU (simpler for now)
             abs_U = xp.abs(U)
             mask_small = abs_U <= delta
             mask_large = ~mask_small
-            U_value = 0.5 * alpha * xp.sum(U[mask_small]**2) + alpha * delta * xp.sum(abs_U[mask_large] - 0.5 * delta)
+            U_value = 0.5 * beta * xp.sum(U[mask_small]**2) + beta * delta * xp.sum(abs_U[mask_large] - 0.5 * delta)
             
             cp.cuda.Stream.null.synchronize()
             
@@ -365,25 +457,25 @@ def huber_potential(SMatrix, U, alpha, delta=0.01):
     mask_large = ~mask_small
     
     grad_U = xp.zeros_like(U)
-    grad_U[mask_small] = alpha * U[mask_small]
-    grad_U[mask_large] = alpha * delta * xp.sign(U[mask_large])
+    grad_U[mask_small] = beta * U[mask_small]
+    grad_U[mask_large] = beta * delta * xp.sign(U[mask_large])
     
     hess_U = xp.zeros_like(U)
-    hess_U[mask_small] = alpha
+    hess_U[mask_small] = beta
     hess_U[mask_large] = 0.0
     
     U_value = xp.zeros((), dtype=xp.float32)
-    U_value += 0.5 * alpha * xp.sum(U[mask_small]**2)
-    U_value += alpha * delta * xp.sum(abs_U[mask_large] - 0.5 * delta)
+    U_value += 0.5 * beta * xp.sum(U[mask_small]**2)
+    U_value += beta * delta * xp.sum(abs_U[mask_large] - 0.5 * delta)
     
     return grad_U, hess_U, U_value
 
 
-def relative_difference_potential(SMatrix, U, alpha, beta=1.0):
+def relative_difference_potential(SMatrix, U, beta, delta=1.0):
     """
     Relative difference potential for edge-preserving regularization.
     
-    p(u, v, beta) = alpha * (u - v)^2 / (u + v + beta * |u - v|)
+    p(u, v, beta) = beta * (u - v)^2 / (u + v + delta * |u - v|)
     
     Uses adjacency from build_adjacency_indices.
     
@@ -426,7 +518,7 @@ def relative_difference_potential(SMatrix, U, alpha, beta=1.0):
                 grid=(blocks, 1, 1), block=(threads, 1, 1),
                 args=[grad_U_gpu.data.ptr, hess_U_gpu.data.ptr, U_value_gpu.data.ptr,
                       U.data.ptr if hasattr(U, 'data') else U, adj_indices_gpu.data.ptr,
-                      cp.float32(alpha), cp.float32(beta), cp.int32(N), cp.int32(num_edges)]
+                      cp.float32(beta), cp.float32(delta), cp.int32(N), cp.int32(num_edges)]
             )
             cp.cuda.Stream.null.synchronize()
             
@@ -444,26 +536,26 @@ def relative_difference_potential(SMatrix, U, alpha, beta=1.0):
         diff = U[i] - U[j]
         
         # Relative difference potential
-        denom = xp.sqrt(U[i]**2 + U[j]**2 + beta**2)
+        denom = xp.sqrt(U[i]**2 + U[j]**2 + delta**2)
         
         # Gradient contributions
-        grad_U[i] += alpha * diff / denom
-        grad_U[j] -= alpha * diff / denom
+        grad_U[i] += beta * diff / denom
+        grad_U[j] -= beta * diff / denom
         
         # Energy
-        U_value += alpha * (xp.sqrt(U[i]**2 + U[j]**2 + beta**2) - beta)
+        U_value += beta * (xp.sqrt(U[i]**2 + U[j]**2 + delta**2) - delta)
     
     # Hessian is more complex, approximate as constant for now
-    hess_U = alpha * xp.ones_like(U)
+    hess_U = beta * xp.ones_like(U)
     
     return grad_U, hess_U, U_value
 
 
-def tv_potential(SMatrix, U, alpha):
+def tv_potential(SMatrix, U, beta):
     """
     Total Variation potential (anisotropic, non-differentiable).
     
-    TV(u) = alpha * sum(|u_i - u_j|) for all adjacent pairs (i, j)
+    TV(u) = beta * sum(|u_i - u_j|) for all adjacent pairs (i, j)
     
     Returns:
         tuple: (subgradient, hess_U, U_value)
@@ -499,7 +591,7 @@ def tv_potential(SMatrix, U, alpha):
             kernel(
                 grid=(blocks, 1, 1), block=(threads, 1, 1),
                 args=[grad_U_gpu.data.ptr, U_value_gpu.data.ptr,
-                      U.data.ptr if hasattr(U, 'data') else U, cp.float32(alpha),
+                      U.data.ptr if hasattr(U, 'data') else U, cp.float32(beta),
                       cp.int32(Z), cp.int32(X)]
             )
             cp.cuda.Stream.null.synchronize()
@@ -524,26 +616,26 @@ def tv_potential(SMatrix, U, alpha):
             # Right neighbor difference
             if x < X - 1:
                 diff_x = U[idx + 1] - U[idx]
-                U_value += alpha * xp.abs(diff_x)
+                U_value += beta * xp.abs(diff_x)
                 # Subgradient for x component
                 if diff_x > 0:
-                    grad_U[idx] -= alpha
-                    grad_U[idx + 1] += alpha
+                    grad_U[idx] -= beta
+                    grad_U[idx + 1] += beta
                 elif diff_x < 0:
-                    grad_U[idx] += alpha
-                    grad_U[idx + 1] -= alpha
+                    grad_U[idx] += beta
+                    grad_U[idx + 1] -= beta
             
             # Down neighbor difference
             if z < Z - 1:
                 diff_z = U[idx + X] - U[idx]
-                U_value += alpha * xp.abs(diff_z)
+                U_value += beta * xp.abs(diff_z)
                 # Subgradient for z component
                 if diff_z > 0:
-                    grad_U[idx] -= alpha
-                    grad_U[idx + X] += alpha
+                    grad_U[idx] -= beta
+                    grad_U[idx + X] += beta
                 elif diff_z < 0:
-                    grad_U[idx] += alpha
-                    grad_U[idx + X] -= alpha
+                    grad_U[idx] += beta
+                    grad_U[idx + X] -= beta
     
     # TV is non-differentiable, hessian is 0
     hess_U = xp.zeros_like(U)
@@ -871,10 +963,6 @@ def compute_diagonal_preconditioner(SMatrix):
     device = SMatrix.device
     xp = _get_array_module(device)
     
-    Z = SMatrix.Z
-    X = SMatrix.X
-    ZX = Z * X
-    
     # Compute A^T * 1 (column sums)
     ones = xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32)
     
@@ -942,11 +1030,9 @@ def build_preconditioner(SMatrix, preconditioner_type):
         tuple: (preconditioner, preconditioner_inv) or (None, None) if NONE
         
     Compatible with: All SMatrix types and all devices (CPU, GPU)
-    """
-    from AOT_biomaps.AOT_Recon.ReconEnums import PreconditionerType
-    
+    """    
     if preconditioner_type == PreconditionerType.NONE:
-        return None, None
+        return (None, None)
     elif preconditioner_type == PreconditionerType.DIAGONAL:
         return compute_diagonal_preconditioner(SMatrix)
     else:

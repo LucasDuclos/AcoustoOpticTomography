@@ -5,17 +5,15 @@ MAP-EM algorithm (Maximum A Posteriori Expectation Maximization).
 Uses unified SMatrix interface and ReconTools functions.
 Single unified function that works with any SMatrix type (CSR, SELL, DENSE) and any device (CPU, GPU).
 """
-
-from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType
-from AOT_biomaps.AOT_Recon.ReconTools import (
-    projection, backprojection, quadratic_potential, huber_potential, 
-    relative_difference_potential, build_adjacency_indices,
-    clamp_positive, calculate_memory_requirement, check_gpu_memory
-)
-from AOT_biomaps.Config import config
-
 import numpy as np
 from tqdm import trange
+from typing import Optional, Union, Tuple
+
+from AOT_biomaps.AOT_Recon.ReconEnums import OptimizerType, PotentialType, PreconditionerType
+from AOT_biomaps.AOT_Recon.ReconTools import forward_projection, backward_projection, build_preconditioner, apply_diagonal_preconditioner, clamp_positive, get_potential_function, cost_function
+from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
+from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
+from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
 
 # Check for CuPy availability
 try:
@@ -26,20 +24,19 @@ except ImportError:
 
 
 def MAPEM(
-    SMatrix,
-    y,
-    numIterations=100,
-    potential_type=PotentialType.QUADRATIC,
-    alpha=1.0,
-    beta=1.0,
-    delta=0.01,
-    preconditioner_type=PreconditionerType.NONE,
-    isSavingEachIteration=True,
-    isCostFunction=False,
-    withTumor=True,
-    max_saves=5000,
-    show_logs=True,
-):
+    SMatrix: Union['SMatrix_DENSE', 'SMatrix_CSR', 'SMatrix_SELL'],
+    y: Union[np.ndarray, 'cp.ndarray'],
+    numIterations: int = 100,
+    beta: float = 1.0,
+    delta: float = 0.01,
+    potential_type: PotentialType = PotentialType.QUADRATIC,
+    preconditioner_type: PreconditionerType = PreconditionerType.NONE,
+    isSavingEachIteration: bool = True,
+    isCostFunction: bool = False,
+    withTumor: bool = True,
+    max_saves: int = 5000,
+    show_logs: bool = True,
+) -> Tuple[Union[np.ndarray, list], Optional[list], Optional[list]]:
     """
     MAP-EM reconstruction algorithm (Maximum A Posteriori Expectation Maximization).
     
@@ -55,8 +52,7 @@ def MAPEM(
         y: Measurement data
         numIterations: Number of iterations
         potential_type: Type of potential function (QUADRATIC, HUBER, RELATIVE_DIFFERENCE, TOTAL_VARIATION)
-        alpha: Regularization weight
-        beta: Additional parameter for potential functions
+        beta: Regularization weight
         delta: Parameter for Huber potential
         preconditioner_type: Type of preconditioner to use (default: NONE)
         isSavingEachIteration: If True, saves intermediate results
@@ -81,33 +77,24 @@ def MAPEM(
     Z = SMatrix.Z
     X = SMatrix.X
     ZX = Z * X
-    TN = SMatrix.N * SMatrix.T
+    
+    if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
+        raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
     
     # Convert y to appropriate format
     if device == 'gpu' and CUPY_AVAILABLE:
         y_flat = cp.asarray(y.T.flatten().astype(np.float32))
-        theta_flat = cp.full(ZX, 0.1, dtype=cp.float32)
+        lambda_flat = cp.full(ZX, 0.1, dtype=cp.float32)
         array_module = cp
     else:
         y_flat = np.asarray(y.T.flatten().astype(np.float32))
-        theta_flat = np.full(ZX, 0.1, dtype=np.float32)
+        lambda_flat = np.full(ZX, 0.1, dtype=np.float32)
         array_module = np
-    
-    # Select potential function
-    def get_potential(U):
-        if potential_type == PotentialType.QUADRATIC:
-            return quadratic_potential(SMatrix, U, alpha)
-        elif potential_type == PotentialType.HUBER:
-            return huber_potential(SMatrix, U, alpha, delta)
-        elif potential_type == PotentialType.RELATIVE_DIFFERENCE:
-            return relative_difference_potential(SMatrix, U, alpha, beta)
-        else:
-            raise ValueError(f"Unsupported potential type: {potential_type}")
-    
+        
     # Compute preconditioner if requested
-    preconditioner, preconditioner_inv = None, None
+    _, preconditioner_inv = None, None
     if preconditioner_type != PreconditionerType.NONE:
-        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
+        _, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
     
     # Setup save indices
     if numIterations <= max_saves:
@@ -118,7 +105,7 @@ def MAPEM(
         if save_indices[-1] != numIterations - 1:
             save_indices.append(numIterations - 1)
     
-    saved_theta = []
+    saved_lambda = []
     saved_indices_list = []
     cost_history = [] if isCostFunction else None
     
@@ -127,50 +114,45 @@ def MAPEM(
     
     for it in iterator:
         # Forward projection
-        q_flat = projection(SMatrix, theta_flat)
+        q_flat = forward_projection(SMatrix, lambda_flat)
         
         # Compute update factor
         ratio = y_flat / (q_flat + 1e-10)
         
-        # Backprojection
-        c_flat = backprojection(SMatrix, ratio)
+        # Backward projection
+        c_flat = backward_projection(SMatrix, ratio)
         
         # Compute potential gradient and Hessian
-        grad_U, hess_U, U_value = get_potential(theta_flat)
+        _, hess_U, _ = get_potential_function(lambda_flat, potential_type, SMatrix, beta=beta, delta=delta)
         
         # MAP-EM update
-        theta_flat = theta_flat * c_flat / (1 + hess_U)
+        lambda_flat = lambda_flat * c_flat / (1 + hess_U)
         
         # Apply diagonal preconditioning if enabled
         if preconditioner_inv is not None:
-            theta_flat = apply_diagonal_preconditioner(theta_flat, preconditioner_inv, SMatrix)
+            lambda_flat = apply_diagonal_preconditioner(lambda_flat, preconditioner_inv, SMatrix)
         
         # Clamp to non-negative
-        theta_flat = clamp_positive(SMatrix, theta_flat)
+        lambda_flat = clamp_positive(SMatrix, lambda_flat)
         
         # Compute cost function if requested
         if isCostFunction:
-            q_flat = projection(SMatrix, theta_flat)
-            # Poisson log-likelihood + regularization
-            likelihood = array_module.sum(y_flat * array_module.log(q_flat + 1e-10) - q_flat)
-            _, _, U_val = get_potential(theta_flat)
-            cost = float(-likelihood + U_val)
-            cost_history.append(cost)
+            cost_history.append(cost_function(SMatrix, lambda_flat, y_flat, optimizer=OptimizerType.MAPEM, array_module=array_module, beta=beta, delta=delta))
         
         if isSavingEachIteration and it in save_indices:
             if device == 'gpu' and CUPY_AVAILABLE:
-                saved_theta.append(cp.asnumpy(theta_flat.reshape(Z, X)))
+                saved_lambda.append(cp.asnumpy(lambda_flat.reshape(Z, X)))
             else:
-                saved_theta.append(theta_flat.reshape(Z, X).copy())
+                saved_lambda.append(lambda_flat.reshape(Z, X).copy())
             saved_indices_list.append(it)
     
     if device == 'gpu' and CUPY_AVAILABLE:
         cp.cuda.Stream.null.synchronize()
-        final_result = cp.asnumpy(theta_flat.reshape(Z, X))
+        final_result = cp.asnumpy(lambda_flat.reshape(Z, X))
     else:
-        final_result = theta_flat.reshape(Z, X)
+        final_result = lambda_flat.reshape(Z, X)
     
     if isSavingEachIteration:
-        return saved_theta, saved_indices_list, cost_history
+        return saved_lambda, saved_indices_list, cost_history
     else:
         return final_result, None, cost_history
