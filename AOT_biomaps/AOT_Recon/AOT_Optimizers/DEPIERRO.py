@@ -98,9 +98,9 @@ def DEPIERRO(
 
         
     # Compute preconditioner if requested
-    _, preconditioner_inv = None, None
+    preconditioner, preconditioner_inv = None, None
     if preconditioner_type != PreconditionerType.NONE:
-        _, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
+        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
     
     # Setup save indices
     if numIterations <= max_saves:

@@ -3,8 +3,8 @@ import warnings
 from AOT_biomaps.Config import config
 
 from ._mainRecon import Recon
-from .ReconEnums import ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, NoiseType, PreconditionerType
-from .AOT_Optimizers import MLEM, LS, MAPEM, DEPIERRO, PDHG, LBFGS
+from .ReconEnums import ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, PreconditionerType
+from .AOT_Optimizers import MLEM, LS, MAPEM, DEPIERRO, PDHG, PGC, PPGMLEM, LBFGS
 from .AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from .AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from .AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
@@ -15,7 +15,6 @@ import subprocess
 import numpy as np
 from datetime import datetime
 from tempfile import gettempdir
-import math
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from typing import Optional, List
@@ -876,75 +875,71 @@ class AlgebraicRecon(Recon):
     def _run_PPGMLEM(self, y, withTumor: bool = True, show_logs: bool = True):
         """Run PPGMLEM reconstruction."""
         if withTumor:
-            self.reconPhantom, self.indices, self.cost_historyPhantom = MAPEM(
+            self.reconPhantom, self.indices, self.cost_historyPhantom = PPGMLEM(
                 SMatrix=self.SMatrix,
                 y=y,
-                potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
+                numIterations=self.numIterations,
                 alpha=self.alpha if self.alpha is not None else 1.0,
                 beta=self.beta if self.beta is not None else 1.0,
                 delta=self.delta if self.delta is not None else 0.01,
                 gamma=self.gamma if self.gamma is not None else 0.01,
-                numIterations=self.numIterations,
+                potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
+                isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
-                device=self.device,
-                smatrixType=self.smatrixType,
             )
         else:
-            self.reconLaser, self.indices, self.cost_historyLaser = MAPEM(
+            self.reconLaser, self.indices, self.cost_historyLaser = PPGMLEM(
                 SMatrix=self.SMatrix,
                 y=y,
-                potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
+                numIterations=self.numIterations,
                 alpha=self.alpha if self.alpha is not None else 1.0,
                 beta=self.beta if self.beta is not None else 1.0,
                 delta=self.delta if self.delta is not None else 0.01,
                 gamma=self.gamma if self.gamma is not None else 0.01,
-                numIterations=self.numIterations,
+                potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
+                isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
-                device=self.device,
-                smatrixType=self.smatrixType,
             )
 
     def _run_PGC(self, y, withTumor: bool = True, show_logs: bool = True):
         """Run PGC reconstruction."""
         if withTumor:
-            self.reconPhantom, self.indices = MAPEM(
+            self.reconPhantom, self.indices, self.cost_historyPhantom = PGC(
                 SMatrix=self.SMatrix,
                 y=y,
-                potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
+                numIterations=self.numIterations,
                 alpha=self.alpha if self.alpha is not None else 1.0,
                 beta=self.beta if self.beta is not None else 1.0,
-                numIterations=self.numIterations,
+                potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
+                isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
-                device=self.device,
-                smatrixType=self.smatrixType,
             )
         else:
-            self.reconLaser, self.indices = MAPEM(
+            self.reconLaser, self.indices, self.cost_historyLaser = PGC(
                 SMatrix=self.SMatrix,
                 y=y,
-                potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
+                numIterations=self.numIterations,
                 alpha=self.alpha if self.alpha is not None else 1.0,
                 beta=self.beta if self.beta is not None else 1.0,
-                numIterations=self.numIterations,
+                potential_type=self.potentialFunction,
+                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
+                isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
-                device=self.device,
-                smatrixType=self.smatrixType,
             )
 
     def _run_PDHG(self, y, withTumor: bool = True, show_logs: bool = True):

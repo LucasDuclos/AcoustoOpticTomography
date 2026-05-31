@@ -62,7 +62,7 @@ class Laser:
         """
         try:
             plt.figure(figsize=figsize)
-            plt.imshow(self.intensity, extent=(self.x[0], self.x[-1] + 1, self.z[-1], self.z[0]), aspect='auto', cmap='hot')
+            plt.imshow(self.intensity, extent=(self.x[0], self.x[-1] + 1, self.z[-1], self.z[0]), aspect='equal', cmap='hot')
             plt.colorbar(label='Intensity')
             plt.xlabel('X (mm)')
             plt.ylabel('Z (mm)')

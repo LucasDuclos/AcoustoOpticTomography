@@ -120,6 +120,10 @@ class PotentialType(Enum):
     Note: TOTAL_VARIATION is non-differentiable at zero and returns a subgradient.
     It is NOT compatible with MLEM, LS, MAPEM, DEPIERRO, PPGMLEM, PGC, or other gradient-based optimizers.
     """
+    NONE = 'NONE'
+    """
+    No regularization (potential is zero).
+    """
 
     QUADRATIC = 'QUADRATIC'
     """
