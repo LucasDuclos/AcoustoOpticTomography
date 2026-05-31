@@ -92,35 +92,36 @@ class Config:
         return self.process
 
     def select_best_gpu(self):
-        """Select the GPU with the most available memory."""
+        """Select the GPU with the most available memory (CuPy modern API)."""
         try:
             import cupy as cp
             best_gpu = 0
-            max_memory = 0
-            for i in range(self.numGPUs):
-                cp.cuda.runtime.setDevice(i)
-                # Use modern CuPy API
-                try:
-                    free_mem = cp.cuda.runtime.getFreeMem()
-                    total_mem = cp.cuda.runtime.getTotalMem()
-                    available_memory = free_mem
-                except AttributeError:
-                    # Fallback for older CuPy versions
-                    try:
-                        free_mem, total_mem = cp.cuda.runtime.memoryGetInfo()
-                        available_memory = free_mem
-                    except AttributeError:
-                        # Very old CuPy - use memoryInfo as last resort
-                        mem_info = cp.cuda.runtime.memoryInfo()
-                        available_memory = mem_info.total - mem_info.used
-                if available_memory > max_memory:
-                    max_memory = available_memory
-                    best_gpu = i
-            return best_gpu
-        except Exception:
-            # Silently return first GPU
-            return 0  # Return first GPU by default in case of error
+            max_available_mem = -1 
+            num_gpus = cp.cuda.runtime.getDeviceCount()
+            if num_gpus == 0:
+                return None
 
+            for i in range(num_gpus):
+                try:
+                    device = cp.cuda.Device(i)
+                    free_mem = device.mem_info[0]  # mem_info return (free, total)
+                    total_mem = device.mem_info[1]
+                    available_mem = free_mem
+
+                    if available_mem > max_available_mem:
+                        max_available_mem = available_mem
+                        best_gpu = i
+
+                except Exception as e:
+                    print(f"GPU {i} error: {e}. Pass to next GPU")
+                    continue
+
+            return best_gpu
+
+        except Exception as e:
+            print(f"Error : {e}")
+            return None
+        
     def select_gpu(self, device_id=None):
         """
         Select a specific GPU by ID, or automatically select the best one.

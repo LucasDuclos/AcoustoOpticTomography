@@ -283,7 +283,12 @@ class AlgebraicRecon(Recon):
         self.maxSaves = maxSaves
         self.denominatorThreshold = denominatorThreshold
         self.isComplexeRecon = isComplexeRecon
-        self.device = device if device is not None else config.select_best_gpu()
+        if device is None:
+            device = config.select_best_gpu()
+            if device is None:
+                self.device = 'cpu'
+            else:
+                self.device = f'gpu:{device}'
         self.SMatrix = None
         self.smatrixType = smatrixType
         self.sparseThreshold = sparseThreshold

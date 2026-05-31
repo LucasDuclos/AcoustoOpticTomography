@@ -102,9 +102,9 @@ class SMatrix_CSR:
     def __exit__(self, exc_type, exc, tb):
         self.free()
 
-    def _check_gpu_available(self):
+    def _check_gpu_available(self) -> bool:
         """Check if GPU operations are available."""
-        if self.device != 'gpu':
+        if not isinstance(self.device, str) or "gpu" not in self.device:
             return False
         if not CUPY_AVAILABLE:
             warnings.warn("CuPy not available. Falling back to CPU.")
@@ -316,7 +316,7 @@ class SMatrix_CSR:
         # Copy back to host
         cp.cuda.memcpy_dtoh(self.h_col_ind, self.col_ind_gpu)
         cp.cuda.memcpy_dtoh(self.h_values, self.values_gpu)
-        print('CSR generated (GPU) ✔')
+        print('CSR generated (GPU)')
         
         # Compute normalization factor
         self.compute_norm_factor_from_csr()
@@ -376,7 +376,7 @@ class SMatrix_CSR:
         """
         from AOT_biomaps.AOT_Recon.ReconEnums import PreconditionerType
         
-        if preconditioner_type == PreconditionerType.NONE or preconditioner_type == 'none':
+        if preconditioner_type == PreconditionerType.NONE:
             self.preconditioner = None
             self.preconditioner_inv = None
             self.preconditioner_gpu = None
@@ -465,7 +465,7 @@ class SMatrix_CSR:
         Returns:
             Projection result (N*T,)
         """
-        if self.device == 'gpu' and CUPY_AVAILABLE and self.sparse_mod is not None:
+        if self._check_gpu_available() and self.sparse_mod is not None:
             # GPU implementation using custom kernel
             theta_gpu = cp.asarray(theta) if not isinstance(theta, cp.ndarray) else theta
             q_gpu = cp.zeros(self.N * self.T, dtype=np.float32)
@@ -504,7 +504,7 @@ class SMatrix_CSR:
         Returns:
             Backprojection result (Z*X,)
         """
-        if self.device == 'gpu' and CUPY_AVAILABLE and self.sparse_mod is not None:
+        if self._check_gpu_available() and self.sparse_mod is not None:
             # GPU implementation using custom kernel
             e_gpu = cp.asarray(e) if not isinstance(e, cp.ndarray) else e
             c_gpu = cp.zeros(self.Z * self.X, dtype=np.float32)

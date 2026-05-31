@@ -96,7 +96,7 @@ class SMatrix_DENSE:
 
     def _check_gpu_available(self) -> bool:
         """Check if GPU operations are available."""
-        if self.device != 'gpu':
+        if not isinstance(self.device, str) or "gpu" not in self.device:
             return False
         if not CUPY_AVAILABLE:
             warnings.warn("CuPy not available. Falling back to CPU.")
@@ -284,7 +284,7 @@ class SMatrix_DENSE:
         """
         from AOT_biomaps.AOT_Recon.ReconEnums import PreconditionerType
         
-        if preconditioner_type == PreconditionerType.NONE or preconditioner_type == 'none':
+        if preconditioner_type == PreconditionerType.NONE:
             self.preconditioner = None
             self.preconditioner_inv = None
             self.preconditioner_gpu = None
