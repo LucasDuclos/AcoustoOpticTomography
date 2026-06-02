@@ -44,8 +44,8 @@ ALGORITHM_FORMULAS = {
         "reference": "Landweber, 1951",
         "required_params": ["alpha"],
         "constraints": {
-            "α : 'alpha'": "> 0 or 'auto' (for power method estimation)",
-            "δ : 'delta'": "1 < delta < 2 for faster convergence",
+            "alpha": "> 0 or 'auto' (for power method estimation)",
+            "delta": "1 < and < 2 for faster convergence",
             "numIterations": "> 0",
         },
         "notes": "Convergence can be slow; consider using accelerated methods",
@@ -57,8 +57,8 @@ ALGORITHM_FORMULAS = {
         "reference": "Green, IEEE TMI, 1990",
         "required_params": ["beta", "delta"],
         "constraints": {
-            "β : 'beta'": ">= 0",
-            "δ : 'delta'": ">= 0",
+            "beta": ">= 0",
+            "delta": ">= 0",
             "denominatorThreshold": "> 0",
             "numIterations": "> 0",
         },
@@ -71,8 +71,8 @@ ALGORITHM_FORMULAS = {
         "reference": "De Pierro, IEEE TMI, 1995",
         "required_params": ["beta", "delta"],
         "constraints": {
-            "β : 'beta'": ">= 0",
-            "δ : 'delta'": ">= 0",
+            "beta": ">= 0",
+            "delta": ">= 0",
             "denominatorThreshold": "> 0",
             "numIterations": "> 0",
         },
@@ -85,9 +85,9 @@ ALGORITHM_FORMULAS = {
         "reference": "Nuyts et al., IEEE TNS, 2002",
         "required_params": ["beta", "delta", "gamma"],
         "constraints": {
-            "β : 'beta'": ">= 0",
-            "δ : 'delta'": ">= 0",
-            "γ : 'gamma'": ">= 0",
+            "beta": ">= 0",
+            "delta": ">= 0",
+            "gamma": ">= 0",
             "denominatorThreshold": "> 0",
             "numIterations": "> 0",
         },
@@ -100,8 +100,8 @@ ALGORITHM_FORMULAS = {
         "reference": "Nuyts et al., IEEE TNS, 2002",
         "required_params": ["beta", "delta"],
         "constraints": {
-            "β : 'beta'": ">= 0",
-            "δ : 'delta'": ">= 0",
+            "beta": ">= 0",
+            "delta": ">= 0",
             "denominatorThreshold": "> 0",
             "numIterations": "> 0",
         },
@@ -114,10 +114,10 @@ ALGORITHM_FORMULAS = {
         "reference": "Chambolle and Pock, J. Math. Imaging Vis., 2011",
         "required_params": ["alpha"],
         "constraints": {
-            "α : 'alpha'": "> 0",
-            "β : 'beta'": ">= 0",
-            "τ : 'tau'": "> 0",
-            "σ : 'sigma'": "> 0",
+            "alpha": "> 0",
+            "beta": ">= 0",
+            "tau": "> 0",
+            "sigma": "> 0",
             "k_security": "in (0, 1]",
             "numIterations": "> 0",
         },
@@ -130,8 +130,8 @@ ALGORITHM_FORMULAS = {
         "reference": "Liu and Nocedal, Mathematical Programming, 1989",
         "required_params": ["alpha", "beta"],
         "constraints": {
-            "β : 'beta'": ">= 0",
-            "δ : 'delta'": ">= 0",
+            "beta": ">= 0",
+            "delta": ">= 0",
             "numIterations": "> 0",
         },
         "notes": "Manual implementation without scipy dependency. Supports differentiable potentials (QUADRATIC, HUBER, RELATIVE_DIFFERENCE)",
@@ -382,26 +382,14 @@ class AlgebraicRecon(Recon):
                 errors.append("RELATIVE_DIFFERENCE potential requires beta parameter to be set")
 
     def _validate_hyperparameters(self):
-        """
-        Validate all hyperparameters for the selected optimizer.
-        
-        If validation fails, raises ValueError with detailed message including:
-        - The algorithm formula
-        - The required hyperparameters
-        - The constraints on each hyperparameter
-        - The actual values provided
-        
-        Raises:
-            ValueError: If any hyperparameter fails validation
-        """
-        # Get the formula information for the current optimizer
+        """Validate all hyperparameters for the selected optimizer."""
         if self.optimizer not in ALGORITHM_FORMULAS:
             warnings.warn(f"Unknown optimizer type: {self.optimizer}. Skipping hyperparameter validation.")
             return
-        
+
         formula_info = ALGORITHM_FORMULAS[self.optimizer]
         errors = []
-        
+
         # Check common parameters
         if self.numIterations <= 0:
             errors.append(f"numIterations must be > 0, got {self.numIterations}")
@@ -411,46 +399,67 @@ class AlgebraicRecon(Recon):
             errors.append(f"numIterations must be an integer, got {type(self.numIterations)}")
         if not isinstance(self.numSubsets, int):
             errors.append(f"numSubsets must be an integer, got {type(self.numSubsets)}")
-        
+
         # Check optimizer-specific constraints
         constraints = formula_info.get("constraints", {})
+        constraints_display = formula_info.get("constraints_display", {})
+
         for param_name, constraint in constraints.items():
             param_value = getattr(self, param_name, None)
+
+            # Skip if parameter is not set and not required
             if param_value is None:
                 if param_name in formula_info.get("required_params", []):
-                    errors.append(f"Required hyperparameter '{param_name}' is not set")
+                    display_name = constraints_display.get(param_name, param_name)
+                    errors.append(f"Required hyperparameter '{display_name}' is not set")
                 continue
-            
-            if constraint == "> 0":
+
+            # Handle special cases
+            if constraint == "> 0 or 'auto' (for power method estimation)":
+                if not (param_value > 0 or param_value == 'auto'):
+                    display_name = constraints_display.get(param_name, param_name)
+                    errors.append(f"{display_name} must be > 0 or 'auto', got {param_value}")
+
+            elif constraint == "1 < and < 2 for faster convergence":
+                if not (1 < param_value < 2):
+                    display_name = constraints_display.get(param_name, param_name)
+                    errors.append(f"{display_name} must be in (1, 2), got {param_value}")
+
+            # Handle standard cases
+            elif constraint == "> 0":
                 if param_value <= 0:
-                    errors.append(f"{param_name} must be > 0, got {param_value}")
+                    display_name = constraints_display.get(param_name, param_name)
+                    errors.append(f"{display_name} must be > 0, got {param_value}")
             elif constraint == ">= 0":
                 if param_value < 0:
-                    errors.append(f"{param_name} must be >= 0, got {param_value}")
+                    display_name = constraints_display.get(param_name, param_name)
+                    errors.append(f"{display_name} must be >= 0, got {param_value}")
             elif constraint.startswith("in ["):
                 interval = constraint[4:-1]
                 if "," in interval:
                     low, high = map(float, interval.split(","))
                     if not (low <= param_value <= high):
-                        errors.append(f"{param_name} must be in [{low}, {high}], got {param_value}")
+                        display_name = constraints_display.get(param_name, param_name)
+                        errors.append(f"{display_name} must be in [{low}, {high}], got {param_value}")
             elif constraint.startswith("in ("):
                 interval = constraint[4:-1]
                 if "," in interval:
                     low, high = map(float, interval.split(","))
                     if not (low < param_value < high):
-                        errors.append(f"{param_name} must be in ({low}, {high}), got {param_value}")
-        
+                        display_name = constraints_display.get(param_name, param_name)
+                        errors.append(f"{display_name} must be in ({low}, {high}), got {param_value}")
+
         # Special validation for PDHG
         if self.optimizer == OptimizerType.PDHG:
             if self.theta is not None and not (1.0 <= self.theta <= 2.0):
                 errors.append(f"theta must be in [1.0, 2.0], got {self.theta}")
             if not (0 < self.k_security <= 1):
                 errors.append(f"k_security must be in (0, 1], got {self.k_security}")
-        
+
         # Validate potential function compatibility with optimizer
         if self.potentialFunction is not None:
             self._validate_potential_compatibility(errors)
-        
+
         # If there are errors, raise ValueError with detailed message
         if errors:
             error_msg = f"\n{'='*80}\n"
@@ -462,12 +471,14 @@ class AlgebraicRecon(Recon):
             error_msg += "Required hyperparameters:\n"
             for param_name in formula_info.get("required_params", []):
                 param_value = getattr(self, param_name, None)
-                param_desc = formula_info.get("constraints", {}).get(param_name, "")
-                error_msg += f"  - {param_name}: {param_desc} (current: {param_value})\n"
+                param_display = constraints_display.get(param_name, param_name)
+                param_constraint = constraints.get(param_name, "")
+                error_msg += f"  - {param_display}: {param_constraint} (current: {param_value})\n"
             error_msg += f"\nConstraints:\n"
             for param_name, constraint in constraints.items():
                 param_value = getattr(self, param_name, None)
-                error_msg += f"  - {param_name}: {constraint} (current: {param_value})\n"
+                param_display = constraints_display.get(param_name, param_name)
+                error_msg += f"  - {param_display}: {constraint} (current: {param_value})\n"
             if formula_info.get("notes"):
                 error_msg += f"\nNotes:\n  {formula_info['notes']}\n"
             error_msg += f"\nErrors:\n"
@@ -475,7 +486,7 @@ class AlgebraicRecon(Recon):
                 error_msg += f"  - {error}\n"
             error_msg += f"\n{'='*80}\n"
             raise ValueError(error_msg)
-
+        
     # PUBLIC METHODS
     def generate_SMatrix(self, isShowLogs=True):
         if self.smatrixType == SMatrixType.DENSE:
