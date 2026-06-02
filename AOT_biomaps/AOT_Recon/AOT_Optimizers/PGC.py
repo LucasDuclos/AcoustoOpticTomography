@@ -14,7 +14,7 @@ import numpy as np
 from tqdm import trange
 from typing import Optional, Union, Tuple
 
-from AOT_biomaps.AOT_Recon.ReconTools import forward_projection, backward_projection, clamp_positive, build_preconditioner, apply_diagonal_preconditioner, get_potential_function, cost_function
+from AOT_biomaps.AOT_Recon.ReconTools import check_gpu_available, forward_projection, backward_projection, clamp_positive, build_preconditioner, apply_preconditioner, get_potential_function, cost_function
 from AOT_biomaps.AOT_Recon.ReconEnums import OptimizerType, PotentialType, PreconditionerType
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
@@ -34,6 +34,7 @@ def PGC(
     numIterations: int = 100,
     alpha: float = 1.0,
     beta: float = 1.0,
+    delta: float = 0.01,
     potential_type: PotentialType = PotentialType.QUADRATIC,
     preconditioner_type: PreconditionerType = PreconditionerType.NONE,
     isSavingEachIteration: bool = True,
@@ -58,6 +59,7 @@ def PGC(
         numIterations: Number of iterations
         alpha: Step size parameter
         beta: Regularization weight
+        delta: Additional parameter for RELATIVE_DIFFERENCE potential or for HUBER potential (threshold)
         potential_type: Type of potential function (QUADRATIC, HUBER, RELATIVE_DIFFERENCE)
         preconditioner_type: Type of preconditioner to use (default: NONE)
         isSavingEachIteration: If True, saves intermediate results
@@ -73,34 +75,29 @@ def PGC(
         - cost_history: List of cost function values (None if not requested)
     """
     tumor_str = "WITH" if withTumor else "WITHOUT"
-    
-    # Get device from SMatrix
     device = SMatrix.device
-    matrix_type = SMatrix.matrix_type
-    
-    # Get dimensions
+    matrix_type = SMatrix.matrix_type.name  
     Z = SMatrix.Z
     X = SMatrix.X
     ZX = Z * X
-    
+
     if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
         raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
-    
-    # Convert y to appropriate format
-    if device == 'gpu' and CUPY_AVAILABLE:
+
+    if check_gpu_available(SMatrix):
         y_flat = cp.asarray(y.T.flatten().astype(np.float32))
         lambda_flat = cp.full(ZX, 0.1, dtype=cp.float32)
-        array_module = cp
+        xp = cp
     else:
         y_flat = np.asarray(y.T.flatten().astype(np.float32))
         lambda_flat = np.full(ZX, 0.1, dtype=np.float32)
-        array_module = np
-    
+        xp = np
+
     # Compute preconditioner if requested
     preconditioner, preconditioner_inv = None, None
     if preconditioner_type != PreconditionerType.NONE:
         preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
-    
+
     # Setup save indices
     if numIterations <= max_saves:
         save_indices = list(range(numIterations))
@@ -109,59 +106,67 @@ def PGC(
         save_indices = list(range(0, numIterations, step))
         if save_indices[-1] != numIterations - 1:
             save_indices.append(numIterations - 1)
-    
+
     saved_lambda = []
     saved_indices_list = []
     cost_history = [] if isCostFunction else None
-    
+
     description = f"AOT-BioMaps -- PGC ({matrix_type}) ---- {tumor_str} TUMOR ---- {device.upper()}"
     iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
-    
+
     for it in iterator:
         # Forward projection
         q_flat = forward_projection(SMatrix, lambda_flat)
-        
-        # Compute update factor
+
+        # Compute ratio: y / (A*λ + ε)
         ratio = y_flat / (q_flat + 1e-10)
-        
-        # Backward projection
+
+        # Backward projection: A^T * (y / (A*λ + ε))
         c_flat = backward_projection(SMatrix, ratio)
-        
-        # Compute potential gradient and Hessian
-        _, hess_U, _ = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta)
-        
-        # PGC update: theta_new = theta + alpha * (A^T * (y / (A*theta + eps) - 1)) / (A^T * 1 + beta * diag(H_U))
+
+        # Compute potential Hessian
+        _, hess_U, _ = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta, delta=delta)
+
         # Compute sensitivity (A^T * 1)
-        sensitivity = backward_projection(SMatrix, array_module.ones_like(q_flat))
-        
-        # PGC update
-        lambda_flat = lambda_flat + alpha * (c_flat - 1) / (sensitivity + beta * hess_U)
-        
-        # Apply diagonal preconditioning if enabled
+        sensitivity = backward_projection(SMatrix, xp.ones_like(q_flat))
+
+        # Apply preconditioner to c_flat: M^-1 * A^T * (y / (A*λ + ε))
         if preconditioner_inv is not None:
-            lambda_flat = apply_diagonal_preconditioner(lambda_flat, preconditioner_inv, SMatrix)
-        
+            c_flat = apply_preconditioner(c_flat, preconditioner_inv, SMatrix)
+
+        # Apply preconditioner to sensitivity: M^-1 * (A^T * 1)
+        if preconditioner_inv is not None:
+            sensitivity = apply_preconditioner(sensitivity, preconditioner_inv, SMatrix)
+
+        # Apply preconditioner to hess_U: M^-1 * diag(H_U)
+        if preconditioner_inv is not None:
+            hess_U = apply_preconditioner(hess_U, preconditioner_inv, SMatrix)
+
+        # PGC update: λ_new = λ + α * (M^-1 * A^T * (y / (A*λ + ε) - 1)) / (M^-1 * (A^T * 1 + β * diag(H_U)))
+        lambda_flat = lambda_flat + alpha * (c_flat - 1) / (sensitivity + beta * hess_U)
+
         # Clamp to non-negative
         lambda_flat = clamp_positive(SMatrix, lambda_flat)
-        
+
         # Compute cost function if requested
         if isCostFunction:
-            cost_history.append(cost_function(SMatrix, lambda_flat, y_flat, optimizer=OptimizerType.PGC, array_module=array_module, beta=beta))
-        
+            cost_history.append(cost_function(SMatrix, lambda_flat, y_flat, optimizer=OptimizerType.PGC, beta=beta, delta=delta))
+
         if isSavingEachIteration and it in save_indices:
-            if device == 'gpu' and CUPY_AVAILABLE:
+            if check_gpu_available(SMatrix):
                 saved_lambda.append(cp.asnumpy(lambda_flat.reshape(Z, X)))
             else:
                 saved_lambda.append(lambda_flat.reshape(Z, X).copy())
             saved_indices_list.append(it)
-    
-    if device == 'gpu' and CUPY_AVAILABLE:
+
+    if check_gpu_available(SMatrix):
         cp.cuda.Stream.null.synchronize()
         final_result = cp.asnumpy(lambda_flat.reshape(Z, X))
     else:
         final_result = lambda_flat.reshape(Z, X)
-    
+
     if isSavingEachIteration:
         return saved_lambda, saved_indices_list, cost_history
     else:
         return final_result, None, cost_history
+    

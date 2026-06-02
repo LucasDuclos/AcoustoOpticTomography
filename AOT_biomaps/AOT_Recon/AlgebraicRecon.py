@@ -3,12 +3,11 @@ import warnings
 from AOT_biomaps.Config import config
 
 from ._mainRecon import Recon
-from .ReconEnums import ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, PreconditionerType
+from .ReconEnums import NoiseType, ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, PreconditionerType
 from .AOT_Optimizers import MLEM, LS, MAPEM, DEPIERRO, PDHG, PGC, PPGMLEM, LBFGS
 from .AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from .AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from .AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
-from .ReconTools import build_preconditioner, apply_diagonal_preconditioner
 
 import os
 import subprocess
@@ -18,6 +17,7 @@ from tempfile import gettempdir
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from typing import Optional, List
+from IPython.display import HTML
 
 
 # ============================================================================
@@ -26,7 +26,7 @@ from typing import Optional, List
 
 ALGORITHM_FORMULAS = {
     OptimizerType.MLEM: {
-        "formula": r"theta^(k+1) = theta^(k) * (A^T * (y / (A*theta^(k) + epsilon))) / (A^T * 1)",
+        "formula": r"θ^(k+1) = θ^(k) * (A^T * (y / (A*θ^(k) + ε))) / (A^T * 1)",
         "description": "Maximum Likelihood Expectation Maximization (multiplicative form)",
         "reference": "Shepp and Vardi, IEEE TMI, 1982",
         "required_params": ["denominatorThreshold"],
@@ -39,25 +39,26 @@ ALGORITHM_FORMULAS = {
         "potentialFunction": [PotentialType.NONE]
     },
     OptimizerType.LS: {
-        "formula": r"theta^(k+1) = theta^(k) - alpha * A^T * (A*theta^(k) - y)",
+        "formula": r"θ^(k+1) = θ^(k) - α * A^T * (A*θ^(k) - y)",
         "description": "Least Squares (Projected Gradient Descent)",
         "reference": "Landweber, 1951",
         "required_params": ["alpha"],
         "constraints": {
-            "alpha": "> 0",
+            "α : 'alpha'": "> 0 or 'auto' (for power method estimation)",
+            "δ : 'delta'": "1 < delta < 2 for faster convergence",
             "numIterations": "> 0",
         },
         "notes": "Convergence can be slow; consider using accelerated methods",
         "potentialFunction": [PotentialType.NONE]
     },
     OptimizerType.MAPEM: {
-        "formula": r"theta^(k+1) = theta^(k) * (A^T * (y / (A*theta^(k) + epsilon))) / (A^T * 1 + lambda * diag(H_U))",
+        "formula": r"θ^(k+1) = θ^(k) * (A^T * (y / (A*θ^(k) + ε))) / (A^T * 1 + λ * diag(H_U))",
         "description": "Maximum A Posteriori Expectation Maximization",
         "reference": "Green, IEEE TMI, 1990",
-        "required_params": ["alpha", "beta"],
+        "required_params": ["beta", "delta"],
         "constraints": {
-            "alpha": ">= 0",
-            "beta": ">= 0",
+            "β : 'beta'": ">= 0",
+            "δ : 'delta'": ">= 0",
             "denominatorThreshold": "> 0",
             "numIterations": "> 0",
         },
@@ -65,13 +66,13 @@ ALGORITHM_FORMULAS = {
         "potentialFunction": [PotentialType.QUADRATIC, PotentialType.HUBER, PotentialType.RELATIVE_DIFFERENCE, PotentialType.TOTAL_VARIATION]
     },
     OptimizerType.DEPIERRO: {
-        "formula": r"theta^(k+1) = theta^(k) * (A^T * (y / (A*theta^(k) + epsilon))) / (A^T * 1 + sigma * beta * I)",
+        "formula": r"θ^(k+1) = θ^(k) * (A^T * (y / (A*θ^(k) + ε))) / (A^T * 1 + δ * β * I)",
         "description": "De Pierro's quadratic regularization for EM",
         "reference": "De Pierro, IEEE TMI, 1995",
-        "required_params": ["beta", "sigma"],
+        "required_params": ["beta", "delta"],
         "constraints": {
-            "beta": ">= 0",
-            "sigma": ">= 0",
+            "β : 'beta'": ">= 0",
+            "δ : 'delta'": ">= 0",
             "denominatorThreshold": "> 0",
             "numIterations": "> 0",
         },
@@ -79,13 +80,14 @@ ALGORITHM_FORMULAS = {
         "potentialFunction": [PotentialType.QUADRATIC]
     },
     OptimizerType.PPGMLEM: {
-        "formula": r"theta^(k+1) = theta^(k) + alpha * (A^T * (y / (A*theta^(k) + epsilon) - 1)) / (A^T * 1 + beta * diag(H_U))",
+        "formula": r"θ^(k+1) = θ^(k) + α * (A^T * (y / (A*θ^(k) + ε) - 1)) / (A^T * 1 + β * diag(H_U))",
         "description": "Penalized Preconditioned Gradient ML-EM",
         "reference": "Nuyts et al., IEEE TNS, 2002",
-        "required_params": ["alpha", "beta"],
+        "required_params": ["beta", "delta", "gamma"],
         "constraints": {
-            "alpha": "> 0",
-            "beta": ">= 0",
+            "β : 'beta'": ">= 0",
+            "δ : 'delta'": ">= 0",
+            "γ : 'gamma'": ">= 0",
             "denominatorThreshold": "> 0",
             "numIterations": "> 0",
         },
@@ -93,13 +95,13 @@ ALGORITHM_FORMULAS = {
         "potentialFunction": [PotentialType.QUADRATIC, PotentialType.HUBER, PotentialType.RELATIVE_DIFFERENCE]
     },
     OptimizerType.PGC: {
-        "formula": r"theta^(k+1) = theta^(k) + alpha * (A^T * (y / (A*theta^(k) + epsilon) - 1)) / (A^T * 1 + beta * diag(H_U))",
+        "formula": r"θ^(k+1) = θ^(k) + α * (A^T * (y / (A*θ^(k) + ε) - 1)) / (A^T * 1 + β * diag(H_U))",
         "description": "Penalized Gauss-Newton Conjugate Gradient",
         "reference": "Nuyts et al., IEEE TNS, 2002",
-        "required_params": ["alpha", "beta"],
+        "required_params": ["beta", "delta"],
         "constraints": {
-            "alpha": "> 0",
-            "beta": ">= 0",
+            "β : 'beta'": ">= 0",
+            "δ : 'delta'": ">= 0",
             "denominatorThreshold": "> 0",
             "numIterations": "> 0",
         },
@@ -107,14 +109,15 @@ ALGORITHM_FORMULAS = {
         "potentialFunction": [PotentialType.QUADRATIC, PotentialType.HUBER, PotentialType.RELATIVE_DIFFERENCE]
     },
     OptimizerType.PDHG: {
-        "formula": r"x^(k+1) = prox_{tau*TV}(x^(k) - tau * nabla_f(x^(k))) \ y^(k+1) = y^(k) + sigma * (A*x^(k+1) - y)",
+        "formula": r"x^(k+1) = prox_{τ*TV}(x^(k) - τ * ∇f(x^(k))) \ y^(k+1) = y^(k) + σ * (A*x^(k+1) - y)",
         "description": "Primal-Dual Hybrid Gradient for TV regularization",
         "reference": "Chambolle and Pock, J. Math. Imaging Vis., 2011",
         "required_params": ["alpha"],
         "constraints": {
-            "alpha": "> 0",
-            "beta": ">= 0",
-            "theta": "in [1.0, 2.0]",
+            "α : 'alpha'": "> 0",
+            "β : 'beta'": ">= 0",
+            "τ : 'tau'": "> 0",
+            "σ : 'sigma'": "> 0",
             "k_security": "in (0, 1]",
             "numIterations": "> 0",
         },
@@ -122,16 +125,13 @@ ALGORITHM_FORMULAS = {
         "potentialFunction": [PotentialType.TOTAL_VARIATION]
     },
     OptimizerType.LBFGS: {
-        "formula": r"theta^(k+1) = theta^(k) + alpha_k * d^(k)",
+        "formula": r"θ^(k+1) = θ^(k) + α_k * d^(k)",
         "description": "Limited-memory BFGS quasi-Newton optimization",
         "reference": "Liu and Nocedal, Mathematical Programming, 1989",
         "required_params": ["alpha", "beta"],
         "constraints": {
-            "alpha": "> 0",
-            "beta": ">= 0",
-            "delta": ">= 0",
-            "gamma": ">= 0",
-            "sigma": ">= 0",
+            "β : 'beta'": ">= 0",
+            "δ : 'delta'": ">= 0",
             "numIterations": "> 0",
         },
         "notes": "Manual implementation without scipy dependency. Supports differentiable potentials (QUADRATIC, HUBER, RELATIVE_DIFFERENCE)",
@@ -188,7 +188,7 @@ class AlgebraicRecon(Recon):
         optimizer: OptimizerType = OptimizerType.MLEM,
         potentialFunction: Optional[PotentialType] = None,
         # Common parameters
-        numIterations: int = 10000,
+        numIterations: int = 100,
         numSubsets: int = 1,
         isSavingEachIteration: bool = True,
         isCostFunction: bool = False,
@@ -196,6 +196,8 @@ class AlgebraicRecon(Recon):
         denominatorThreshold: float = 1e-6,
         smatrixType: SMatrixType = SMatrixType.SELL,
         sparseThreshold: float = 0.1,
+        blockRows: int = 64,
+        sliceHeight: int = 64,
         isComplexeRecon: bool = False,
         device: Optional[str] = None,
         # Preconditioning
@@ -205,17 +207,10 @@ class AlgebraicRecon(Recon):
         beta: Optional[float] = None,
         gamma: Optional[float] = None,
         delta: Optional[float] = None,
-        sigma: Optional[float] = None,
         # PDHG-specific parameters
-        theta: Optional[float] = None,
-        L: Optional[float] = None,
-        k_security: float = 0.8,
-        use_power_method: bool = True,
-        auto_alpha_gamma: float = 0.05,
-        apply_positivity_clamp: bool = True,
-        tikhonov_as_gradient: bool = False,
-        use_laplacian: bool = True,
-        laplacian_beta_scale: float = 1.0,
+        tau: Optional[float] = None,
+        sigma: Optional[float] = None,
+        noiseType: Optional[NoiseType] = NoiseType.GAUSSIAN,
         # Potential function parameters
         corner: Optional[float] = None,
         face: Optional[float] = None,
@@ -235,23 +230,18 @@ class AlgebraicRecon(Recon):
             denominatorThreshold: Threshold for denominator to avoid division by zero (default: 1e-6)
             smatrixType: Type of system matrix (default: SMatrixType.SELL)
             sparseThreshold: Threshold for sparse matrix construction (default: 0.1)
+            blockRows: Number of rows per block for sparse matrix construction (default: 64) (only used for CSR and SELL)
+            sliceHeight: Number of rows per slice for SELL format (default: 64)
             isComplexeRecon: Whether to perform complex reconstruction (default: False)
             device: Device to use ('cpu' or 'gpu') (default: auto-detected)
             preconditionerType: Type of preconditioner (PreconditionerType.NONE or DIAGONAL, default: NONE)
             alpha: Step size for LS (default: None)
             beta: Regularization parameter for MAPEM, DEPIERRO, PPGMLEM, PGC, PDHG (default: None)
             gamma: Preconditioning parameter for PPGMLEM (default: None)
-            delta: Huber threshold for MAPEM, PPGMLEM (default: None)
-            sigma: Regularization scaling for DEPIERRO, PPGMLEM (default: None)
-            theta: Relaxation parameter for PDHG (default: None)
-            L: Spectral norm for PDHG (default: None)
-            k_security: Security factor for PDHG step size (default: 0.8)
-            use_power_method: Whether to use power method for spectral norm (default: True)
-            auto_alpha_gamma: Gamma for auto alpha scaling (default: 0.05)
-            apply_positivity_clamp: Whether to clamp to positive values (default: True)
-            tikhonov_as_gradient: Whether to apply Tikhonov as gradient (default: False)
-            use_laplacian: Whether to use Laplacian penalty (default: True)
-            laplacian_beta_scale: Scaling factor for Laplacian beta (default: 1.0)
+            delta: Huber threshold or relative difference parameter for MAPEM, PPGMLEM, DEPIERRO (default: None)
+            tau: Primal step size for PDHG (default: None)
+            sigma: Dual step size for PDHG (default: None)
+            noiseType: Type of noise (NoiseType enum, default: GAUSSIAN) for PDHG if gaussian -> L2 data fidelity, if poisson -> KL divergence
             corner: Corner parameter for potential functions (default: computed value)
             face: Face parameter for potential functions (default: computed value)
             **kwargs: Additional keyword arguments
@@ -292,6 +282,8 @@ class AlgebraicRecon(Recon):
         self.SMatrix = None
         self.smatrixType = smatrixType
         self.sparseThreshold = sparseThreshold
+        self.blockRows = blockRows
+        self.sliceHeight = sliceHeight
         self.preconditionerType = preconditionerType
         
         # Store regularization parameters
@@ -302,15 +294,9 @@ class AlgebraicRecon(Recon):
         self.sigma = sigma
         
         # Store PDHG-specific parameters
-        self.theta = theta
-        self.L = L
-        self.k_security = k_security
-        self.use_power_method = use_power_method
-        self.auto_alpha_gamma = auto_alpha_gamma
-        self.apply_positivity_clamp = apply_positivity_clamp
-        self.tikhonov_as_gradient = tikhonov_as_gradient
-        self.use_laplacian = use_laplacian
-        self.laplacian_beta_scale = laplacian_beta_scale
+        self.tau = tau
+        self.sigma = sigma
+        self.noiseType = noiseType
         
         # Set corner and face with defaults
         self.corner = corner if corner is not None else (0.5 - np.sqrt(2)/4) / np.sqrt(2)
@@ -493,13 +479,13 @@ class AlgebraicRecon(Recon):
     # PUBLIC METHODS
     def generate_SMatrix(self, isShowLogs=True):
         if self.smatrixType == SMatrixType.DENSE:
-            return self._fill_SMatrix_DENSE(isShowLogs=isShowLogs)
+            self.SMatrix = self._fill_SMatrix_DENSE(isShowLogs=isShowLogs)
         elif self.smatrixType == SMatrixType.CSR:
-            return self._fill_SMatrix_CSR(isShowLogs=isShowLogs)
+            self.SMatrix = self._fill_SMatrix_CSR(isShowLogs=isShowLogs)
         elif self.smatrixType == SMatrixType.COO:
             raise NotImplementedError("COO sparse matrix not implemented yet.")
         elif self.smatrixType == SMatrixType.SELL:
-            return self._fill_SMatrix_SELL(isShowLogs=isShowLogs)
+            self.SMatrix = self._fill_SMatrix_SELL(isShowLogs=isShowLogs)
         else:
             raise ValueError(f"Unsupported SMatrix type: {self.smatrixType}")
     
@@ -724,28 +710,26 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                isSavingEachIteration=self.isSavingEachIteration,
-                withTumor=withTumor,
-                device=self.device,
                 denominator_threshold=self.denominatorThreshold,
+                preconditioner_type=self.preconditionerType,
+                isSavingEachIteration=self.isSavingEachIteration,
+                isCostFunction = self.isCostFunction,
+                withTumor=withTumor,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
-                smatrixType=self.smatrixType,
-                preconditioner_type=self.preconditionerType,
             )
         else:
             self.reconLaser, self.indices, self.cost_historyLaser = MLEM(
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                isSavingEachIteration=self.isSavingEachIteration,
-                withTumor=withTumor,
-                device=self.device,
                 denominator_threshold=self.denominatorThreshold,
+                preconditioner_type=self.preconditionerType,
+                isSavingEachIteration=self.isSavingEachIteration,
+                isCostFunction = self.isCostFunction,
+                withTumor=withTumor,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
-                smatrixType=self.smatrixType,
-                preconditioner_type=self.preconditionerType,
             )
 
     def _run_LS(self, y, withTumor: bool = True, show_logs: bool = True):
@@ -756,6 +740,7 @@ class AlgebraicRecon(Recon):
                 y=y,
                 numIterations=self.numIterations,
                 alpha=self.alpha,
+                delta=self.delta,
                 preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
@@ -769,6 +754,7 @@ class AlgebraicRecon(Recon):
                 y=y,
                 numIterations=self.numIterations,
                 alpha=self.alpha,
+                delta=self.delta,
                 preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
@@ -851,8 +837,8 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                beta=self.beta if self.beta is not None else 1.0,
-                sigma=self.sigma if self.sigma is not None else 1.0,
+                beta=self.beta,
+                delta=self.delta,
                 potential_type=self.potentialFunction,
                 preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
@@ -866,8 +852,8 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                beta=self.beta if self.beta is not None else 1.0,
-                sigma=self.sigma if self.sigma is not None else 1.0,
+                beta=self.beta,
+                delta=self.delta,
                 potential_type=self.potentialFunction,
                 preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
@@ -884,10 +870,9 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                alpha=self.alpha if self.alpha is not None else 1.0,
-                beta=self.beta if self.beta is not None else 1.0,
-                delta=self.delta if self.delta is not None else 0.01,
-                gamma=self.gamma if self.gamma is not None else 0.01,
+                beta=self.beta,
+                delta=self.delta,
+                gamma=self.gamma,
                 potential_type=self.potentialFunction,
                 preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
@@ -901,10 +886,9 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                alpha=self.alpha if self.alpha is not None else 1.0,
-                beta=self.beta if self.beta is not None else 1.0,
-                delta=self.delta if self.delta is not None else 0.01,
-                gamma=self.gamma if self.gamma is not None else 0.01,
+                beta=self.beta,
+                delta=self.delta,
+                gamma=self.gamma,
                 potential_type=self.potentialFunction,
                 preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
@@ -953,53 +937,34 @@ class AlgebraicRecon(Recon):
             self.reconPhantom, self.indices = PDHG(
                 SMatrix=self.SMatrix,
                 y=y,
-                alpha=self.alpha,
+                numIterations=self.numIterations,
                 beta=self.beta,
                 delta=self.delta,
-                theta=self.theta,
-                numIterations=self.numIterations,
-                isSavingEachIteration=self.isSavingEachIteration,
-                L=self.L,
-                withTumor=withTumor,
+                tau=self.tau,
+                sigma=self.sigma,
+                noise_type=self.noiseType,
                 potential_type=self.potentialFunction,
                 preconditioner_type=self.preconditionerType,
-                device=self.device,
+                isSavingEachIteration=self.isSavingEachIteration,
+                withTumor=withTumor,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
-                smatrixType=self.smatrixType,
-                k_security=self.k_security,
-                use_power_method=self.use_power_method,
-                auto_alpha_gamma=self.auto_alpha_gamma,
-                apply_positivity_clamp=self.apply_positivity_clamp,
-                tikhonov_as_gradient=self.tikhonov_as_gradient,
-                use_laplacian=self.use_laplacian,
-                laplacian_beta_scale=self.laplacian_beta_scale,
             )
         else:
             self.reconLaser, self.indices = PDHG(
                 SMatrix=self.SMatrix,
                 y=y,
-                alpha=self.alpha,
+                numIterations=self.numIterations,
                 beta=self.beta,
                 delta=self.delta,
-                theta=self.theta,
-                numIterations=self.numIterations,
-                isSavingEachIteration=self.isSavingEachIteration,
-                L=self.L,
-                withTumor=withTumor,
+                tau=self.tau,
+                sigma=self.sigma,
                 potential_type=self.potentialFunction,
                 preconditioner_type=self.preconditionerType,
-                device=self.device,
+                isSavingEachIteration=self.isSavingEachIteration,
+                withTumor=withTumor,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
-                smatrixType=self.smatrixType,
-                k_security=self.k_security,
-                use_power_method=self.use_power_method,
-                auto_alpha_gamma=self.auto_alpha_gamma,
-                apply_positivity_clamp=self.apply_positivity_clamp,
-                tikhonov_as_gradient=self.tikhonov_as_gradient,
-                use_laplacian=self.use_laplacian,
-                laplacian_beta_scale=self.laplacian_beta_scale,
             )
     
     def plot_MSE(self, isSaving=True, log_scale_x=False, log_scale_y=False, figSize=(4,3), show_logs=True):
@@ -1118,9 +1083,9 @@ class AlgebraicRecon(Recon):
 
         plt.show()
 
-    def show_theta_animation(self, vmin=None, vmax=None, total_duration_ms=3000, save_path=None, max_frames=1000, figSize=(4, 4), isPropMSE=True, show_logs=True):
+    def show_lambda_animation(self, vmin=None, vmax=None, total_duration_ms=3000, save_path=None, max_frames=1000, figSize=(4, 4), isPropMSE=True, show_logs=True):
         """
-        Show theta iteration animation with speed proportional to MSE acceleration.
+        Show lambda iteration animation with speed proportional to MSE acceleration.
         In "propMSE" mode: slow down when MSE changes rapidly, speed up when MSE stagnates.
 
         Parameters:
@@ -1134,7 +1099,7 @@ class AlgebraicRecon(Recon):
         mpl.rcParams['animation.embed_limit'] = 200
 
         if len(self.reconPhantom) == 0 or len(self.reconPhantom) < 2:
-            raise ValueError("Not enough theta matrices available for animation.")
+            raise ValueError("Not enough lambda matrices available for animation.")
 
         if isPropMSE and (self.MSE is None or len(self.MSE) == 0):
             raise ValueError("MSE is empty or not calculated. Please calculate MSE first.")
@@ -1680,35 +1645,38 @@ class AlgebraicRecon(Recon):
         Build a dense matrix using SMatrix_DENSE class.
         Frees all temporary memory at each step.
         """
-        dense_matrix = SMatrix_DENSE(self.experiment, device=self.device)
-        dense_matrix.allocate()
+        print("Building DENSE SMatrix") if isShowLogs else None
+        SMatrix = SMatrix_DENSE(experiment=self.experiment, device=self.device)
+        SMatrix.allocate()
         if isShowLogs:
-            print(f" Dense matrix size: {dense_matrix.getMatrixSize()} GB")
-        return dense_matrix
+            print(f"DENSE SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
+        return SMatrix
     
     def _fill_SMatrix_CSR(self, isShowLogs=True):
         """
         Built a sparse CSR matrix in chunks without intermediate concatenation.
         Frees all temporary memory at each step.
         """
-        sparse_matrix = SMatrix_CSR(self.experiment,relative_threshold=self.sparseThreshold,device=self.device)
-        sparse_matrix.allocate()
+        print("Building CSR SMatrix with relative threshold =", self.sparseThreshold) if isShowLogs else None
+        SMatrix = SMatrix_CSR(experiment=self.experiment, device=self.device, block_rows=self.blockRows, relative_threshold=self.sparseThreshold)
+        SMatrix.allocate()
         if isShowLogs:
-            print(f" Sparse matrix size: {sparse_matrix.getMatrixSize()} GB")
-            print(f"Sparse matrix density: {sparse_matrix.compute_density()}")
-        return sparse_matrix
+            print(f"CSR SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
+            print(f"CSR sparse matrix density: {SMatrix.compute_density():.2f}%")
+        return SMatrix
     
     def _fill_SMatrix_SELL(self, isShowLogs=True):
         """
         Built a sparse SELL matrix in chunks without intermediate concatenation.
         Frees all temporary memory at each step.
         """
-        sparse_matrix = SMatrix_SELL(self.experiment,relative_threshold=self.sparseThreshold,device=self.device)
-        sparse_matrix.allocate()
+        print("Building SELL SMatrix with relative threshold =", self.sparseThreshold) if isShowLogs else None
+        SMatrix = SMatrix_SELL(experiment=self.experiment, device=self.device, block_rows=self.blockRows, relative_threshold=self.sparseThreshold, slice_height=self.sliceHeight)
+        SMatrix.allocate()
         if isShowLogs:
-            print(f" Sparse matrix size: {sparse_matrix.getMatrixSize()} GB")
-            print(f"Sparse matrix density: {sparse_matrix.compute_density()}")
-        return sparse_matrix
+            print(f"SELL SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
+            print(f"SELL sparse matrix density: {SMatrix.compute_density():.2f}%")
+        return SMatrix
         
     # STATIC METHODS
     @staticmethod

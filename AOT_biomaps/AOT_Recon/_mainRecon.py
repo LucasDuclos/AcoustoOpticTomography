@@ -199,6 +199,7 @@ class Recon(ABC):
         Note:
             Requires matplotlib to be installed. If matplotlib is not available, this method will raise an ImportError.
         """
+        extent = [self.experiment.params.general['Xrange'][0]*1e3, self.experiment.params.general['Xrange'][1]*1e3, self.experiment.params.general['Zrange'][1]*1e3, self.experiment.params.general['Zrange'][0]*1e3]
         if withTumor:
             if self.reconPhantom is None:
                 raise ValueError("Reconstructed phantom with tumor is empty. Run reconstruction first.")
@@ -225,12 +226,7 @@ class Recon(ABC):
                     cmap='hot',
                     vmin=vmin,
                     vmax=vmax,
-                    extent=(
-                        self.experiment.params.general['Xrange'][0],
-                        self.experiment.params.general['Xrange'][1],
-                        self.experiment.params.general['Zrange'][1],
-                        self.experiment.params.general['Zrange'][0]
-                    ),
+                    extent=extent,
                     aspect='equal'  
                 )
                 axs[1].set_title("Phantom with tumor")
@@ -249,12 +245,7 @@ class Recon(ABC):
                 cmap='hot',
                 vmin=vmin,
                 vmax=vmax,
-                extent=(
-                    self.experiment.params.general['Xrange'][0],
-                    self.experiment.params.general['Xrange'][1],
-                    self.experiment.params.general['Zrange'][1],
-                    self.experiment.params.general['Zrange'][0]
-                ),
+                extent=extent,
                 aspect='equal'  
             )
             axs[0].set_title("Reconstructed phantom with tumor")
@@ -281,12 +272,7 @@ class Recon(ABC):
                     cmap='hot',
                     vmin=0,
                     vmax=np.max(self.experiment.OpticImage.laser.intensity),
-                    extent=(
-                        self.experiment.params.general['Xrange'][0],
-                        self.experiment.params.general['Xrange'][1],
-                        self.experiment.params.general['Zrange'][1],
-                        self.experiment.params.general['Zrange'][0]
-                    ),
+                    extent=extent,
                     aspect='equal'  
                 )
                 axs[1].set_title("Laser without tumor")
@@ -299,12 +285,7 @@ class Recon(ABC):
                 cmap='hot',
                 vmin=0,
                 vmax=np.max(self.experiment.OpticImage.laser.intensity),
-                extent=(
-                    self.experiment.params.general['Xrange'][0],
-                    self.experiment.params.general['Xrange'][1],
-                    self.experiment.params.general['Zrange'][1],
-                    self.experiment.params.general['Zrange'][0]
-                ),
+                extent=extent,
                 aspect='equal'
             )
             axs[0].set_title("Reconstructed laser without tumor")

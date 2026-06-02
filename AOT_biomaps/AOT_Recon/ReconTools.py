@@ -13,6 +13,7 @@ import os
 import numpy as np
 from scipy.signal.windows import hann
 import warnings
+from tqdm import trange
 
 # Optional cupy imports for GPU acceleration
 try:
@@ -22,35 +23,27 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
 
-from AOT_biomaps.AOT_Recon.AOT_SMatrix import SMatrix_CSR, SMatrix_SELL, SMatrix_DENSE
 from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, PreconditionerType, OptimizerType
 
+def check_gpu_available(SMatrix) -> bool:
+    """Check if GPU operations are available."""
+    if not isinstance(SMatrix.device, str) or "gpu" not in SMatrix.device:
+        return False
+    if not hasattr(SMatrix, 'sparse_mod'):
+        return False
+    if not CUPY_AVAILABLE:
+        warnings.warn("CuPy not available. Falling back to CPU.")
+        SMatrix.device = 'cpu'
+        return False
+    return True
 
-def _get_array_module(device):
+
+def _get_array_module(SMatrix):
     """Get the appropriate array module based on device."""
-    if device == 'gpu' and CUPY_AVAILABLE:
+    if check_gpu_available(SMatrix):
         return cp
     else:
         return np
-
-
-def _get_array(x, device):
-    """Convert x to appropriate array type based on device."""
-    if device == 'gpu' and CUPY_AVAILABLE:
-        if isinstance(x, np.ndarray):
-            return cp.asarray(x)
-        elif isinstance(x, cp.ndarray):
-            return x
-        else:
-            return cp.array(x)
-    else:
-        if isinstance(x, cp.ndarray):
-            return cp.asnumpy(x)
-        elif isinstance(x, np.ndarray):
-            return x
-        else:
-            return np.array(x)
-
 
 # =============================================================================
 # BASIC ARRAY OPERATIONS
@@ -58,31 +51,26 @@ def _get_array(x, device):
 
 def zeros(SMatrix, shape):
     """Create a zero array with the appropriate device and type."""
-    device = SMatrix.device
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     return xp.zeros(shape, dtype=xp.float32)
 
 
 def ones(SMatrix, shape):
     """Create an array of ones with the appropriate device and type."""
-    device = SMatrix.device
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     return xp.ones(shape, dtype=xp.float32)
 
 
 def fill_array(SMatrix, value, shape):
     """Create an array filled with a specific value."""
-    device = SMatrix.device
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     return xp.full(shape, value, dtype=xp.float32)
 
 
 def clamp_positive(SMatrix, x):
-    """Clamp array values to be non-negative. Uses CUDA kernel when available."""
-    device = SMatrix.device
-    
-    if device == 'gpu' and CUPY_AVAILABLE and hasattr(SMatrix._data, 'sparse_mod'):
-        sparse_mod = SMatrix._data.sparse_mod
+    """Clamp array values to be non-negative. Uses CUDA kernel when available."""   
+    if check_gpu_available(SMatrix):
+        sparse_mod = SMatrix.sparse_mod
         if sparse_mod is not None:
             try:
                 x_gpu = cp.asarray(x) if not isinstance(x, cp.ndarray) else x
@@ -97,7 +85,7 @@ def clamp_positive(SMatrix, x):
             except Exception:
                 pass
     
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     return xp.maximum(x, 0.0)
 
 
@@ -106,11 +94,9 @@ def clamp_positive(SMatrix, x):
 # =============================================================================
 
 def axpby(SMatrix, x, y, a, b):
-    """Compute a*x + b*y. Uses CUDA kernel when available."""
-    device = SMatrix.device
-    
-    if device == 'gpu' and CUPY_AVAILABLE and hasattr(SMatrix._data, 'sparse_mod'):
-        sparse_mod = SMatrix._data.sparse_mod
+    """Compute a*x + b*y. Uses CUDA kernel when available."""    
+    if check_gpu_available(SMatrix):
+        sparse_mod = SMatrix.sparse_mod
         if sparse_mod is not None:
             try:
                 x_gpu = cp.asarray(x) if not isinstance(x, cp.ndarray) else x
@@ -131,12 +117,10 @@ def axpby(SMatrix, x, y, a, b):
     return a * x + b * y
 
 
-def minus_axpy(SMatrix, x, y, a):
-    """Compute x - a*y. Uses CUDA kernel when available."""
-    device = SMatrix.device
-    
-    if device == 'gpu' and CUPY_AVAILABLE and hasattr(SMatrix._data, 'sparse_mod'):
-        sparse_mod = SMatrix._data.sparse_mod
+def axpy(SMatrix, x, y, a):
+    """Compute x + a*y. Uses CUDA kernel when available."""   
+    if check_gpu_available(SMatrix):
+        sparse_mod = SMatrix.sparse_mod
         if sparse_mod is not None:
             try:
                 x_gpu = cp.asarray(x) if not isinstance(x, cp.ndarray) else x
@@ -144,52 +128,60 @@ def minus_axpy(SMatrix, x, y, a):
                 N = x_gpu.size
                 threads = 256
                 blocks = (N + threads - 1) // threads
-                minus_axpy_kernel = sparse_mod.get_function('vector_minus_axpy_kernel')
-                # Note: vector_minus_axpy_kernel does r = r - alpha * z
+                axpy_kernel = sparse_mod.get_function('vector_axpy_kernel')
+                # Note: vector_plus_axpy_kernel does r = r + alpha * z
                 # We need to copy x first since it modifies in place
                 r_gpu = x_gpu.copy()
-                minus_axpy_kernel(grid=(blocks, 1), block=(threads, 1, 1),
-                                args=[r_gpu.data.ptr, y_gpu.data.ptr, np.float32(a), np.int32(N)])
+                axpy_kernel(grid=(blocks, 1), block=(threads, 1, 1),
+                            args=[r_gpu.data.ptr, y_gpu.data.ptr, np.float32(a), np.int32(N)])
                 cp.cuda.Stream.null.synchronize()
                 return r_gpu
             except Exception:
                 pass
     
-    return x - a * y
-
+    return x + a * y
 
 def dot_product(SMatrix, x, y):
     """Compute dot product of two vectors."""
-    device = SMatrix.device
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     return xp.sum(x * y)
 
 
 def vector_divide(SMatrix, x, y, epsilon=1e-12):
     """Element-wise division: x / y with protection against division by zero."""
-    device = SMatrix.device
-    
-    if device == 'gpu' and CUPY_AVAILABLE and hasattr(SMatrix._data, 'sparse_mod'):
-        sparse_mod = SMatrix._data.sparse_mod
+    if check_gpu_available(SMatrix):
+        if isinstance(x, np.ndarray):
+            x = cp.asarray(x)
+        if isinstance(y, np.ndarray):
+            y = cp.asarray(y)
+        xp = cp
+    else:
+        if isinstance(x, cp.ndarray):
+            x = cp.asnumpy(x)
+        if isinstance(y, cp.ndarray):
+            y = cp.asnumpy(y)
+        xp = np
+
+    if check_gpu_available(SMatrix):
+        sparse_mod = SMatrix.sparse_mod
         if sparse_mod is not None:
             try:
-                x_gpu = cp.asarray(x) if not isinstance(x, cp.ndarray) else x
-                y_gpu = cp.asarray(y) if not isinstance(y, cp.ndarray) else y
-                N = x_gpu.size
-                result_gpu = cp.empty(N, dtype=cp.float32)
+                N = x.size
+                result_gpu = xp.empty(N, dtype=xp.float32)
                 threads = 256
                 blocks = (N + threads - 1) // threads
                 invert_kernel = sparse_mod.get_function('invert_vector_kernel')
-                invert_kernel(grid=(blocks, 1), block=(threads, 1, 1),
-                            args=[result_gpu.data.ptr, y_gpu.data.ptr, np.float32(epsilon), np.int32(N)])
-                # Now multiply: result = x * (1/y)
-                result_gpu = x_gpu * result_gpu
+                invert_kernel(
+                    grid=(blocks, 1),
+                    block=(threads, 1, 1),
+                    args=[result_gpu.data.ptr, y.data.ptr, np.float32(epsilon), np.int32(N)]
+                )
+                result_gpu = x * result_gpu
                 cp.cuda.Stream.null.synchronize()
                 return result_gpu
             except Exception:
                 pass
-    
-    xp = _get_array_module(device)
+
     return x / (y + epsilon)
 
 
@@ -204,13 +196,13 @@ def apply_normalization(SMatrix, x, norm_factor):
 # =============================================================================
 
 def forward_projection(SMatrix, theta):
-    """Forward projection: q = A * theta. Uses SMatrix._data.forward_projection() which calls CUDA kernels."""
-    return SMatrix._data.forward_projection(theta)
+    """Forward projection: q = A * theta. Uses SMatrix.forward_projection() which calls CUDA kernels."""
+    return SMatrix.forward_projection(theta)
 
 
 def backward_projection(SMatrix, e):
-    """Backprojection: c = A^T * e. Uses SMatrix._data.backprojection() which calls CUDA kernels."""
-    return SMatrix._data.backward_projection(e)
+    """Backprojection: c = A^T * e. Uses SMatrix.backward_projection() which calls CUDA kernels."""
+    return SMatrix.backward_projection(e)
 
 
 # =============================================================================
@@ -219,11 +211,10 @@ def backward_projection(SMatrix, e):
 
 def build_adjacency_indices(SMatrix):
     """Build adjacency indices for regularization (4-connectivity)."""
-    device = SMatrix.device
     Z = SMatrix.Z
     X = SMatrix.X
     
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     
     # Create adjacency list: each pixel has up to 4 neighbors
     # Format: (num_edges, 2) array where each row is (i, j) for edge between i and j
@@ -239,90 +230,94 @@ def build_adjacency_indices(SMatrix):
             if z < Z - 1:
                 edges.append((idx, idx + X))
     
-    if device == 'gpu' and CUPY_AVAILABLE:
-        return cp.array(edges, dtype=cp.int32)
-    else:
-        return np.array(edges, dtype=np.int32)
+    return xp.array(edges, dtype=xp.int32)
+
 
 # =============================================================================
 # ALGORITHM FUNCTIONS
 # =============================================================================
 
-def cost_function(SMatrix, lambda_flat, y_flat, optimizer, array_module, potential_type=None, beta=None):
+def cost_function(SMatrix, lambda_flat, y_flat, optimizer, potential_type=None, beta=None):
     """
     Compute the cost function for the given algorithm and potential type.
     """
     if optimizer == OptimizerType.MAPEM:
         # MAPEM cost: -log-likelihood + potential
-        return cost_function_MAPEM(SMatrix, lambda_flat, y_flat, array_module, potential_type, beta)
+        return cost_function_MAPEM(SMatrix, lambda_flat, y_flat, potential_type, beta)
     elif optimizer == OptimizerType.DEPIERRO:
-        return cost_function_DEPIERRO(SMatrix, lambda_flat, y_flat, beta, array_module)
+        return cost_function_DEPIERRO(SMatrix, lambda_flat, y_flat, beta)
     elif optimizer == OptimizerType.PDHG:
         # PDHG cost: data fidelity + potential
-        return cost_function_PDHG(SMatrix, lambda_flat, y_flat, potential_type, beta, array_module)
+        return cost_function_PDHG(SMatrix, lambda_flat, y_flat, potential_type, beta)
     elif optimizer == OptimizerType.LBFGS:
         # LBFGS cost: data fidelity + potential
-        return cost_function_LBFGS(SMatrix, lambda_flat, y_flat, potential_type, beta, array_module)
+        return cost_function_LBFGS(SMatrix, lambda_flat, y_flat, potential_type, beta)
     elif optimizer == OptimizerType.LS:
         # Least squares cost: 0.5 * ||A*λ - y||^2
-        return cost_function_LS(SMatrix, lambda_flat, y_flat, array_module)
+        return cost_function_LS(SMatrix, lambda_flat, y_flat)
     elif optimizer == OptimizerType.MLEM:
         # MLEM cost: -log-likelihood
-        return cost_function_MLEM(SMatrix, lambda_flat, y_flat, array_module)
+        return cost_function_MLEM(SMatrix, lambda_flat, y_flat)
     else:
         raise ValueError(f"Unsupported optimizer type: {optimizer}")
 
-def cost_function_DEPIERRO(SMatrix, lambda_flat, y_flat, beta, array_module):
+def cost_function_DEPIERRO(SMatrix, lambda_flat, y_flat, beta):
     """
     Compute the cost function for DEPIERRO algorithm.
     """
+    xp = _get_array_module(SMatrix)
     q_flat = forward_projection(SMatrix, lambda_flat)
     # Poisson log-likelihood + quadratic regularization
-    likelihood = array_module.sum(y_flat * array_module.log(q_flat + 1e-10) - q_flat)
-    return float(-likelihood + 0.5 * beta * array_module.sum(lambda_flat**2))
+    likelihood = xp.sum(y_flat * xp.log(q_flat + 1e-10) - q_flat)
+    return float(-likelihood + 0.5 * beta * xp.sum(lambda_flat**2))
 
-def cost_function_PDHG(SMatrix, lambda_flat, y_flat, potential_type, beta, array_module):
+def cost_function_PDHG(SMatrix, lambda_flat, y_flat, potential_type, beta):
     """
     Compute the cost function for PDHG algorithm.
     """
+    xp = _get_array_module(SMatrix)
     q_flat = forward_projection(SMatrix, lambda_flat)
-    data_fidelity = 0.5 * array_module.sum((q_flat - y_flat)**2)
+    data_fidelity = 0.5 * xp.sum((q_flat - y_flat)**2)
     _, _, potential_val = get_potential_function(potential_type, SMatrix, lambda_flat, beta, delta=None)
     return float(data_fidelity + potential_val)
 
-def cost_function_LBFGS(SMatrix, lambda_flat, y_flat, potential_type, beta, array_module):
+def cost_function_LBFGS(SMatrix, lambda_flat, y_flat, potential_type, beta):
     """
     Compute the cost function for LBFGS algorithm.
     """
+    xp = _get_array_module(SMatrix)
     q_flat = forward_projection(SMatrix, lambda_flat)
-    data_fidelity = 0.5 * array_module.sum((q_flat - y_flat)**2)
+    data_fidelity = 0.5 * xp.sum((q_flat - y_flat)**2)
     _, _, potential_val = get_potential_function(potential_type, SMatrix, lambda_flat, beta, delta=None)
     return float(data_fidelity + potential_val)
 
-def cost_function_LS(SMatrix, lambda_flat, y_flat, array_module):
+def cost_function_LS(SMatrix, lambda_flat, y_flat):
     """
     Compute the least squares cost function for any algorithm.
     """
+    xp = _get_array_module(SMatrix)
     q_flat = forward_projection(SMatrix, lambda_flat)
-    data_fidelity = 0.5 * array_module.sum((q_flat - y_flat)**2)
+    data_fidelity = 0.5 * xp.sum((q_flat - y_flat)**2)
     return float(data_fidelity)
 
-def cost_function_MLEM(SMatrix, lambda_flat, y_flat, array_module):
+def cost_function_MLEM(SMatrix, lambda_flat, y_flat):
     """
     Compute the cost function for MLEM algorithm.
     """
+    xp = _get_array_module(SMatrix)
     q_flat = forward_projection(SMatrix, lambda_flat)
     # Poisson log-likelihood
-    likelihood = array_module.sum(y_flat * array_module.log(q_flat + 1e-10) - q_flat)
+    likelihood = xp.sum(y_flat * xp.log(q_flat + 1e-10) - q_flat)
     return float(-likelihood)
 
-def cost_function_MAPEM(SMatrix, lambda_flat, y_flat, potential_type, beta, array_module):
+def cost_function_MAPEM(SMatrix, lambda_flat, y_flat, potential_type, beta):
     """
     Compute the cost function for MAP-EM algorithm.
     """
+    xp = _get_array_module(SMatrix)
     q_flat = forward_projection(SMatrix, lambda_flat)
     # Poisson log-likelihood + regularization
-    likelihood = array_module.sum(y_flat * array_module.log(q_flat + 1e-10) - q_flat)
+    likelihood = xp.sum(y_flat * xp.log(q_flat + 1e-10) - q_flat)
     _, _, U_val = get_potential_function(potential_type, SMatrix, lambda_flat, beta, delta=None)
     return float(-likelihood + U_val)
 # =============================================================================
@@ -357,13 +352,12 @@ def quadratic_potential(SMatrix, U, beta):
         - U_value: Total potential energy (scalar)
     
     Compatible with: All SMatrix types (DENSE, CSR, SELL) and all devices (CPU, GPU)
-    """
-    device = SMatrix.device
-    xp = _get_array_module(device)
+    """    
+    xp = _get_array_module(SMatrix)
     N = U.size if hasattr(U, 'size') else len(U)
     
     # Try GPU with CUDA kernel
-    if device == 'gpu' and CUPY_AVAILABLE and hasattr(SMatrix, 'sparse_mod') and SMatrix.sparse_mod is not None:
+    if check_gpu_available(SMatrix):
         try:
             # Allocate output arrays on GPU
             grad_U_gpu = cp.zeros_like(U)
@@ -412,12 +406,11 @@ def huber_potential(SMatrix, U, beta, delta=0.01):
     
     Compatible with: All SMatrix types (DENSE, CSR, SELL) and all devices (CPU, GPU)
     """
-    device = SMatrix.device
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     N = U.size if hasattr(U, 'size') else len(U)
     
     # Try GPU with CUDA kernel
-    if device == 'gpu' and CUPY_AVAILABLE and hasattr(SMatrix, 'sparse_mod') and SMatrix.sparse_mod is not None:
+    if check_gpu_available(SMatrix):
         try:
             # Allocate output arrays on GPU
             grad_U_gpu = cp.zeros_like(U)
@@ -487,8 +480,7 @@ def relative_difference_potential(SMatrix, U, beta, delta=1.0):
     
     Compatible with: All SMatrix types (DENSE, CSR, SELL) and all devices (CPU, GPU)
     """
-    device = SMatrix.device
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     Z = SMatrix.Z
     X = SMatrix.X
     N = Z * X
@@ -498,7 +490,7 @@ def relative_difference_potential(SMatrix, U, beta, delta=1.0):
     num_edges = len(adj_indices)
     
     # Try GPU with CUDA kernel
-    if device == 'gpu' and CUPY_AVAILABLE and hasattr(SMatrix, 'sparse_mod') and SMatrix.sparse_mod is not None:
+    if check_gpu_available(SMatrix):
         try:
             # Allocate output arrays on GPU
             grad_U_gpu = cp.zeros_like(U)
@@ -568,15 +560,14 @@ def tv_potential(SMatrix, U, beta):
     Note: This potential is non-differentiable at zero and returns a subgradient.
     It is only compatible with primal-dual methods like PDHG.
     """
-    device = SMatrix.device
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     
     Z = SMatrix.Z
     X = SMatrix.X
     N = Z * X
     
     # Try GPU with CUDA kernel
-    if device == 'gpu' and CUPY_AVAILABLE and hasattr(SMatrix, 'sparse_mod') and SMatrix.sparse_mod is not None:
+    if check_gpu_available(SMatrix):
         try:
             # Allocate output arrays on GPU
             grad_U_gpu = cp.zeros_like(U)
@@ -642,6 +633,39 @@ def tv_potential(SMatrix, U, beta):
     
     return grad_U, hess_U, U_value
 
+def power_method_estimate_lipschitz(SMatrix, num_iters: int = 15) -> float:
+    """
+    Estime la plus grande valeur propre de A^T A via la méthode de la puissance itérée.
+    """
+    ZX = SMatrix.Z * SMatrix.X
+    
+    # Initialisation avec un vecteur aléatoire
+    if check_gpu_available(SMatrix):
+        v = cp.random.rand(ZX, dtype=cp.float32)
+        norm_v = cp.linalg.norm(v)
+    else:
+        v = np.random.rand(ZX).astype(np.float32)
+        norm_v = np.linalg.norm(v)
+        
+    v = v / (norm_v + 1e-12)
+    
+    for _ in trange(num_iters, desc="Estimating Lipschitz constant", unit="iter"):
+        # Calculer w = (A^T A) v
+        q = forward_projection(SMatrix, v)
+        w = backward_projection(SMatrix, q)
+        
+        # Quotient de Rayleigh : (v^T w) / (v^T v)
+        if check_gpu_available(SMatrix):
+            eigenvalue = cp.dot(v, w) / cp.dot(v, v)
+            norm_w = cp.linalg.norm(w)
+        else:
+            eigenvalue = np.dot(v, w) / np.dot(v, v)
+            norm_w = np.linalg.norm(w)
+            
+        # Normalisation pour la prochaine itération
+        v = w / (norm_w + 1e-12)
+        
+    return float(eigenvalue)
 
 # =============================================================================
 # FILE I/O
@@ -739,32 +763,17 @@ def calculate_memory_requirement(SMatrix, y):
         y: Vector (float32)
     """
     total_bytes = 0
-    
-    # Check if it's the unified SMatrix wrapper
-    SMatrix_class_name = type(SMatrix).__name__
-    
-    # Custom Sparse Matrix (SELL/CSR/DENSE) - either wrapper or direct implementation
-    if SMatrix_class_name == 'SMatrix' or isinstance(SMatrix, (SMatrix_CSR, SMatrix_SELL, SMatrix_DENSE)):
-        try:
-            matrix_size_gb = SMatrix.get_matrix_size() if SMatrix_class_name == 'SMatrix' else SMatrix.getMatrixSize()
-            if isinstance(matrix_size_gb, dict) and 'error' in matrix_size_gb:
-                raise ValueError(f"SMatrix allocation error: {matrix_size_gb['error']}")
-            
-            size_SMatrix = matrix_size_gb * (1024 ** 3)
-            total_bytes += size_SMatrix
-            print(f"SMatrix size: {matrix_size_gb:.3f} GB")
-        except AttributeError:
-            raise AttributeError("SMatrix must implement the get_matrix_size() or getMatrixSize() method.")
-    elif isinstance(SMatrix, np.ndarray):
-        size_SMatrix = SMatrix.nbytes
+
+    try:
+        matrix_size_gb = SMatrix.get_matrix_size()
+        if isinstance(matrix_size_gb, dict) and 'error' in matrix_size_gb:
+            raise ValueError(f"SMatrix allocation error: {matrix_size_gb['error']}")
+        
+        size_SMatrix = matrix_size_gb * (1024 ** 3)
         total_bytes += size_SMatrix
-        print(f"SMatrix (NumPy Dense) size: {size_SMatrix / (1024 ** 3):.3f} GB")
-    elif CUPY_AVAILABLE and isinstance(SMatrix, cp.ndarray):
-        size_SMatrix = SMatrix.nbytes
-        total_bytes += size_SMatrix
-        print(f"SMatrix (CuPy) size: {size_SMatrix / (1024 ** 3):.3f} GB")
-    else:
-        raise ValueError("SMatrix must be a SMatrix object, np.ndarray, or cp.ndarray.")
+        print(f"SMatrix size: {matrix_size_gb:.3f} GB")
+    except AttributeError:
+        raise AttributeError("SMatrix must implement the get_matrix_size() method.")
     
     # Vector y
     if hasattr(y, 'nbytes'):
@@ -941,7 +950,7 @@ def filter_radon(f, N, filter_type, Fc):
 # PRECONDITIONERS
 # =============================================================================
 
-def compute_diagonal_preconditioner(SMatrix):
+def _compute_diagonal_preconditioner(SMatrix):
     """
     Compute diagonal preconditioner: M = diag(A^T * 1)
     
@@ -960,13 +969,12 @@ def compute_diagonal_preconditioner(SMatrix):
         
     Compatible with: All SMatrix types (DENSE, CSR, SELL) and all devices (CPU, GPU)
     """
-    device = SMatrix.device
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     
     # Compute A^T * 1 (column sums)
     ones = xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32)
     
-    if device == 'gpu' and CUPY_AVAILABLE:
+    if check_gpu_available(SMatrix):
         # Use GPU backprojection
         if hasattr(SMatrix, 'backward_projection'):
             preconditioner = SMatrix.backward_projection(ones)
@@ -979,7 +987,7 @@ def compute_diagonal_preconditioner(SMatrix):
         preconditioner = SMatrix.backward_projection(ones)
     
     # Ensure preconditioner is on correct device
-    if device == 'gpu' and CUPY_AVAILABLE:
+    if check_gpu_available(SMatrix):
         preconditioner = cp.asarray(preconditioner)
     else:
         preconditioner = np.asarray(preconditioner)
@@ -992,8 +1000,7 @@ def compute_diagonal_preconditioner(SMatrix):
     
     return preconditioner, preconditioner_inv
 
-
-def apply_diagonal_preconditioner(U, preconditioner_inv, SMatrix):
+def _apply_diagonal_preconditioner(U, preconditioner_inv, SMatrix):
     """
     Apply diagonal preconditioner to a vector: U -> M^-1 * U
     
@@ -1007,8 +1014,7 @@ def apply_diagonal_preconditioner(U, preconditioner_inv, SMatrix):
         
     Compatible with: All SMatrix types and all devices (CPU, GPU)
     """
-    device = SMatrix.device
-    xp = _get_array_module(device)
+    xp = _get_array_module(SMatrix)
     
     # Ensure arrays are on the same device
     U = xp.asarray(U)
@@ -1034,6 +1040,23 @@ def build_preconditioner(SMatrix, preconditioner_type):
     if preconditioner_type == PreconditionerType.NONE:
         return (None, None)
     elif preconditioner_type == PreconditionerType.DIAGONAL:
-        return compute_diagonal_preconditioner(SMatrix)
+        return _compute_diagonal_preconditioner(SMatrix)
     else:
         raise ValueError(f"Unknown preconditioner type: {preconditioner_type}")
+
+def apply_preconditioner(U, preconditioner_inv, SMatrix):
+    """
+    Apply the specified preconditioner to vector U.
+    
+    Args:
+        U: Vector to precondition (Z*X,)
+        preconditioner_inv: Inverse of the preconditioner (Z*X,) or None if no preconditioning
+        SMatrix: SMatrix instance (for device information)
+        
+    Returns:
+        Preconditioned vector on the same device as input
+    """
+    if preconditioner_inv is None:
+        return U
+    else:
+        return _apply_diagonal_preconditioner(U, preconditioner_inv, SMatrix)

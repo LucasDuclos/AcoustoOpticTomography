@@ -18,35 +18,6 @@
  * - UTIL: Utility operations
  */
 
-#include <cuda_runtime.h>
-#include <cuComplex.h>
-#include <math.h>
-#include <stdint.h>
-#include <stdio.h>
-
-// MEMORY MANAGEMENT UTILITIES
-// ============================================================================
-
-/**
- * Function: get_device_memory_info
- * Purpose: Get available and total GPU memory
- */
-extern "C" cudaError_t get_device_memory_info(size_t* free, size_t* total) {
-    return cudaMemGetInfo(free, total);
-}
-
-/**
- * Function: check_cuda_error
- * Purpose: Check CUDA error and print message
- */
-extern "C" bool check_cuda_error(cudaError_t err, const char* message) {
-    if (err != cudaSuccess) {
-        printf("CUDA ERROR [%s]: %s\n", message, cudaGetErrorString(err));
-        return true;
-    }
-    return false;
-}
-
 // ============================================================================
 // POTENTIAL FUNCTION KERNELS
 // ============================================================================
@@ -55,7 +26,9 @@ extern "C" bool check_cuda_error(cudaError_t err, const char* message) {
  * Kernel: quadratic_potential
  * Purpose: Compute quadratic potential: grad_U = alpha * U, hess_U = alpha, U_value = 0.5 * alpha * sum(U^2)
  */
-extern "C" __global__ void quadratic_potential_kernel(
+extern "C"{
+
+__global__ void quadratic_potential_kernel(
     float* __restrict__ grad_U,
     float* __restrict__ hess_U,
     float* __restrict__ U_value,
@@ -86,7 +59,7 @@ extern "C" __global__ void quadratic_potential_kernel(
  * Kernel: huber_potential
  * Purpose: Compute Huber potential gradient, Hessian, and energy
  */
-extern "C" __global__ void huber_potential_kernel(
+__global__ void huber_potential_kernel(
     float* __restrict__ grad_U,
     float* __restrict__ hess_U,
     float* __restrict__ U_value,
@@ -119,7 +92,7 @@ extern "C" __global__ void huber_potential_kernel(
  * Kernel: huber_potential_energy
  * Purpose: Compute Huber potential energy (separate kernel for reduction)
  */
-extern "C" __global__ void huber_potential_energy_kernel(
+__global__ void huber_potential_energy_kernel(
     float* __restrict__ partial_sums,
     const float* __restrict__ U,
     float alpha,
@@ -143,7 +116,7 @@ extern "C" __global__ void huber_potential_energy_kernel(
  * Kernel: relative_difference_potential
  * Purpose: Compute relative difference potential for edge-preserving regularization
  */
-extern "C" __global__ void relative_difference_potential_kernel(
+__global__ void relative_difference_potential_kernel(
     float* __restrict__ grad_U,
     float* __restrict__ hess_U,
     float* __restrict__ U_value,
@@ -195,7 +168,7 @@ extern "C" __global__ void relative_difference_potential_kernel(
  * Kernel: tv_potential
  * Purpose: Compute Total Variation potential (anisotropic)
  */
-extern "C" __global__ void tv_potential_kernel(
+__global__ void tv_potential_kernel(
     float* __restrict__ grad_U,
     float* __restrict__ U_value,
     const float* __restrict__ U,
@@ -258,7 +231,7 @@ extern "C" __global__ void tv_potential_kernel(
         }
     }
 }
-=======
+
 // ============================================================================
 // DENSE MATRIX KERNELS
 // ============================================================================
@@ -268,31 +241,31 @@ extern "C" __global__ void tv_potential_kernel(
  * Purpose: Fill dense matrix from acoustic fields on GPU
  * Used for: DENSE matrix construction
  */
-extern "C" __global__ void fill_dense_matrix_kernel(
+__global__ void fill_dense_matrix_kernel(
     float* __restrict__ dense_matrix,
     const float* __restrict__ field_data,
     int T,
     int N,
     int Z,
     int X,
-    int field_size
+    int n
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= T * N * Z * X) return;
-    
-    // Calculate position in output matrix
-    int t = idx / (N * Z * X);
-    int remaining = idx % (N * Z * X);
-    int n = remaining / (Z * X);
-    int zx = remaining % (Z * X);
+    if (idx >= T * Z * X) return;
+
+    int t = idx / (Z * X);
+    int zx = idx % (Z * X);
     int z = zx / X;
     int x = zx % X;
-    
-    // Calculate position in input field data
-    int field_idx = n * T * Z * X + t * Z * X + z * X + x;
-    
-    if (field_idx < T * N * Z * X) {
-        dense_matrix[idx] = field_data[field_idx];
+
+    // Position in dense_matrix: [t, n, z, x]
+    int dense_idx = t * (N * Z * X) + n * (Z * X) + z * X + x;
+
+    // Position in field_data: [t, z, x] (1D array of size T * Z * X)
+    int field_idx = t * (Z * X) + z * X + x;
+
+    if (dense_idx < T * N * Z * X && field_idx < T * Z * X) {
+        dense_matrix[dense_idx] = field_data[field_idx];
     }
 }
 
@@ -301,7 +274,7 @@ extern "C" __global__ void fill_dense_matrix_kernel(
  * Purpose: Compute normalization factor for dense matrix: 1 / (sum(|A|) + eps)
  * Used for: DENSE matrix normalization
  */
-extern "C" __global__ void compute_norm_factor_dense_kernel(
+__global__ void compute_norm_factor_dense_kernel(
     const float* __restrict__ dense_matrix,
     float* __restrict__ norm_factor_inv,
     int T,
@@ -332,10 +305,11 @@ extern "C" __global__ void compute_norm_factor_dense_kernel(
 }
 
 /**
- * Kernel: projection_dense
+ * Kernel: forward_projection_kernel__DENSE
  * Purpose: Forward projection using DENSE format: q = A * theta
+ * Layout expectation: row = n * T + t
  */
-extern "C" __global__ void projection_kernel__DENSE(
+__global__ void forward_projection_kernel__DENSE(
     float* __restrict__ q_out,
     const float* __restrict__ dense_matrix,
     const float* __restrict__ theta,
@@ -345,21 +319,29 @@ extern "C" __global__ void projection_kernel__DENSE(
     int X
 ) {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= T * N) return;
+    if (row >= N * T) return;
     
+    int n = row / T;
+    int t = row % T;
+
     float sum = 0.0f;
-    for (int col = 0; col < Z * X; col++) {
-        int pos = row * Z * X + col;
-        sum += dense_matrix[pos] * theta[col];
+    for (int z = 0; z < Z; z++) {
+        for (int x = 0; x < X; x++) {
+            long long pos = (((long long)t * N + n) * Z + z) * X + x;
+            long long theta_idx = (long long)z * X + x;
+            
+            sum += dense_matrix[pos] * theta[theta_idx];
+        }
     }
     q_out[row] = sum;
 }
 
 /**
- * Kernel: backprojection_dense
- * Purpose: Backprojection using DENSE format: c += A^T * e
+ * Kernel: backward_projection_kernel__DENSE
+ * Purpose: Backward projection using DENSE format: c = A^T * e
+ * Layout expectation: col = z * X + x
  */
-extern "C" __global__ void backprojection_kernel__DENSE(
+__global__ void backward_projection_kernel__DENSE(
     float* __restrict__ c_out,
     const float* __restrict__ dense_matrix,
     const float* __restrict__ e,
@@ -370,38 +352,23 @@ extern "C" __global__ void backprojection_kernel__DENSE(
 ) {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     if (col >= Z * X) return;
-    
+
+    int z = col / X;
+    int x = col % X;
+
     float sum = 0.0f;
-    for (int row = 0; row < T * N; row++) {
-        int pos = row * Z * X + col;
-        sum += dense_matrix[pos] * e[row];
+    for (int n = 0; n < N; n++) {
+        for (int t = 0; t < T; t++) {
+            long long e_idx = (long long)n * T + t;
+            long long pos = (((long long)t * N + n) * Z + z) * X + x;
+            
+            sum += dense_matrix[pos] * e[e_idx];
+        }
     }
     c_out[col] = sum;
 }
 
-// ============================================================================
-// MEMORY MANAGEMENT UTILITIES
-// ============================================================================
-
-/**
- * Function: get_device_memory_info
- * Purpose: Get available and total GPU memory
- */
-extern "C" cudaError_t get_device_memory_info(size_t* free, size_t* total) {
-    return cudaMemGetInfo(free, total);
-}
-
-/**
- * Function: check_cuda_error
- * Purpose: Check CUDA error and print message
- */
-extern "C" bool check_cuda_error(cudaError_t err, const char* message) {
-    if (err != cudaSuccess) {
-        printf("CUDA ERROR [%s]: %s\n", message, cudaGetErrorString(err));
-        return true;
-    }
-    return false;
-}============================================================================
+//============================================================================
 // UTILITY KERNELS
 // ============================================================================
 
@@ -409,7 +376,7 @@ extern "C" bool check_cuda_error(cudaError_t err, const char* message) {
  * Kernel: fill_array_value
  * Purpose: Fill an array with a constant value
  */
-extern "C" __global__ void fill_array_value(float* ptr, float value, int size) {
+__global__ void fill_array_value(float* ptr, float value, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) ptr[idx] = value;
 }
@@ -418,7 +385,7 @@ extern "C" __global__ void fill_array_value(float* ptr, float value, int size) {
  * Kernel: fill_array_zero
  * Purpose: Fill an array with zeros
  */
-extern "C" __global__ void fill_array_zero(float* ptr, int size) {
+__global__ void fill_array_zero(float* ptr, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) ptr[idx] = 0.0f;
 }
@@ -427,7 +394,7 @@ extern "C" __global__ void fill_array_zero(float* ptr, int size) {
  * Kernel: array_copy
  * Purpose: Copy elements from source to destination
  */
-extern "C" __global__ void array_copy(float* dst, const float* src, int size) {
+__global__ void array_copy(float* dst, const float* src, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) dst[idx] = src[idx];
 }
@@ -436,7 +403,7 @@ extern "C" __global__ void array_copy(float* dst, const float* src, int size) {
  * Kernel: clamp_positive
  * Purpose: Clamp all values to be non-negative (max with 0)
  */
-extern "C" __global__ void clamp_positive_kernel(float* data, int N) {
+__global__ void clamp_positive_kernel(float* data, int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < N) data[idx] = fmaxf(data[idx], 0.0f);
 }
@@ -445,7 +412,7 @@ extern "C" __global__ void clamp_positive_kernel(float* data, int N) {
  * Kernel: vector_axpby
  * Purpose: Compute z = alpha * x + beta * y (element-wise)
  */
-extern "C" __global__ void vector_axpby_kernel(
+__global__ void vector_axpby_kernel(
     float* __restrict__ z_out,
     const float* __restrict__ x_in,
     const float* __restrict__ y_in,
@@ -463,10 +430,10 @@ extern "C" __global__ void vector_axpby_kernel(
 }
 
 /**
- * Kernel: vector_minus_axpy
- * Purpose: Compute r = r - alpha * z (in-place axpy)
+ * Kernel: vector_plus_axpy
+ * Purpose: Compute r = r + alpha * z (in-place axpy)
  */
-extern "C" __global__ void vector_minus_axpy_kernel(
+__global__ void vector_axpy_kernel(
     float* __restrict__ r_in_out,
     const float* __restrict__ z_in,
     float alpha,
@@ -476,16 +443,17 @@ extern "C" __global__ void vector_minus_axpy_kernel(
     if (idx >= N) return;
     float r_val = r_in_out[idx];
     float z_val = z_in[idx];
-    float result = r_val - alpha * z_val;
+    float result = r_val + alpha * z_val;
     if (!isfinite(result)) result = 0.0f;
     r_in_out[idx] = result;
 }
+
 
 /**
  * Kernel: invert_vector
  * Purpose: Compute output = 1 / input with clipping to avoid division by zero
  */
-extern "C" __global__ void invert_vector_kernel(
+__global__ void invert_vector_kernel(
     float* __restrict__ vec_out,
     const float* __restrict__ vec_in,
     float clip_min,
@@ -507,7 +475,7 @@ extern "C" __global__ void invert_vector_kernel(
  * Purpose: Count non-zero elements per row in a dense matrix block
  * Used for: CSR and SELL-C-sigma matrix construction
  */
-extern "C" __global__ void count_nnz_rows_kernel(
+__global__ void count_nnz_rows_kernel(
     const float* __restrict__ dense,
     int* __restrict__ row_nnz,
     int rows_in_block,
@@ -536,7 +504,7 @@ extern "C" __global__ void count_nnz_rows_kernel(
  * Purpose: Fill SELL-C-sigma format from dense matrix block
  * Used for: SELL-C-sigma sparse matrix construction
  */
-extern "C" __global__ void fill_kernel__SELL(
+__global__ void fill_kernel__SELL(
     const float* __restrict__ dense,
     const int* __restrict__ row_nnz,
     const long long* __restrict__ slice_ptr,
@@ -589,7 +557,7 @@ extern "C" __global__ void fill_kernel__SELL(
  * Purpose: Fill CSR format from dense matrix block
  * Used for: CSR sparse matrix construction
  */
-extern "C" __global__ void fill_kernel__CSR(
+__global__ void fill_kernel__CSR(
     const float* __restrict__ dense_block,
     const long long* __restrict__ row_ptr,
     unsigned int* __restrict__ col_ind,
@@ -633,7 +601,7 @@ extern "C" __global__ void fill_kernel__CSR(
  * Purpose: Accumulate column sums from CSR matrix using atomic operations
  * Used for: Matrix analysis, normalization
  */
-extern "C" __global__ void accumulate_columns_atomic(
+__global__ void accumulate_columns_atomic(
     const float* __restrict__ values,
     const unsigned int* __restrict__ col_ind,
     long long total_nnz,
@@ -672,11 +640,12 @@ extern "C" __global__ void accumulate_columns_atomic(
  * Purpose: Apply apodization window to SELL matrix values
  * Used for: Acoustic field correction
  */
-extern "C" __global__ void apply_apodisation_kernel__SELL(
+__global__ void apply_apodization_kernel__SELL(
     float* sell_values,
     const unsigned int* sell_colinds,
     const float* window_vector,
-    long long num_elements
+    long long num_elements,
+    unsigned int ZX
 ) {
     long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
     if (i < num_elements) {
@@ -695,7 +664,7 @@ extern "C" __global__ void apply_apodisation_kernel__SELL(
  * Kernel: sparse_matrix_vector_product_csr
  * Purpose: Compute y = A * x for CSR sparse matrix
  */
-extern "C" __global__ void sparse_matrix_vector_product_csr(
+__global__ void sparse_matrix_vector_product_csr(
     float* y,
     const float* data,
     const int* indices,
@@ -716,10 +685,10 @@ extern "C" __global__ void sparse_matrix_vector_product_csr(
 }
 
 /**
- * Kernel: projection_sell
+ * Kernel: forward_projection_sell
  * Purpose: Forward projection using SELL format: q = A * theta
  */
-extern "C" __global__ void projection_kernel__SELL(
+__global__ void forward_projection_kernel__SELL(
     float* __restrict__ q_out,
     const float* __restrict__ sell_values,
     const unsigned int* __restrict__ sell_colinds,
@@ -752,10 +721,10 @@ extern "C" __global__ void projection_kernel__SELL(
 }
 
 /**
- * Kernel: backprojection_sell
- * Purpose: Backprojection using SELL format: c += A^T * e
+ * Kernel: backward_projection_sell
+ * Purpose: backward projection using SELL format: c += A^T * e
  */
-extern "C" __global__ void backprojection_kernel__SELL(
+__global__ void backward_projection_kernel__SELL(
     const float* __restrict__ sell_values,
     const unsigned int* __restrict__ sell_colinds,
     const long long* __restrict__ slice_ptr,
@@ -789,10 +758,10 @@ extern "C" __global__ void backprojection_kernel__SELL(
 }
 
 /**
- * Kernel: projection_csr
+ * Kernel: forward_projection_csr
  * Purpose: Forward projection using CSR format: q = A * theta
  */
-extern "C" __global__ void projection_kernel__CSR(
+__global__ void forward_projection_kernel__CSR(
     float* __restrict__ q_flat,
     const float* __restrict__ values,
     const long long* __restrict__ row_ptr,
@@ -814,10 +783,10 @@ extern "C" __global__ void projection_kernel__CSR(
 }
 
 /**
- * Kernel: backprojection_csr
- * Purpose: Backprojection using CSR format: c += A^T * e
+ * Kernel: backward_projection_csr
+ * Purpose: backward projection using CSR format: c += A^T * e
  */
-extern "C" __global__ void backprojection_kernel__CSR(
+__global__ void backward_projection_kernel__CSR(
     float* __restrict__ c_flat,
     const float* __restrict__ values,
     const long long* __restrict__ row_ptr,
@@ -847,7 +816,7 @@ extern "C" __global__ void backprojection_kernel__CSR(
  * Kernel: ratio_kernel
  * Purpose: Compute element-wise ratio e = y / max(q, threshold) for MLEM
  */
-extern "C" __global__ void ratio_kernel(
+__global__ void ratio_kernel(
     float* __restrict__ e_out,
     const float* __restrict__ y_in,
     const float* __restrict__ q_in,
@@ -867,7 +836,7 @@ extern "C" __global__ void ratio_kernel(
  * Kernel: update_theta_kernel
  * Purpose: Update theta values in MLEM: theta *= norm_inv * c_flat
  */
-extern "C" __global__ void update_theta_kernel(
+__global__ void update_theta_kernel(
     float* __restrict__ theta_flat,
     const float* __restrict__ c_flat,
     const float* __restrict__ norm_factor_inv,
@@ -889,7 +858,7 @@ extern "C" __global__ void update_theta_kernel(
  * Purpose: Compute 2D gradient (forward differences) for TV regularization
  * Output: p[0:N] = gradient in x direction, p[N:2N] = gradient in z direction
  */
-extern "C" __global__ void gradient_kernel(
+__global__ void gradient_kernel(
     float* __restrict__ p_out,
     const float* __restrict__ x_in,
     int Z,
@@ -917,7 +886,7 @@ extern "C" __global__ void gradient_kernel(
  * Kernel: divergence_2d
  * Purpose: Compute 2D divergence (adjoint of gradient) for TV regularization
  */
-extern "C" __global__ void divergence_kernel(
+__global__ void divergence_kernel(
     float* __restrict__ div_out,
     const float* __restrict__ p_in,
     int Z,
@@ -945,7 +914,7 @@ extern "C" __global__ void divergence_kernel(
  * Kernel: proj_tv
  * Purpose: Project onto TV constraint set (L2 ball with radius alpha)
  */
-extern "C" __global__ void proj_tv_kernel(
+__global__ void proj_tv_kernel(
     float* __restrict__ p_in_out,
     float alpha,
     int ZX
@@ -972,7 +941,7 @@ extern "C" __global__ void proj_tv_kernel(
  * Kernel: laplacian_2d
  * Purpose: Compute 2D Laplacian with Neumann boundary conditions
  */
-extern "C" __global__ void laplacian_kernel(
+__global__ void laplacian_kernel(
     float* out,
     const float* in,
     int Z,
@@ -1005,7 +974,7 @@ extern "C" __global__ void laplacian_kernel(
  * Kernel: pdhg_primal_update
  * Purpose: Update primal variable with positivity constraint
  */
-extern "C" __global__ void dpdhg_primal_update_kernel(
+__global__ void dpdhg_primal_update_kernel(
     float* x,
     const float* delta_z,
     const float* tau,
@@ -1021,7 +990,7 @@ extern "C" __global__ void dpdhg_primal_update_kernel(
  * Kernel: pdhg_extrapolation
  * Purpose: Extrapolation step in PDHG
  */
-extern "C" __global__ void dpdhg_extrapolation_kernel(
+__global__ void dpdhg_extrapolation_kernel(
     float* z_bar,
     const float* x_new,
     const float* x_old,
@@ -1038,7 +1007,7 @@ extern "C" __global__ void dpdhg_extrapolation_kernel(
  * Kernel: pdhg_gradient
  * Purpose: Compute gradient for PDHG TV regularization
  */
-extern "C" __global__ void dpdhg_gradient_kernel(
+__global__ void dpdhg_gradient_kernel(
     float* grad,
     const float* x,
     int Nz,
@@ -1061,7 +1030,7 @@ extern "C" __global__ void dpdhg_gradient_kernel(
  * Kernel: pdhg_divergence
  * Purpose: Compute divergence for PDHG
  */
-extern "C" __global__ void dpdhg_divergence_kernel(
+__global__ void dpdhg_divergence_kernel(
     float* div,
     const float* p,
     int Nz,
@@ -1089,7 +1058,7 @@ extern "C" __global__ void dpdhg_divergence_kernel(
  * Kernel: pdhg_prox_tv
  * Purpose: Proximal operator for TV in PDHG
  */
-extern "C" __global__ void dpdhg_prox_tv_kernel(
+__global__ void dpdhg_prox_tv_kernel(
     float* p,
     const float* grad,
     const float* sigma,
@@ -1113,7 +1082,7 @@ extern "C" __global__ void dpdhg_prox_tv_kernel(
  * Kernel: pdhg_prox_data
  * Purpose: Proximal operator for data fidelity (L2) in PDHG
  */
-extern "C" __global__ void dpdhg_prox_data_kernel(
+__global__ void dpdhg_prox_data_kernel(
     float* q,
     const float* Ax,
     const float* y,
@@ -1127,10 +1096,10 @@ extern "C" __global__ void dpdhg_prox_data_kernel(
 }
 
 /**
- * Kernel: pdhg_backprojection_sell
- * Purpose: Backprojection for PDHG using SELL format
+ * Kernel: pdhg_backward_projection_sell
+ * Purpose: backward projection for PDHG using SELL format
  */
-extern "C" __global__ void dpdhg_backprojection_kernel(
+__global__ void dpdhg_backward_projection_kernel(
     const float* __restrict__ sell_values,
     const unsigned int* __restrict__ sell_colinds,
     const long long* __restrict__ slice_ptr,
@@ -1166,7 +1135,7 @@ extern "C" __global__ void dpdhg_backprojection_kernel(
  * Kernel: pdhg_sell_sums
  * Purpose: Compute row and column sums for PDHG preconditioning
  */
-extern "C" __global__ void dpdhg_sell_sums_kernel(
+__global__ void dpdhg_sell_sums_kernel(
     float* s_row,
     float* s_col,
     const float* sell_values,
@@ -1206,7 +1175,7 @@ extern "C" __global__ void dpdhg_sell_sums_kernel(
  * Kernel: lbfgs_calc_q
  * Purpose: Compute residual q = Ax - y for LBFGS
  */
-extern "C" __global__ void lbfgs_calc_q_kernel(
+__global__ void lbfgs_calc_q_kernel(
     float* q,
     const float* Ax,
     const float* y,
@@ -1217,10 +1186,10 @@ extern "C" __global__ void lbfgs_calc_q_kernel(
 }
 
 /**
- * Kernel: lbfgs_backprojection_sell
- * Purpose: Backprojection for LBFGS using SELL format
+ * Kernel: lbfgs_backward_projection_sell
+ * Purpose: backward projection for LBFGS using SELL format
  */
-extern "C" __global__ void lbfgs_backprojection_kernel(
+__global__ void lbfgs_backward_projection_kernel(
     const float* __restrict__ sell_values,
     const unsigned int* __restrict__ sell_colinds,
     const long long* __restrict__ slice_ptr,
@@ -1256,7 +1225,7 @@ extern "C" __global__ void lbfgs_backprojection_kernel(
  * Kernel: lbfgs_aniso_tv_eval
  * Purpose: Evaluate anisotropic TV for LBFGS
  */
-extern "C" __global__ void lbfgs_aniso_tv_eval_kernel(
+__global__ void lbfgs_aniso_tv_eval_kernel(
     float* p,
     float* cost_val,
     const float* x,
@@ -1290,7 +1259,7 @@ extern "C" __global__ void lbfgs_aniso_tv_eval_kernel(
  * Kernel: lbfgs_divergence
  * Purpose: Compute divergence for LBFGS TV
  */
-extern "C" __global__ void lbfgs_divergence_kernel(
+__global__ void lbfgs_divergence_kernel(
     float* grad_reg,
     const float* p,
     int Nz,
@@ -1322,7 +1291,7 @@ extern "C" __global__ void lbfgs_divergence_kernel(
  * Kernel: update_dual_data_precond
  * Purpose: Update dual variable with vector preconditioning for data term
  */
-extern "C" __global__ void update_dual_data_precond_kernel(
+__global__ void update_dual_data_precond_kernel(
     float* __restrict__ q_out,
     const float* __restrict__ Ax,
     const float* __restrict__ y,
@@ -1347,7 +1316,7 @@ extern "C" __global__ void update_dual_data_precond_kernel(
  * Kernel: update_primal_precond
  * Purpose: Update primal variable with vector preconditioning
  */
-extern "C" __global__ void update_primal_precond_kernel(
+__global__ void update_primal_precond_kernel(
     float* __restrict__ x_out,
     const float* __restrict__ gradient_combined,
     const float* __restrict__ tau_vec,
@@ -1371,7 +1340,7 @@ extern "C" __global__ void update_primal_precond_kernel(
  * Kernel: proj_tv_inplace_and_diff
  * Purpose: TV projection with in-place difference computation
  */
-extern "C" __global__ void proj_tv_inplace_and_diff_kernel(
+__global__ void proj_tv_inplace_and_diff_kernel(
     float* p,
     float* grad,
     const float* sigma,
@@ -1404,7 +1373,7 @@ extern "C" __global__ void proj_tv_inplace_and_diff_kernel(
  * Kernel: prox_and_diff_subset
  * Purpose: Proximal operator with in-place difference for subset
  */
-extern "C" __global__ void prox_and_diff_subset_kernel(
+__global__ void prox_and_diff_subset_kernel(
     float* q,
     float* Ax,
     const float* y,
@@ -1427,7 +1396,7 @@ extern "C" __global__ void prox_and_diff_subset_kernel(
  * Kernel: projection_subset_sell
  * Purpose: Forward projection on subset using SELL format
  */
-extern "C" __global__ void projection_subset_kernel(
+__global__ void projection_subset_kernel(
     float* __restrict__ q_out,
     const float* __restrict__ sell_values,
     const unsigned int* __restrict__ sell_colinds,
@@ -1462,10 +1431,10 @@ extern "C" __global__ void projection_subset_kernel(
 }
 
 /**
- * Kernel: backprojection_subset_sell
- * Purpose: Backprojection on subset using SELL format
+ * Kernel: backward_projection_subset_sell
+ * Purpose: backward projection on subset using SELL format
  */
-extern "C" __global__ void backprojection_subset_kernel(
+__global__ void backward_projection_subset_kernel(
     const float* __restrict__ sell_values,
     const unsigned int* __restrict__ sell_colinds,
     const long long* __restrict__ slice_ptr,
@@ -1504,7 +1473,7 @@ extern "C" __global__ void backprojection_subset_kernel(
  * Kernel: sell_sums
  * Purpose: Compute row and column sums for SELL matrix
  */
-extern "C" __global__ void sell_sums_kernel(
+__global__ void sell_sums_kernel(
     float* s_row,
     float* s_col,
     const float* sell_values,
@@ -1535,27 +1504,4 @@ extern "C" __global__ void sell_sums_kernel(
     }
     s_row[row] = sum_r;
 }
-
-// ============================================================================
-// MEMORY MANAGEMENT UTILITIES
-// ============================================================================
-
-/**
- * Function: get_device_memory_info
- * Purpose: Get available and total GPU memory
- */
-extern "C" cudaError_t get_device_memory_info(size_t* free, size_t* total) {
-    return cudaMemGetInfo(free, total);
-}
-
-/**
- * Function: check_cuda_error
- * Purpose: Check CUDA error and print message
- */
-extern "C" bool check_cuda_error(cudaError_t err, const char* message) {
-    if (err != cudaSuccess) {
-        printf("CUDA ERROR [%s]: %s\n", message, cudaGetErrorString(err));
-        return true;
-    }
-    return false;
 }
