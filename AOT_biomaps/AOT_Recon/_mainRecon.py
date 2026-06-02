@@ -188,7 +188,7 @@ class Recon(ABC):
                 current_data_range = max(data_range, theta_max - theta_min)  # Use the larger range
                 self.SSIM.append(ssim(ref_img, theta, data_range=current_data_range))
 
-    def show(self, withTumor=True, savePath=None, scale='same'):
+    def show(self, withTumor=True, savePath=None, scale='same', figsize=(8,4)):
         """
         Display the reconstructed images.
         Args:
@@ -210,9 +210,9 @@ class Recon(ABC):
             else:
                 image = self.reconPhantom
             if self.experiment.OpticImage is None:
-                fig, axs = plt.subplots(1, 1, figsize=(10, 10))
+                fig, axs = plt.subplots(1, 1, figsize=(figsize[0]/2, figsize[1]))
             else:
-                fig, axs = plt.subplots(1, 2, figsize=(20, 10))
+                fig, axs = plt.subplots(1, 2, figsize=(figsize))
                 if scale == 'same':
                     vmin = 0
                     vmax = 1

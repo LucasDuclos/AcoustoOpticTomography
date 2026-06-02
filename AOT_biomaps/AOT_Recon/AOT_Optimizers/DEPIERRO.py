@@ -13,7 +13,7 @@ import numpy as np
 from tqdm import trange
 from typing import Optional, Union, Tuple
 
-from AOT_biomaps.AOT_Recon.ReconTools import apply_preconditioner, forward_projection, backward_projection, clamp_positive, build_preconditioner, get_potential_function, cost_function, check_gpu_available
+from AOT_biomaps.AOT_Recon.ReconTools import _get_array_module, apply_preconditioner, forward_projection, backward_projection, clamp_positive, get_potential_function, check_gpu_available
 from AOT_biomaps.AOT_Recon.ReconEnums import OptimizerType, PotentialType, PreconditionerType
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
@@ -34,7 +34,6 @@ def DEPIERRO(
     beta: float = 1.0,
     delta: float = 1.5,
     potential_type: PotentialType = PotentialType.QUADRATIC,
-    preconditioner_type: PreconditionerType = PreconditionerType.NONE,
     isSavingEachIteration: bool = True,
     isCostFunction: bool = False,
     withTumor: bool = True,
@@ -49,10 +48,11 @@ def DEPIERRO(
     
     Supports potential functions:
     - QUADRATIC: p(u,v) = 0.5 * beta * (u-v)^2
-    
+    - HUBER: p(u,v) = beta * (0.5 * (u-v)^2 if |u-v| <= delta else delta * (|u-v| - 0.5 * delta))
+    - RELATIVE_DIFFERENCE: p(u,v) = beta * (u-v)^2 / (v + epsilon)
+        
     Supports preconditioning:
-    - NONE: No preconditioning
-    - DIAGONAL: Diagonal preconditioning using A^T * 1
+    - DIAGONAL: Diagonal preconditioning using A^T * 1 (NECESSARY FOR CONVERGENCE)
     
     Args:
         SMatrix: SMatrix instance (already allocated)
@@ -61,7 +61,6 @@ def DEPIERRO(
         beta: Regularization parameter (weight for potential)
         delta: Additional parameter for DEPIERRO
         potential_type: Type of potential function to use
-        preconditioner_type: Type of preconditioner to use (default: NONE)
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
         withTumor: Boolean for description only
@@ -77,6 +76,7 @@ def DEPIERRO(
     tumor_str = "WITH" if withTumor else "WITHOUT"
     device = SMatrix.device
     matrix_type = SMatrix.matrix_type.name
+    xp = _get_array_module(SMatrix)
     Z = SMatrix.Z
     X = SMatrix.X
     ZX = Z * X
@@ -84,17 +84,10 @@ def DEPIERRO(
     if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
         raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
 
-    if check_gpu_available(SMatrix):
-        y_flat = cp.asarray(y.T.flatten().astype(np.float32))
-        lambda_flat = cp.full(ZX, 0.1, dtype=cp.float32)
-    else:
-        y_flat = np.asarray(y.T.flatten().astype(np.float32))
-        lambda_flat = np.full(ZX, 0.1, dtype=np.float32)
+    y_flat = xp.asarray(y.T.flatten().astype(xp.float32))
+    lambda_flat = xp.full(ZX, 0.1, dtype=xp.float32)
 
-    # Compute preconditioner if requested
-    preconditioner, preconditioner_inv = None, None
-    if preconditioner_type != PreconditionerType.NONE:
-        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
+    sens_img = backward_projection(SMatrix, xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32) + 1e-10)
 
     # Setup save indices
     if numIterations <= max_saves:
@@ -116,32 +109,28 @@ def DEPIERRO(
         # Forward projection
         q_flat = forward_projection(SMatrix, lambda_flat)
 
+        # Compute potential and its Hessian
+        _, hess_U, U_value = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta, delta=delta)
+
+        if isCostFunction:
+            q_safe = xp.maximum(q_flat, 1e-10)
+            data_fidelity = xp.sum(q_safe - y_flat * xp.log(q_safe))
+            total_cost = float(data_fidelity + U_value)
+            cost_history.append(total_cost)
+
         # Compute ratio: y / (A*λ + ε)
         ratio = y_flat / (q_flat + 1e-10)
 
         # Backprojection: A^T * (y / (A*λ + ε))
-        c_flat = backward_projection(SMatrix, ratio)
+        c_flat = backward_projection(SMatrix, ratio) / sens_img
 
-        # Apply preconditioner to c_flat: M^-1 * A^T * (y / (A*λ + ε))
-        if preconditioner_inv is not None:
-            c_flat = apply_preconditioner(c_flat, preconditioner_inv, SMatrix)
-
-        # Compute potential gradient and Hessian
-        _, hess_U, _ = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta, delta=delta)
-
-        # Apply preconditioner to Hessian term: M^-1 * (1 + δ * ∇²U(λ))
-        if preconditioner_inv is not None:
-            hess_U = apply_preconditioner(hess_U, preconditioner_inv, SMatrix)
+        hess_U = hess_U / sens_img
 
         # DEPIERRO update: λ_new = λ * (M^-1 * A^T * (y / (A*λ + ε))) / (M^-1 * (1 + δ * ∇²U(λ)))
         lambda_flat = lambda_flat * c_flat / (1 + delta * hess_U)
 
         # Clamp to non-negative
         lambda_flat = clamp_positive(SMatrix, lambda_flat)
-
-        # Compute cost function if requested
-        if isCostFunction:
-            cost_history.append(cost_function(SMatrix, lambda_flat, y_flat, optimizer=OptimizerType.DEPIERRO, beta=beta))
 
         if isSavingEachIteration and it in save_indices:
             if check_gpu_available(SMatrix):
@@ -156,8 +145,5 @@ def DEPIERRO(
     else:
         final_result = lambda_flat.reshape(Z, X)
 
-    if isSavingEachIteration:
-        return saved_lambda, saved_indices_list, cost_history
-    else:
-        return final_result, None, cost_history
+    return (saved_lambda, saved_indices_list, cost_history) if isSavingEachIteration else (final_result, None, cost_history)
     

@@ -20,7 +20,7 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
 
-from AOT_biomaps.AOT_Recon.ReconTools import axpy, check_gpu_available, cost_function, forward_projection, backward_projection, clamp_positive, build_preconditioner, apply_preconditioner, power_method_estimate_lipschitz
+from AOT_biomaps.AOT_Recon.ReconTools import _get_array_module, axpy, check_gpu_available, cost_function, forward_projection, backward_projection, clamp_positive, build_preconditioner, apply_preconditioner, estimate_operator_norm
 from AOT_biomaps.AOT_Recon.ReconEnums import OptimizerType, PreconditionerType
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
@@ -31,7 +31,7 @@ def LS(
     y: Union[np.ndarray, 'cp.ndarray'],
     numIterations: int = 100,
     alpha: Union[str, float] = "auto",
-    delta: float = 1.9, 
+    eta: float = 1.9, 
     preconditioner_type: PreconditionerType = PreconditionerType.NONE,
     isSavingEachIteration: bool = True,
     isCostFunction: bool = False,
@@ -50,7 +50,7 @@ def LS(
         y: Measurement data
         numIterations: Number of iterations
         alpha: Step size parameter (float or 'auto' for power method estimation of Lipschitz constant)
-        delta: Parameter for the Lipschitz constant estimation (must be < 2 for convergence and > 1 for faster convergence). Useless if alpha is a float.
+        eta: Parameter for the Lipschitz constant estimation (must be < 2 for convergence and > 1 for faster convergence). Useless if alpha is a float.
         preconditioner_type: Type of preconditioner to use (default: NONE)
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
@@ -68,6 +68,7 @@ def LS(
     tumor_str = "WITH" if withTumor else "WITHOUT"
     device = SMatrix.device
     matrix_type = SMatrix.matrix_type.name
+    xp = _get_array_module(SMatrix)
     Z = SMatrix.Z
     X = SMatrix.X
     ZX = Z * X
@@ -75,12 +76,8 @@ def LS(
     if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
         raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
 
-    if check_gpu_available(SMatrix):
-        y_flat = cp.asarray(y.T.flatten().astype(np.float32))
-        lambda_flat = cp.full(ZX, 0.1, dtype=cp.float32)
-    else:
-        y_flat = np.asarray(y.T.flatten().astype(np.float32))
-        lambda_flat = np.full(ZX, 0.1, dtype=np.float32)
+    y_flat = xp.asarray(y.T.flatten().astype(xp.float32))
+    lambda_flat = xp.full(ZX, 0.1, dtype=xp.float32)
 
     _, preconditioner_inv = None, None
     if preconditioner_type != PreconditionerType.NONE:
@@ -100,14 +97,14 @@ def LS(
     cost_history = [] if isCostFunction else None
 
     if alpha == "auto":
-        if delta is None:
-            print("Warning: delta is not set for power method estimation of step size. Using default value of 1.9.")
-            delta = 1.9
-        if delta >= 2.0 or delta <= 1.0:
-            print(f"Warning: For power method estimation of step size, delta should be in (1.0, 2.0) for convergence and faster convergence. Current value: {delta}. Proceeding with the given value, but consider adjusting it for better performance.")
+        if eta is None:
+            print("Warning: eta is not set for power method estimation of step size. Using default value of 1.9.")
+            eta = 1.9
+        if eta >= 2.0 or eta <= 1.0:
+            print(f"Warning: For power method estimation of step size, eta should be in (1.0, 2.0) for convergence and faster convergence. Current value: {eta}. Proceeding with the given value, but consider adjusting it for better performance.")
         # Estimate Lipschitz constant using power method
-        L_estimate = power_method_estimate_lipschitz(SMatrix, num_iters=20)
-        alpha = delta / L_estimate if L_estimate > 0 else 1.0
+        L_estimate = estimate_operator_norm(SMatrix, num_iters=20)
+        alpha = eta / L_estimate if L_estimate > 0 else 1.0
         print(f"Estimated Lipschitz constant: {L_estimate:.4f}, using step size alpha: {alpha:.5f}")
 
     description = f"AOT-BioMaps -- LS ({matrix_type}) ---- {tumor_str} TUMOR ---- {device.upper()}"
@@ -127,7 +124,7 @@ def LS(
         if isCostFunction:
             cost_history.append(cost_function(SMatrix, lambda_flat, y_flat, optimizer=OptimizerType.LS))
 
-        # Update: λ = λ + alpha * (M^-1 * g)
+        # Update: λ = λ + α * (M^-1 * g)
         lambda_flat = axpy(SMatrix, lambda_flat, g_flat, alpha)
 
         # Clamp to non-negative
@@ -146,7 +143,4 @@ def LS(
     else:
         final_result = lambda_flat.reshape(Z, X)
 
-    if isSavingEachIteration:
-        return saved_lambda, saved_indices_list, cost_history
-    else:
-        return final_result, None, cost_history
+    return (saved_lambda, saved_indices_list, cost_history) if isSavingEachIteration else (final_result, None, cost_history)

@@ -6,3 +6,4 @@ from .PGC import *
 from .PPGMLEM import *
 from .LS import *
 from .LBFGS import *
+from .PIGD import *

@@ -164,72 +164,61 @@ __global__ void relative_difference_potential_kernel(
     }
 }
 
-/**
- * Kernel: tv_potential
- * Purpose: Compute Total Variation potential (anisotropic)
- */
 __global__ void tv_potential_kernel(
     float* __restrict__ grad_U,
     float* __restrict__ U_value,
     const float* __restrict__ U,
-    float alpha,
+    float beta,
     int Z,
     int X
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total_pixels = Z * X;
-    
     if (idx >= total_pixels) return;
-    
-    // Initialize gradient
-    if (idx == 0) {
-        for (int i = 0; i < total_pixels; i++) {
-            grad_U[i] = 0.0f;
-        }
-        U_value[0] = 0.0f;
-    }
-    __syncthreads();
-    
+
     int z = idx / X;
     int x = idx % X;
-    
-    // Right neighbor difference
-    if (x < X - 1) {
-        int right_idx = idx + 1;
-        float diff_x = U[right_idx] - U[idx];
-        float abs_diff_x = fabsf(diff_x);
-        
-        // TV energy
-        atomicAdd(&U_value[0], alpha * abs_diff_x);
-        
-        // Subgradient for x component
-        if (diff_x > 0) {
-            atomicAdd(&grad_U[idx], -alpha);
-            atomicAdd(&grad_U[right_idx], alpha);
-        } else if (diff_x < 0) {
-            atomicAdd(&grad_U[idx], alpha);
-            atomicAdd(&grad_U[right_idx], -alpha);
-        }
-    }
-    
-    // Down neighbor difference
+    float eps = 1e-6f;
+
+    // Forward differences
+    float df_z = 0.0f;
+    float df_x = 0.0f;
+    if (z < Z - 1) df_z = U[idx + X] - U[idx];
+    if (x < X - 1) df_x = U[idx + 1] - U[idx];
+
+    // Norm of the forward gradient
+    float norm = sqrtf(df_z * df_z + df_x * df_x + eps);
+
+    // Contribution to the divergence (backward differences)
+    float div = 0.0f;
+
+    // Forward contribution (current pixel)
     if (z < Z - 1) {
-        int down_idx = idx + X;
-        float diff_z = U[down_idx] - U[idx];
-        float abs_diff_z = fabsf(diff_z);
-        
-        // TV energy
-        atomicAdd(&U_value[0], alpha * abs_diff_z);
-        
-        // Subgradient for z component
-        if (diff_z > 0) {
-            atomicAdd(&grad_U[idx], -alpha);
-            atomicAdd(&grad_U[down_idx], alpha);
-        } else if (diff_z < 0) {
-            atomicAdd(&grad_U[idx], alpha);
-            atomicAdd(&grad_U[down_idx], -alpha);
-        }
+        float norm_forward_z = sqrtf(df_z * df_z + (x < X - 1 ? powf(U[idx + X + 1] - U[idx + X], 2) : 0.0f) + eps);
+        div += df_z / norm_forward_z;
     }
+    if (x < X - 1) {
+        float norm_forward_x = sqrtf(powf(z < Z - 1 ? U[idx + X + 1] - U[idx + 1] : 0.0f, 2) + df_x * df_x + eps);
+        div += df_x / norm_forward_x;
+    }
+
+    // Backward contribution (neighboring pixels)
+    if (z > 0) {
+        float df_z_back = U[idx] - U[idx - X];
+        float norm_back_z = sqrtf(df_z_back * df_z_back + (x < X - 1 ? powf(U[idx - X + 1] - U[idx - X], 2) : 0.0f) + eps);
+        div -= df_z_back / norm_back_z;
+    }
+    if (x > 0) {
+        float df_x_back = U[idx] - U[idx - 1];
+        float norm_back_x = sqrtf(powf(z < Z - 1 ? U[idx + X - 1] - U[idx - 1] : 0.0f, 2) + df_x_back * df_x_back + eps);
+        div -= df_x_back / norm_back_x;
+    }
+
+    // Final gradient (with negative sign to match CPU version)
+    grad_U[idx] = -beta * div;
+
+    // Accumulate energy (TV norm)
+    atomicAdd(U_value, beta * sqrtf(df_z * df_z + df_x * df_x + eps));
 }
 
 // ============================================================================
@@ -320,7 +309,7 @@ __global__ void forward_projection_kernel__DENSE(
 ) {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     if (row >= N * T) return;
-    
+
     int n = row / T;
     int t = row % T;
 
@@ -911,30 +900,27 @@ __global__ void divergence_kernel(
 }
 
 /**
- * Kernel: proj_tv
- * Purpose: Project onto TV constraint set (L2 ball with radius alpha)
+ * Kernel: proj_tv_kernel
+ * Purpose: Project vector field p = (p_x, p_z) onto the L_infinity ball of radius alpha.
+ *       
  */
 __global__ void proj_tv_kernel(
-    float* __restrict__ p_in_out,
-    float alpha,
-    int ZX
+    float* __restrict__ p,
+    float alpha,            
+    int ZX                  
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= ZX) return;
-    
-    float px = p_in_out[idx];
-    float pz = p_in_out[ZX + idx];
-    float norm_p = sqrtf(px * px + pz * pz);
-    
-    float scale_factor = 1.0f;
-    if (alpha > 1e-8f) {
-        float ratio = norm_p / alpha;
-        if (ratio > 1.0f) scale_factor = ratio;
+    if (idx >= ZX) return;  
+
+    float px = p[idx];          // p_x[idx]
+    float pz = p[ZX + idx];    // p_z[idx]
+
+    float norm = sqrtf(px * px + pz * pz + 1e-12); 
+    if (norm > alpha) {
+        float scale = alpha / norm; 
+        p[idx] = px * scale;         // p_x[idx] = p_x[idx] * (alpha / norm)
+        p[ZX + idx] = pz * scale;    // p_z[idx] = p_z[idx] * (alpha / norm)
     }
-    
-    float inv_scale = 1.0f / scale_factor;
-    p_in_out[idx] *= inv_scale;
-    p_in_out[ZX + idx] *= inv_scale;
 }
 
 /**

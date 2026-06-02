@@ -328,8 +328,9 @@ def get_potential_function(potential_type, SMatrix, U, beta, delta=None):
     """
     Get potential function based on potential_type.
     """
+    xp = _get_array_module(SMatrix)
     if potential_type == PotentialType.NONE:
-        return None, None, None
+        return xp.zeros_like(U), xp.zeros_like(U), 0.0
     elif potential_type == PotentialType.QUADRATIC:
         return quadratic_potential(SMatrix, U, beta)
     elif potential_type == PotentialType.HUBER:
@@ -337,7 +338,7 @@ def get_potential_function(potential_type, SMatrix, U, beta, delta=None):
     elif potential_type == PotentialType.RELATIVE_DIFFERENCE:
         return relative_difference_potential(SMatrix, U, beta, delta)
     elif potential_type == PotentialType.TOTAL_VARIATION:
-        raise ValueError("TOTAL_VARIATION is non-differentiable and not supported in get_potential_function. Use a separate implementation for TV.")
+        return total_variation_potential(SMatrix, U, beta)
     else:
         raise ValueError(f"Unsupported potential type: {potential_type}")
 
@@ -543,130 +544,205 @@ def relative_difference_potential(SMatrix, U, beta, delta=1.0):
     return grad_U, hess_U, U_value
 
 
-def tv_potential(SMatrix, U, beta):
+def total_variation_potential(SMatrix, U, beta):
     """
-    Total Variation potential (anisotropic, non-differentiable).
-    
-    TV(u) = beta * sum(|u_i - u_j|) for all adjacent pairs (i, j)
-    
-    Returns:
-        tuple: (subgradient, hess_U, U_value)
-        - subgradient: Subgradient of TV (same shape as U) - hess_U=0 because TV is non-differentiable
-        - hess_U: Always zeros (TV is non-differentiable)
-        - U_value: Total TV energy (scalar)
-    
-    Compatible with: All SMatrix types (DENSE, CSR, SELL) and all devices (CPU, GPU)
-    
-    Note: This potential is non-differentiable at zero and returns a subgradient.
-    It is only compatible with primal-dual methods like PDHG.
+    Smooth Isotropic Total Variation Potential and Gradient.
+    Used
     """
     xp = _get_array_module(SMatrix)
-    
     Z = SMatrix.Z
     X = SMatrix.X
     N = Z * X
-    
-    # Try GPU with CUDA kernel
+
     if check_gpu_available(SMatrix):
         try:
-            # Allocate output arrays on GPU
             grad_U_gpu = cp.zeros_like(U)
             U_value_gpu = cp.zeros(1, dtype=cp.float32)
-            
-            # Get kernel
+
             kernel = SMatrix.sparse_mod.get_function('tv_potential_kernel')
-            
-            # Launch kernel
             threads = 256
             blocks = (N + threads - 1) // threads
+
             kernel(
                 grid=(blocks, 1, 1), block=(threads, 1, 1),
                 args=[grad_U_gpu.data.ptr, U_value_gpu.data.ptr,
-                      U.data.ptr if hasattr(U, 'data') else U, cp.float32(beta),
-                      cp.int32(Z), cp.int32(X)]
+                      U.data.ptr if hasattr(U, 'data') else U,
+                      cp.float32(beta), cp.int32(Z), cp.int32(X)]
             )
             cp.cuda.Stream.null.synchronize()
-            
-            # TV is non-differentiable, hessian is 0
+
             hess_U_gpu = cp.zeros_like(U)
-            
-            return grad_U_gpu, hess_U_gpu, U_value_gpu[0]
+            return grad_U_gpu, hess_U_gpu, float(U_value_gpu[0])
         except Exception:
-            # Fall back to CPU implementation
             pass
-    
-    # CPU or fallback implementation
+
+    # CPU Fallback (Smooth Isotropic TV)
     grad_U = xp.zeros_like(U)
-    U_value = xp.zeros((), dtype=xp.float32)
-    
-    # Compute TV using finite differences
-    for z in range(Z):
-        for x in range(X):
-            idx = z * X + x
-            
-            # Right neighbor difference
-            if x < X - 1:
-                diff_x = U[idx + 1] - U[idx]
-                U_value += beta * xp.abs(diff_x)
-                # Subgradient for x component
-                if diff_x > 0:
-                    grad_U[idx] -= beta
-                    grad_U[idx + 1] += beta
-                elif diff_x < 0:
-                    grad_U[idx] += beta
-                    grad_U[idx + 1] -= beta
-            
-            # Down neighbor difference
-            if z < Z - 1:
-                diff_z = U[idx + X] - U[idx]
-                U_value += beta * xp.abs(diff_z)
-                # Subgradient for z component
-                if diff_z > 0:
-                    grad_U[idx] -= beta
-                    grad_U[idx + X] += beta
-                elif diff_z < 0:
-                    grad_U[idx] += beta
-                    grad_U[idx + X] -= beta
-    
-    # TV is non-differentiable, hessian is 0
+    U_value = 0.0
+    eps = 1e-6
+
+    U_img = U.reshape(Z, X)
+    grad_img = xp.zeros((Z, X), dtype=xp.float32)
+
+    # Forward differences
+    df_z = xp.zeros((Z, X), dtype=xp.float32)
+    df_x = xp.zeros((Z, X), dtype=xp.float32)
+    df_z[:-1, :] = U_img[1:, :] - U_img[:-1, :]
+    df_x[:, :-1] = U_img[:, 1:] - U_img[:, :-1]
+
+    # Norm of forward gradient
+    norm_forward = xp.sqrt(df_z**2 + df_x**2 + eps)
+
+    # Divergence computation
+    div = xp.zeros((Z, X), dtype=xp.float32)
+
+    # Forward contributions
+    div[:-1, :] += df_z[:-1, :] / norm_forward[:-1, :]
+    div[:, :-1] += df_x[:, :-1] / norm_forward[:, :-1]
+
+    # Backward contributions
+    df_z_back = xp.zeros((Z, X), dtype=xp.float32)
+    df_x_back = xp.zeros((Z, X), dtype=xp.float32)
+    df_z_back[1:, :] = U_img[1:, :] - U_img[:-1, :]
+    df_x_back[:, 1:] = U_img[:, 1:] - U_img[:, :-1]
+
+    norm_back = xp.sqrt(df_z_back**2 + df_x_back**2 + eps)
+    div[1:, :] -= df_z_back[1:, :] / norm_back[1:, :]
+    div[:, 1:] -= df_x_back[:, 1:] / norm_back[:, 1:]
+
+    # Final gradient (with negative sign)
+    grad_img = -beta * div
+    grad_U = grad_img.flatten()
+
+    # Energy (TV norm)
+    U_value = float(beta * xp.sum(norm_forward))
+
     hess_U = xp.zeros_like(U)
-    
     return grad_U, hess_U, U_value
 
-def power_method_estimate_lipschitz(SMatrix, num_iters: int = 15) -> float:
+def estimate_operator_norm(SMatrix, num_iters: int = 15) -> float:
     """
-    Estime la plus grande valeur propre de A^T A via la méthode de la puissance itérée.
+    Estimate the spectral norm (largest singular value) of the forward operator A using power iteration.
+     - SMatrix: The system matrix with forward_projection and backward_projection methods.
+     - num_iters: Number of power iterations to perform (default 15).
     """
     ZX = SMatrix.Z * SMatrix.X
-    
-    # Initialisation avec un vecteur aléatoire
-    if check_gpu_available(SMatrix):
-        v = cp.random.rand(ZX, dtype=cp.float32)
-        norm_v = cp.linalg.norm(v)
-    else:
-        v = np.random.rand(ZX).astype(np.float32)
-        norm_v = np.linalg.norm(v)
-        
-    v = v / (norm_v + 1e-12)
-    
-    for _ in trange(num_iters, desc="Estimating Lipschitz constant", unit="iter"):
-        # Calculer w = (A^T A) v
-        q = forward_projection(SMatrix, v)
-        w = backward_projection(SMatrix, q)
-        
-        # Quotient de Rayleigh : (v^T w) / (v^T v)
-        if check_gpu_available(SMatrix):
-            eigenvalue = cp.dot(v, w) / cp.dot(v, v)
-            norm_w = cp.linalg.norm(w)
-        else:
-            eigenvalue = np.dot(v, w) / np.dot(v, v)
-            norm_w = np.linalg.norm(w)
-            
-        # Normalisation pour la prochaine itération
-        v = w / (norm_w + 1e-12)
-        
-    return float(eigenvalue)
+    xp = _get_array_module(SMatrix)
 
+    v = xp.random.rand(ZX).astype(xp.float32)
+    v /= xp.linalg.norm(v) + 1e-12
+
+    eig = 0.0
+
+    for _ in range(num_iters):
+        Av = forward_projection(SMatrix, v)
+        AtAv = backward_projection(SMatrix, Av)
+
+        eig = xp.dot(v, AtAv)
+
+        norm = xp.linalg.norm(AtAv)
+        if norm > 1e-12:
+            v = AtAv / norm
+
+    return float(xp.sqrt(eig))
+
+# =============================================================================
+# GRADIENT AND DIVERGENCE OPERATIONS (for TV regularization)
+# =============================================================================
+
+def gradient_2d(SMatrix, x):
+    """
+    Compute the 2D spatial forward gradient of a flattened image vector.
+    Gradients are calculated using forward differences.
+    
+    Args:
+        SMatrix: SMatrix instance (for dimension and device abstraction)
+        x: Flattened 1D image array of shape (Z*X,)
+        
+    Returns:
+        tuple: (grad_x, grad_z) where each component is a flattened 1D array of shape (Z*X,)
+    """
+    xp = _get_array_module(SMatrix)
+    Z = SMatrix.Z
+    X = SMatrix.X
+    
+    # Reshape into standard 2D space to apply spatial stencils safely
+    x_img = x.reshape(Z, X)
+    
+    grad_x_img = xp.zeros_like(x_img)
+    grad_z_img = xp.zeros_like(x_img)
+    
+    # Forward differences: ∂x / ∂x and ∂x / ∂z
+    grad_x_img[:, :-1] = x_img[:, 1:] - x_img[:, :-1]
+    grad_z_img[:-1, :] = x_img[1:, :] - x_img[:-1, :]
+    
+    return grad_x_img.flatten(), grad_z_img.flatten()
+
+
+def divergence_2d(SMatrix, p_x, p_z):
+    """
+    Compute the 2D spatial divergence of a flattened dual vector field (p_x, p_z).
+    Divergence is calculated using backward differences (Adjoint of forward gradient).
+    
+    Args:
+        SMatrix: SMatrix instance
+        p_x: Flattened 1D x-component array of shape (Z*X,)
+        p_z: Flattened 1D z-component array of shape (Z*X,)
+        
+    Returns:
+        div_p: Flattened 1D divergence array of shape (Z*X,)
+    """
+    xp = _get_array_module(SMatrix)
+    Z = SMatrix.Z
+    X = SMatrix.X
+    
+    # Reshape dual vector fields back into their 2D layout
+    p_x_img = p_x.reshape(Z, X)
+    p_z_img = p_z.reshape(Z, X)
+    
+    div_x = xp.zeros_like(p_x_img)
+    div_z = xp.zeros_like(p_z_img)
+    
+    div_x[:, 0] = -p_x_img[:, 0]
+    div_x[:, 1:-1] = p_x_img[:, :-2] - p_x_img[:, 1:-1]
+    div_x[:, -1] = p_x_img[:, -2]
+    
+    div_z[0, :] = -p_z_img[0, :]
+    div_z[1:-1, :] = p_z_img[:-2, :] - p_z_img[1:-1, :]
+    div_z[-1, :] = p_z_img[-2, :]
+    
+    return (div_x + div_z).flatten()
+
+
+def proj_tv(SMatrix, p, radius=1.0):
+    """
+    Project a concatenated 1D dual vector field p = (p_x, p_z) onto the L∞ ball.
+    The projection clip magnitudes to radius lambda_tv (default 1.0 for Chambolle-Pock).
+    
+    Args:
+        SMatrix: SMatrix instance
+        p: Flattened concatenated array of shape (2 * Z * X,)
+        radius: Bound constraint radius of the L∞ ball (corresponds to weighted TV regularization strength)
+        
+    Returns:
+        p_projected: Flattened projected array of shape (2 * Z * X,)
+    ```"""
+    xp = _get_array_module(SMatrix)
+    ZX = SMatrix.Z * SMatrix.X
+    
+    # Separate the stacked dual vector components cleanly
+    p_x = p[:ZX]
+    p_z = p[ZX:]
+    
+    # Compute conjoint spatial magnitude per pixel
+    norm_p = xp.sqrt(p_x**2 + p_z**2 + 1e-12)
+    mask = norm_p > radius
+    
+    # Apply threshold truncation mapping vector-wise
+    p_x_proj = xp.where(mask, p_x * radius / norm_p, p_x)
+    p_z_proj = xp.where(mask, p_z * radius / norm_p, p_z)
+    
+    return xp.concatenate([p_x_proj, p_z_proj])
 # =============================================================================
 # FILE I/O
 # =============================================================================

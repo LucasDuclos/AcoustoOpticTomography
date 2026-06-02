@@ -4,7 +4,7 @@ from AOT_biomaps.Config import config
 
 from ._mainRecon import Recon
 from .ReconEnums import NoiseType, ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, PreconditionerType
-from .AOT_Optimizers import MLEM, LS, MAPEM, DEPIERRO, PDHG, PGC, PPGMLEM, LBFGS
+from .AOT_Optimizers import MLEM, LS, MAPEM, DEPIERRO, PDHG, PGC, PPGMLEM, LBFGS, PIGD
 from .AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from .AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from .AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
@@ -44,8 +44,8 @@ ALGORITHM_FORMULAS = {
         "reference": "Landweber, 1951",
         "required_params": ["alpha"],
         "constraints": {
-            "alpha": "> 0 or 'auto' (for power method estimation)",
-            "delta": "1 < and < 2 for faster convergence",
+            "alpha": "> 0 or 'auto'",
+            "eta": "1 < and < 2 for faster convergence",
             "numIterations": "> 0",
         },
         "notes": "Convergence can be slow; consider using accelerated methods",
@@ -102,6 +102,7 @@ ALGORITHM_FORMULAS = {
         "constraints": {
             "beta": ">= 0",
             "delta": ">= 0",
+            "eta": "1 < and < 2 for faster convergence",
             "denominatorThreshold": "> 0",
             "numIterations": "> 0",
         },
@@ -114,12 +115,14 @@ ALGORITHM_FORMULAS = {
         "reference": "Chambolle and Pock, J. Math. Imaging Vis., 2011",
         "required_params": ["alpha"],
         "constraints": {
-            "alpha": "> 0",
+            "noiseType": " in [NoiseType.GAUSSIAN, NoiseType.POISSON]",
             "beta": ">= 0",
-            "tau": "> 0",
-            "sigma": "> 0",
-            "k_security": "in (0, 1]",
+            "gamma": ">= 0",
+            "theta": ">=0",
+            "tau": "> 0 or 'auto'",
+            "sigma": "> 0 or 'auto'",
             "numIterations": "> 0",
+            "num_subsets": ">= 1",
         },
         "notes": "tau and sigma are step sizes; prox is the proximal operator for TV",
         "potentialFunction": [PotentialType.TOTAL_VARIATION]
@@ -137,6 +140,25 @@ ALGORITHM_FORMULAS = {
         "notes": "Manual implementation without scipy dependency. Supports differentiable potentials (QUADRATIC, HUBER, RELATIVE_DIFFERENCE)",
         "potentialFunction": [PotentialType.QUADRATIC, PotentialType.HUBER, PotentialType.RELATIVE_DIFFERENCE]
     },
+    OptimizerType.PIGD: {
+        "formula": "λ(k+1) = λ(k) - α · diag(AT 1)^-1 · (∇f(λ(k)) + β ∇U(λ(k)))",
+        "description": "Penalized Iterative Gradient Descent with diagonal sensitivity preconditioning",
+        "reference": "Based on standard proximal gradient methods (FISTA-like), AOT-BioMaps implementation",
+        "required_params": ["alpha", "beta"],
+        "constraints": {
+            "beta": ">= 0",
+            "alpha": "> 0 or 'auto'",
+            "delta": ">= 0",
+            "eta": "1 < and < 2 for faster convergence",
+            "numIterations": "> 0",
+        },
+        "notes": "α is the step size, β regulates the potential influence. The inverse of the sensitivity (diag(AT*1)) acts as the diagonal preconditioner for the gradient update.",
+        "potentialFunction": [
+            PotentialType.QUADRATIC, 
+            PotentialType.HUBER, 
+            PotentialType.RELATIVE_DIFFERENCE, 
+        ]
+    },
 }
 
 
@@ -145,7 +167,7 @@ class AlgebraicRecon(Recon):
     Algebraic reconstruction class for AOT_biomaps.
     
     This class provides a unified interface for all iterative reconstruction algorithms,
-    including MLEM, LS, MAPEM, DEPIERRO, PPGMLEM, PGC, and PDHG.
+    including MLEM, LS, MAPEM, DEPIERRO, PPGMLEM, PGC, PDHG, and PIGD.
     
     Features:
     - Support for multiple optimizer types
@@ -207,9 +229,12 @@ class AlgebraicRecon(Recon):
         beta: Optional[float] = None,
         gamma: Optional[float] = None,
         delta: Optional[float] = None,
+        eta: Optional[float] = None,
         # PDHG-specific parameters
+        theta: Optional[float] = None,
         tau: Optional[float] = None,
         sigma: Optional[float] = None,
+        reshufflePeriod: Optional[int] = None,
         noiseType: Optional[NoiseType] = NoiseType.GAUSSIAN,
         # Potential function parameters
         corner: Optional[float] = None,
@@ -239,6 +264,8 @@ class AlgebraicRecon(Recon):
             beta: Regularization parameter for MAPEM, DEPIERRO, PPGMLEM, PGC, PDHG (default: None)
             gamma: Preconditioning parameter for PPGMLEM (default: None)
             delta: Huber threshold or relative difference parameter for MAPEM, PPGMLEM, DEPIERRO (default: None)
+            eta: Parameter for the Lipschitz constant estimation (must be < 2 for convergence and > 1 for faster convergence). Useless if alpha is a float. (default: None)
+            theta: Extrapolation parameter for PDHG (default: None)
             tau: Primal step size for PDHG (default: None)
             sigma: Dual step size for PDHG (default: None)
             noiseType: Type of noise (NoiseType enum, default: GAUSSIAN) for PDHG if gaussian -> L2 data fidelity, if poisson -> KL divergence
@@ -291,12 +318,15 @@ class AlgebraicRecon(Recon):
         self.beta = beta
         self.gamma = gamma
         self.delta = delta
+        self.eta = eta
         self.sigma = sigma
         
         # Store PDHG-specific parameters
+        self.theta = theta
         self.tau = tau
         self.sigma = sigma
         self.noiseType = noiseType
+        self.reshufflePeriod = reshufflePeriod
         
         # Set corner and face with defaults
         self.corner = corner if corner is not None else (0.5 - np.sqrt(2)/4) / np.sqrt(2)
@@ -328,58 +358,62 @@ class AlgebraicRecon(Recon):
             errors: List to append error messages to
         """
         # Define compatibility matrix: which potential functions work with which optimizers
-        # Note: MLEM and LS are non-regularized algorithms and should NOT use any potential function
-        # PDHG is primal-dual and can handle all potential functions (including non-differentiable ones)
+        # MLEM and LS are non-regularized algorithms and should NOT use any potential function.
+        # PDHG and LBFGS handle regularized differentiable or non-differentiable potentials.
         POTENTIAL_COMPATIBILITY = {
             PotentialType.QUADRATIC: [
                 OptimizerType.MAPEM, OptimizerType.DEPIERRO, OptimizerType.PPGMLEM,
-                OptimizerType.PGC, OptimizerType.PDHG
+                OptimizerType.PGC, OptimizerType.PDHG, OptimizerType.LBFGS
             ],
             PotentialType.HUBER: [
-                OptimizerType.MAPEM, OptimizerType.PPGMLEM, OptimizerType.PGC,
+                OptimizerType.MAPEM, OptimizerType.DEPIERRO, OptimizerType.PPGMLEM, OptimizerType.PGC,
                 OptimizerType.PDHG, OptimizerType.LBFGS
             ],
             PotentialType.RELATIVE_DIFFERENCE: [
-                OptimizerType.MAPEM, OptimizerType.PPGMLEM, OptimizerType.PGC,
+                OptimizerType.MAPEM, OptimizerType.DEPIERRO, OptimizerType.PPGMLEM, OptimizerType.PGC,
                 OptimizerType.PDHG, OptimizerType.LBFGS
             ],
             PotentialType.TOTAL_VARIATION: [
                 OptimizerType.PDHG
             ],
+            PotentialType.NONE: [
+                OptimizerType.MLEM, OptimizerType.LS, OptimizerType.MAPEM, OptimizerType.DEPIERRO, 
+                OptimizerType.PPGMLEM, OptimizerType.PGC, OptimizerType.PDHG, OptimizerType.LBFGS
+            ],
         }
         
+        # Safe-guard against Python NoneType initialization
+        current_potential = self.potentialFunction if self.potentialFunction is not None else PotentialType.NONE
+
         # Check if potential function is in compatibility matrix
-        if self.potentialFunction not in POTENTIAL_COMPATIBILITY:
-            errors.append(f"Unknown potential function: {self.potentialFunction}")
+        if current_potential not in POTENTIAL_COMPATIBILITY:
+            errors.append(f"Unknown potential function: {current_potential}")
             return
         
         # Check if optimizer is compatible with this potential function
-        compatible_optimizers = POTENTIAL_COMPATIBILITY[self.potentialFunction]
+        compatible_optimizers = POTENTIAL_COMPATIBILITY[current_potential]
         if self.optimizer not in compatible_optimizers:
             compatible_names = [opt.value for opt in compatible_optimizers]
             errors.append(
-                f"Potential function {self.potentialFunction.value} is not compatible with "
-                f"optimizer {self.optimizer.value}. "
-                f"Compatible optimizers: {', '.join(compatible_names)}"
+                f"Potential function '{current_potential.value}' is not compatible with "
+                f"optimizer '{self.optimizer.value}'. "
+                f"Compatible optimizers for this potential: {', '.join(compatible_names)}"
             )
         
-        # Additional specific validations
-        if self.potentialFunction == PotentialType.TOTAL_VARIATION:
-            # TOTAL_VARIATION requires PDHG-specific parameters
+        # Hyperparameters dependency checks per potential type
+        if current_potential == PotentialType.TOTAL_VARIATION:
             if self.alpha is None:
-                errors.append("TOTAL_VARIATION potential requires alpha parameter to be set")
+                errors.append("TOTAL_VARIATION potential requires alpha parameter to be set.")
             if self.beta is None:
-                errors.append("TOTAL_VARIATION potential requires beta parameter to be set")
+                errors.append("TOTAL_VARIATION potential requires beta parameter to be set.")
         
-        if self.potentialFunction == PotentialType.HUBER:
-            # Huber requires delta parameter
+        elif current_potential == PotentialType.HUBER:
             if self.delta is None:
-                errors.append("HUBER potential requires delta parameter to be set")
+                errors.append("HUBER potential requires delta parameter to be set.")
         
-        if self.potentialFunction == PotentialType.RELATIVE_DIFFERENCE:
-            # Relative difference requires beta parameter
+        elif current_potential == PotentialType.RELATIVE_DIFFERENCE:
             if self.beta is None:
-                errors.append("RELATIVE_DIFFERENCE potential requires beta parameter to be set")
+                errors.append("RELATIVE_DIFFERENCE potential requires beta parameter to be set.")
 
     def _validate_hyperparameters(self):
         """Validate all hyperparameters for the selected optimizer."""
@@ -390,103 +424,99 @@ class AlgebraicRecon(Recon):
         formula_info = ALGORITHM_FORMULAS[self.optimizer]
         errors = []
 
-        # Check common parameters
+        # 1. Structural checks on baseline parameters
         if self.numIterations <= 0:
             errors.append(f"numIterations must be > 0, got {self.numIterations}")
         if self.numSubsets <= 0:
             errors.append(f"numSubsets must be > 0, got {self.numSubsets}")
         if not isinstance(self.numIterations, int):
-            errors.append(f"numIterations must be an integer, got {type(self.numIterations)}")
+            errors.append(f"numIterations must be an integer, got {type(self.numIterations).__name__}")
         if not isinstance(self.numSubsets, int):
-            errors.append(f"numSubsets must be an integer, got {type(self.numSubsets)}")
+            errors.append(f"numSubsets must be an integer, got {type(self.numSubsets).__name__}")
 
-        # Check optimizer-specific constraints
+        # 2. Check optimizer-specific mathematical constraints
         constraints = formula_info.get("constraints", {})
+        
+        # Safe fallback for constraints display mapping
         constraints_display = formula_info.get("constraints_display", {})
 
         for param_name, constraint in constraints.items():
+            # Fallback evaluation to avoid AttributeError if parameter is omitted from instance structure
             param_value = getattr(self, param_name, None)
+            display_name = constraints_display.get(param_name, param_name)
 
-            # Skip if parameter is not set and not required
+            # Check if parameter is missing but strictly required by the algorithm
             if param_value is None:
                 if param_name in formula_info.get("required_params", []):
-                    display_name = constraints_display.get(param_name, param_name)
-                    errors.append(f"Required hyperparameter '{display_name}' is not set")
+                    errors.append(f"Required hyperparameter '{display_name}' is not set.")
                 continue
 
-            # Handle special cases
-            if constraint == "> 0 or 'auto' (for power method estimation)":
-                if not (param_value > 0 or param_value == 'auto'):
-                    display_name = constraints_display.get(param_name, param_name)
-                    errors.append(f"{display_name} must be > 0 or 'auto', got {param_value}")
+            # Parsing constraints conditions
+            if constraint == "> 0 or 'auto'":
+                if not (param_value == 'auto' or (isinstance(param_value, (int, float)) and param_value > 0)):
+                    errors.append(f"'{display_name}' must be > 0 or 'auto', got '{param_value}'")
 
             elif constraint == "1 < and < 2 for faster convergence":
-                if not (1 < param_value < 2):
-                    display_name = constraints_display.get(param_name, param_name)
-                    errors.append(f"{display_name} must be in (1, 2), got {param_value}")
+                if not (isinstance(param_value, (int, float)) and 1 < param_value < 2):
+                    errors.append(f"'{display_name}' must be strictly inside interval (1, 2), got '{param_value}'")
 
-            # Handle standard cases
             elif constraint == "> 0":
-                if param_value <= 0:
-                    display_name = constraints_display.get(param_name, param_name)
-                    errors.append(f"{display_name} must be > 0, got {param_value}")
+                if not (isinstance(param_value, (int, float)) and param_value > 0):
+                    errors.append(f"'{display_name}' must be strictly > 0, got '{param_value}'")
+
             elif constraint == ">= 0":
-                if param_value < 0:
-                    display_name = constraints_display.get(param_name, param_name)
-                    errors.append(f"{display_name} must be >= 0, got {param_value}")
+                if not (isinstance(param_value, (int, float)) and param_value >= 0):
+                    errors.append(f"'{display_name}' must be >= 0, got '{param_value}'")
+
             elif constraint.startswith("in ["):
-                interval = constraint[4:-1]
-                if "," in interval:
-                    low, high = map(float, interval.split(","))
+                try:
+                    low, high = map(float, constraint[4:-1].split(","))
                     if not (low <= param_value <= high):
-                        display_name = constraints_display.get(param_name, param_name)
-                        errors.append(f"{display_name} must be in [{low}, {high}], got {param_value}")
+                        errors.append(f"'{display_name}' must be in closed interval [{low}, {high}], got '{param_value}'")
+                except ValueError:
+                    pass
+
             elif constraint.startswith("in ("):
-                interval = constraint[4:-1]
-                if "," in interval:
-                    low, high = map(float, interval.split(","))
+                try:
+                    low, high = map(float, constraint[4:-1].split(","))
                     if not (low < param_value < high):
-                        display_name = constraints_display.get(param_name, param_name)
-                        errors.append(f"{display_name} must be in ({low}, {high}), got {param_value}")
+                        errors.append(f"'{display_name}' must be in open interval ({low}, {high}), got '{param_value}'")
+                except ValueError:
+                    pass
 
-        # Special validation for PDHG
-        if self.optimizer == OptimizerType.PDHG:
-            if self.theta is not None and not (1.0 <= self.theta <= 2.0):
-                errors.append(f"theta must be in [1.0, 2.0], got {self.theta}")
-            if not (0 < self.k_security <= 1):
-                errors.append(f"k_security must be in (0, 1], got {self.k_security}")
+        # 4. Check global cross-compatibility between optimizer and structural constraints
+        self._validate_potential_compatibility(errors)
 
-        # Validate potential function compatibility with optimizer
-        if self.potentialFunction is not None:
-            self._validate_potential_compatibility(errors)
-
-        # If there are errors, raise ValueError with detailed message
+        # 5. Format and raise validation errors stack
         if errors:
             error_msg = f"\n{'='*80}\n"
-            error_msg += f"HYPERPARAMETER VALIDATION ERROR for {self.optimizer.value}\n"
+            error_msg += f"HYPERPARAMETER VALIDATION ERROR FOR METRIC: {self.optimizer.name}\n"
             error_msg += f"{'='*80}\n\n"
-            error_msg += f"Algorithm: {formula_info['description']}\n"
-            error_msg += f"Reference: {formula_info.get('reference', 'N/A')}\n"
-            error_msg += f"Formula: {formula_info['formula']}\n\n"
-            error_msg += "Required hyperparameters:\n"
+            error_msg += f"Algorithm Context : {formula_info['description']}\n"
+            error_msg += f"Literature Reference: {formula_info.get('reference', 'N/A')}\n"
+            error_msg += f"Governing Formula   : {formula_info['formula']}\n\n"
+            
+            error_msg += "Required Execution Parameters:\n"
             for param_name in formula_info.get("required_params", []):
                 param_value = getattr(self, param_name, None)
                 param_display = constraints_display.get(param_name, param_name)
-                param_constraint = constraints.get(param_name, "")
-                error_msg += f"  - {param_display}: {param_constraint} (current: {param_value})\n"
-            error_msg += f"\nConstraints:\n"
+                param_constraint = constraints.get(param_name, "N/A")
+                error_msg += f"  - {param_display}: requirement [{param_constraint}] (currently populated: {param_value})\n"
+                
+            error_msg += f"\nActive Architectural Bounds:\n"
             for param_name, constraint in constraints.items():
                 param_value = getattr(self, param_name, None)
                 param_display = constraints_display.get(param_name, param_name)
-                error_msg += f"  - {param_display}: {constraint} (current: {param_value})\n"
+                error_msg += f"  - {param_display}: standard bounds [{constraint}] (currently populated: {param_value})\n"
+                
             if formula_info.get("notes"):
-                error_msg += f"\nNotes:\n  {formula_info['notes']}\n"
-            error_msg += f"\nErrors:\n"
+                error_msg += f"\nAlgorithm Notes:\n  {formula_info['notes']}\n"
+                
+            error_msg += f"\nRaised Exceptions Stack:\n"
             for error in errors:
-                error_msg += f"  - {error}\n"
+                error_msg += f"  [Constraint Violation] -> {error}\n"
             error_msg += f"\n{'='*80}\n"
-            raise ValueError(error_msg)
-        
+            raise ValueError(error_msg)     
     # PUBLIC METHODS
     def generate_SMatrix(self, isShowLogs=True):
         if self.smatrixType == SMatrixType.DENSE:
@@ -504,7 +534,6 @@ class AlgebraicRecon(Recon):
         if self.smatrixType == SMatrixType.CSR:
             self.SMatrix.flip_angle()
     
-
     def run(self, processType: ProcessType = ProcessType.PYTHON, withTumor: bool = True, show_logs: bool = True):
         """
         Run the algebraic reconstruction process.
@@ -722,7 +751,6 @@ class AlgebraicRecon(Recon):
                 y=y,
                 numIterations=self.numIterations,
                 denominator_threshold=self.denominatorThreshold,
-                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -735,7 +763,6 @@ class AlgebraicRecon(Recon):
                 y=y,
                 numIterations=self.numIterations,
                 denominator_threshold=self.denominatorThreshold,
-                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -751,7 +778,7 @@ class AlgebraicRecon(Recon):
                 y=y,
                 numIterations=self.numIterations,
                 alpha=self.alpha,
-                delta=self.delta,
+                eta=self.eta,
                 preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
@@ -765,7 +792,7 @@ class AlgebraicRecon(Recon):
                 y=y,
                 numIterations=self.numIterations,
                 alpha=self.alpha,
-                delta=self.delta,
+                eta=self.eta,
                 preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
@@ -814,10 +841,9 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                beta=self.beta if self.beta is not None else 1.0,
-                delta=self.delta if self.delta is not None else 0.01,
+                beta=self.beta,
+                delta=self.delta,
                 potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -830,10 +856,9 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                beta=self.beta if self.beta is not None else 1.0,
-                delta=self.delta if self.delta is not None else 0.01,
+                beta=self.beta,
+                delta=self.delta,
                 potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -851,7 +876,6 @@ class AlgebraicRecon(Recon):
                 beta=self.beta,
                 delta=self.delta,
                 potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -866,7 +890,6 @@ class AlgebraicRecon(Recon):
                 beta=self.beta,
                 delta=self.delta,
                 potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -909,6 +932,41 @@ class AlgebraicRecon(Recon):
                 show_logs=show_logs,
             )
 
+    def _run_PIGD(self, y, withTumor: bool = True, show_logs: bool = True):
+        """Run PIGD reconstruction."""
+        if withTumor:
+            self.reconPhantom, self.indices, self.cost_historyPhantom = PIGD(
+                SMatrix=self.SMatrix,
+                y=y,
+                numIterations=self.numIterations,
+                alpha=self.alpha,
+                beta=self.beta,
+                delta=self.delta,
+                eta=self.eta,
+                potential_type=self.potentialFunction,
+                isSavingEachIteration=self.isSavingEachIteration,
+                isCostFunction=self.isCostFunction,
+                withTumor=withTumor,
+                max_saves=self.maxSaves,
+                show_logs=show_logs,
+            )
+        else:
+            self.reconLaser, self.indices, self.cost_historyLaser = PIGD(
+                SMatrix=self.SMatrix,
+                y=y,
+                numIterations=self.numIterations,
+                alpha=self.alpha,
+                beta=self.beta,
+                delta=self.delta,
+                eta=self.eta,
+                potential_type=self.potentialFunction,
+                isSavingEachIteration=self.isSavingEachIteration,
+                isCostFunction=self.isCostFunction,
+                withTumor=withTumor,
+                max_saves=self.maxSaves,
+                show_logs=show_logs,
+            )
+
     def _run_PGC(self, y, withTumor: bool = True, show_logs: bool = True):
         """Run PGC reconstruction."""
         if withTumor:
@@ -916,10 +974,11 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                alpha=self.alpha if self.alpha is not None else 1.0,
-                beta=self.beta if self.beta is not None else 1.0,
+                alpha=self.alpha,
+                beta=self.beta,
+                delta=self.delta,
+                eta=self.eta,
                 potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -931,10 +990,11 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                alpha=self.alpha if self.alpha is not None else 1.0,
-                beta=self.beta if self.beta is not None else 1.0,
+                alpha=self.alpha,
+                beta=self.beta,
+                delta=self.delta,
+                eta=self.eta,
                 potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -945,34 +1005,41 @@ class AlgebraicRecon(Recon):
     def _run_PDHG(self, y, withTumor: bool = True, show_logs: bool = True):
         """Run PDHG reconstruction."""
         if withTumor:
-            self.reconPhantom, self.indices = PDHG(
+            self.reconPhantom, self.indices, self.cost_historyPhantom = PDHG(
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
                 beta=self.beta,
-                delta=self.delta,
+                gamma=self.gamma,
+                theta=self.theta,
                 tau=self.tau,
                 sigma=self.sigma,
+                num_subsets=self.numSubsets,
+                reshuffle_period=self.reshufflePeriod,
                 noise_type=self.noiseType,
-                potential_type=self.potentialFunction,
                 preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
+                isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
             )
         else:
-            self.reconLaser, self.indices = PDHG(
+            self.reconLaser, self.indices, self.cost_historyLaser = PDHG(
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
                 beta=self.beta,
-                delta=self.delta,
+                gamma=self.gamma,
+                theta=self.theta,
                 tau=self.tau,
                 sigma=self.sigma,
-                potential_type=self.potentialFunction,
+                num_subsets=self.numSubsets,
+                reshuffle_period=self.reshufflePeriod,
+                noise_type=self.noiseType,
                 preconditioner_type=self.preconditionerType,
                 isSavingEachIteration=self.isSavingEachIteration,
+                isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
                 max_saves=self.maxSaves,
                 show_logs=show_logs,
