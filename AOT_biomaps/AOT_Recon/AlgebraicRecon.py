@@ -363,22 +363,22 @@ class AlgebraicRecon(Recon):
         POTENTIAL_COMPATIBILITY = {
             PotentialType.QUADRATIC: [
                 OptimizerType.MAPEM, OptimizerType.DEPIERRO, OptimizerType.PPGMLEM,
-                OptimizerType.PGC, OptimizerType.PDHG, OptimizerType.LBFGS
+                OptimizerType.PGC, OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.PIGD
             ],
             PotentialType.HUBER: [
                 OptimizerType.MAPEM, OptimizerType.DEPIERRO, OptimizerType.PPGMLEM, OptimizerType.PGC,
-                OptimizerType.PDHG, OptimizerType.LBFGS
+                OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.PIGD
             ],
             PotentialType.RELATIVE_DIFFERENCE: [
                 OptimizerType.MAPEM, OptimizerType.DEPIERRO, OptimizerType.PPGMLEM, OptimizerType.PGC,
-                OptimizerType.PDHG, OptimizerType.LBFGS
+                OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.PIGD
             ],
             PotentialType.TOTAL_VARIATION: [
                 OptimizerType.PDHG
             ],
             PotentialType.NONE: [
                 OptimizerType.MLEM, OptimizerType.LS, OptimizerType.MAPEM, OptimizerType.DEPIERRO, 
-                OptimizerType.PPGMLEM, OptimizerType.PGC, OptimizerType.PDHG, OptimizerType.LBFGS
+                OptimizerType.PPGMLEM, OptimizerType.PGC, OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.PIGD
             ],
         }
         
@@ -594,6 +594,8 @@ class AlgebraicRecon(Recon):
             self._run_DEPIERRO(y=y, withTumor=withTumor, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PPGMLEM:
             self._run_PPGMLEM(y=y, withTumor=withTumor, show_logs=show_logs)
+        elif self.optimizer == OptimizerType.PIGD:
+            self._run_PIGD(y=y, withTumor=withTumor, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PGC:
             self._run_PGC(y=y, withTumor=withTumor, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PDHG:

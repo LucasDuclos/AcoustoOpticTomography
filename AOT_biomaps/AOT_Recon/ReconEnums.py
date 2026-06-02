@@ -103,6 +103,12 @@ class OptimizerType(Enum):
     Quasi-Newton optimization algorithm with regularization support.
     Compatible with: differentiable potential functions (QUADRATIC, HUBER, RELATIVE_DIFFERENCE).
     """
+    PIGD = 'PIGD'
+    """
+    Penalized Iterative Gradient Descent (PIGD).
+    Gradient-based optimization algorithm for penalized ML reconstruction. 
+    Compatible with: differentiable potential functions (QUADRATIC, HUBER, RELATIVE_DIFFERENCE).
+    """
 
 class PotentialType(Enum):
     """
