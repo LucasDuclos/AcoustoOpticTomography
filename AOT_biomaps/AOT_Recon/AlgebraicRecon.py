@@ -527,7 +527,7 @@ class AlgebraicRecon(Recon):
     def apply_apodization(self, window_vector: np.ndarray):
         self.SMatrix.apply_apodization(window_vector)
     
-    def run(self, processType: ProcessType = ProcessType.PYTHON, withTumor: bool = True, show_logs: bool = True):
+    def run(self, processType: ProcessType = ProcessType.PYTHON, withTumor: bool = True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs: bool = True):
         """
         Run the algebraic reconstruction process.
         
@@ -536,6 +536,9 @@ class AlgebraicRecon(Recon):
         Args:
             processType: Type of processing (PYTHON or CASToR)
             withTumor: If True, reconstruct with tumor data; otherwise without
+            stop_criterion: Criterion for stopping the reconstruction
+            stop_threshold: Threshold for the stopping criterion
+            show_criterion: If True, display the stopping criterion
             show_logs: If True, display progress logs
             
         Raises:
@@ -547,7 +550,7 @@ class AlgebraicRecon(Recon):
         if processType == ProcessType.CASToR:
             self._algebraic_recon_CASToR(withTumor=withTumor, show_logs=show_logs)
         elif processType == ProcessType.PYTHON:
-            self._algebraic_recon_Python(withTumor=withTumor, show_logs=show_logs)
+            self._algebraic_recon_Python(withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
         else:
             raise ValueError(f"Unknown Algebraic reconstruction type: {processType}")
 
@@ -559,6 +562,9 @@ class AlgebraicRecon(Recon):
         
         Args:
             withTumor: If True, reconstruct with tumor data; otherwise without
+            stop_criterion: Criterion for stopping the reconstruction
+            stop_threshold: Threshold for the stopping criterion
+            show_criterion: If True, display the stopping criterion
             show_logs: If True, display progress logs
             
         Raises:
