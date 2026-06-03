@@ -551,7 +551,7 @@ def check_stopping_criterion(SMatrix, current_lambda, prev_lambda, criterion_typ
         return bool(relative_change < threshold), float(relative_change)
     elif criterion_type == StopCriterionType.COST_FUNCTION:
         if history is None or len(history) < 2:
-            return False, None
+            return False, history[-1]
         relative_diff = abs(history[-2] - history[-1]) / (abs(history[-2]) + 1e-10)
         return bool(relative_diff < threshold), float(relative_diff)
     elif criterion_type == StopCriterionType.MSE:
