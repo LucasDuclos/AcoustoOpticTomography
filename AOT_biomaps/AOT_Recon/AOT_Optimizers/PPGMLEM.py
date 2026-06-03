@@ -5,17 +5,15 @@ Penalized Preconditioned Gradient MLEM (PPGMLEM) reconstruction algorithm.
 Uses unified SMatrix interface and ReconTools functions.
 Single unified function that works with any SMatrix type (CSR, SELL, DENSE) and any device (CPU, GPU).
 
-Supports preconditioning:
-- NONE: No preconditioning
-- DIAGONAL: Diagonal preconditioning using A^T * 1
+Supports spatial potential functions: QUADRATIC, HUBER, RELATIVE_DIFFERENCE
 """
 
 import numpy as np
 from tqdm import trange
 from typing import Optional, Union, Tuple
 
-from AOT_biomaps.AOT_Recon.ReconTools import apply_preconditioner, forward_projection, backward_projection, clamp_positive, build_preconditioner, get_potential_function, cost_function
-from AOT_biomaps.AOT_Recon.ReconEnums import OptimizerType, PotentialType, PreconditionerType
+from AOT_biomaps.AOT_Recon.ReconTools import _get_array_module, estimate_operator_norm, forward_projection, backward_projection, clamp_positive, get_potential_function, check_gpu_available
+from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, PotentialShapeType
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
@@ -32,11 +30,14 @@ def PPGMLEM(
     SMatrix: Union['SMatrix_DENSE', 'SMatrix_CSR', 'SMatrix_SELL'],
     y: Union[np.ndarray, 'cp.ndarray'],
     numIterations: int = 100,
-    beta: float = 1.0,
-    delta: float = 0.01,
-    gamma: float = 0.01,
+    alpha: Union[str, float] = "auto",     
+    beta: float = 1.0,       
+    delta: float = 1.0,      
+    gamma: float = 0.01,     
+    eta: Optional[float] = None,
     potential_type: PotentialType = PotentialType.QUADRATIC,
-    preconditioner_type: PreconditionerType = PreconditionerType.NONE,
+    potential_shape: PotentialShapeType = PotentialShapeType.CROSS,
+    potential_radius: int = 2,
     isSavingEachIteration: bool = True,
     isCostFunction: bool = False,
     withTumor: bool = True,
@@ -57,10 +58,14 @@ def PPGMLEM(
         SMatrix: SMatrix instance (already allocated)
         y: Measurement data (shape: (T, N))
         numIterations: Number of iterations
+        alpha: Step size parameter (float or 'auto' for power method estimation of Lipschitz constant)
         beta: Regularization weight
         delta: Parameter for Huber potential (threshold) or for RELATIVE_DIFFERENCE potential
         gamma: Preconditioning parameter
+        eta: Parameter for Lipschitz estimation if alpha is "auto"
         potential_type: Type of potential function (QUADRATIC, HUBER, RELATIVE_DIFFERENCE)
+        potential_shape: Neighborhood shape (PotentialShapeType enum)
+        potential_radius: Neighborhood radius in pixels
         preconditioner_type: Type of preconditioner to use (default: NONE)
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
@@ -77,26 +82,31 @@ def PPGMLEM(
     tumor_str = "WITH" if withTumor else "WITHOUT"
     device = SMatrix.device
     matrix_type = SMatrix.matrix_type.name
-    Z = SMatrix.Z
-    X = SMatrix.X
+    xp = _get_array_module(SMatrix)
+    Z, X = SMatrix.Z, SMatrix.X
     ZX = Z * X
 
     if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
         raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
 
-    if device == 'gpu' and CUPY_AVAILABLE:
-        y_flat = cp.asarray(y.T.flatten().astype(np.float32))
-        lambda_flat = cp.full(ZX, 0.1, dtype=cp.float32)
-        xp = cp
-    else:
-        y_flat = np.asarray(y.T.flatten().astype(np.float32))
-        lambda_flat = np.full(ZX, 0.1, dtype=np.float32)
-        xp = np
+    y_flat = xp.asarray(y.T.flatten().astype(xp.float32))
+    lambda_flat = xp.full(ZX, 0.1, dtype=xp.float32)
 
-    # Compute preconditioner if requested
-    preconditioner, preconditioner_inv = None, None
-    if preconditioner_type != PreconditionerType.NONE:
-        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
+    # Pre-compute sensitivity (A^T * 1)
+    sens_img = backward_projection(SMatrix, xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32))
+    sens_img = xp.maximum(sens_img, 1e-10)
+
+    if alpha == "auto":
+        if eta is None:
+            print("Warning: eta is not set for power method estimation of step size. Using default value of 1.9.")
+            eta = 1.9
+        if eta >= 2.0 or eta <= 1.0:
+            print(f"Warning: eta should be in (1.0, 2.0) for optimal convergence. Current value: {eta}.")
+        
+        # Estimate Lipschitz constant using power method
+        L_estimate = estimate_operator_norm(SMatrix, num_iters=20)
+        alpha = eta / L_estimate if L_estimate > 0 else 1.0
+        print(f"Estimated Lipschitz constant: {L_estimate:.4f}, using step size alpha: {alpha:.5f}")
 
     # Setup save indices
     if numIterations <= max_saves:
@@ -111,62 +121,60 @@ def PPGMLEM(
     saved_indices_list = []
     cost_history = [] if isCostFunction else None
 
-    description = f"AOT-BioMaps -- PPGMLEM ({matrix_type}) ---- {tumor_str} TUMOR ---- {device.upper()}"
+    description = f"AOT-BioMaps -- PPGMLEM ({matrix_type}) with {potential_type.name} (shape: {potential_shape.name}, r: {potential_radius}) β={beta} ---- {tumor_str} TUMOR ---- {device.upper()}"
     iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
 
     for it in iterator:
-        # Forward projection
+        # 1. Forward projection
         q_flat = forward_projection(SMatrix, lambda_flat)
 
-        # Compute ratio: y / (A*λ + ε)
-        ratio = y_flat / (q_flat + 1e-10)
+        # 2. Compute potential Gradient & Hessian dynamically
+        grad_U, hess_U, U_value = get_potential_function(
+            potential_type, SMatrix, lambda_flat, 
+            beta=beta, delta=delta, shape=potential_shape, radius=potential_radius,
+            compute_grad=True, compute_hess=True, compute_energy=isCostFunction
+        )
 
-        # Backward projection: A^T * (y / (A*λ + ε))
+        # 3. Track cost function (Negative Poisson LLH + Penalty)
+        if isCostFunction:
+            q_safe = xp.maximum(q_flat, 1e-10)
+            nllh = xp.sum(q_safe - y_flat * xp.log(q_safe))
+            cost_history.append(float(nllh + U_value))
+
+        # 4. Compute ratio: y / (A*λ + ε)
+        ratio = y_flat / xp.maximum(q_flat, 1e-10)
+
+        # 5. Backward projection: c_flat = A^T * (y / Ax)
         c_flat = backward_projection(SMatrix, ratio)
 
-        # Compute potential Hessian
-        _, hess_U, _ = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta, delta=delta)
+        # 6. Correct mathematical gradient formulation for Poisson
+        # EM Gradient direction = c_flat - sensitivity
+        grad_EM = c_flat - sens_img
+        
+        # Total Gradient = grad_EM - grad_U (We want to maximize LLH and minimize U)
+        total_grad = grad_EM - grad_U
 
-        # Compute sensitivity (A^T * 1)
-        sensitivity = backward_projection(SMatrix, xp.ones_like(q_flat))
+        # 7. Preconditioned Update stabilized by Hessian and Gamma
+        # denom = sensitivity + delta * hess_U + gamma
+        denom = sens_img + delta * hess_U + gamma
+        
+        # lambda_new = lambda + alpha * (Total_Gradient / Denominator)
+        lambda_flat = lambda_flat + alpha * (total_grad / xp.maximum(denom, 1e-10))
 
-        # Apply preconditioner to c_flat: M^-1 * A^T * (y / (A*λ + ε))
-        if preconditioner_inv is not None:
-            c_flat = apply_preconditioner(c_flat, preconditioner_inv, SMatrix)
-
-        # Apply preconditioner to sensitivity: M^-1 * (A^T * 1)
-        if preconditioner_inv is not None:
-            sensitivity = apply_preconditioner(sensitivity, preconditioner_inv, SMatrix)
-
-        # Apply preconditioner to hess_U: M^-1 * diag(H_U)
-        if preconditioner_inv is not None:
-            hess_U = apply_preconditioner(hess_U, preconditioner_inv, SMatrix)
-
-        # PPGMLEM update: λ_new = λ + β * (M^-1 * A^T * (y / (A*λ + ε) - 1)) / (M^-1 * (A^T * 1 + δ * diag(H_U) + γ))
-        lambda_flat = lambda_flat + beta * (c_flat - 1) / (sensitivity + delta * hess_U + gamma)
-
-        # Clamp to non-negative
+        # 8. Clamp to non-negative
         lambda_flat = clamp_positive(SMatrix, lambda_flat)
 
-        # Compute cost function if requested
-        if isCostFunction:
-            cost_history.append(cost_function(SMatrix, lambda_flat, y_flat, optimizer=OptimizerType.PPGMLEM, beta=beta, delta=delta))
-
         if isSavingEachIteration and it in save_indices:
-            if device == 'gpu' and CUPY_AVAILABLE:
+            if check_gpu_available(SMatrix):
                 saved_lambda.append(cp.asnumpy(lambda_flat.reshape(Z, X)))
             else:
                 saved_lambda.append(lambda_flat.reshape(Z, X).copy())
             saved_indices_list.append(it)
 
-    if device == 'gpu' and CUPY_AVAILABLE:
+    if check_gpu_available(SMatrix):
         cp.cuda.Stream.null.synchronize()
         final_result = cp.asnumpy(lambda_flat.reshape(Z, X))
     else:
         final_result = lambda_flat.reshape(Z, X)
 
-    if isSavingEachIteration:
-        return saved_lambda, saved_indices_list, cost_history
-    else:
-        return final_result, None, cost_history
-    
+    return (saved_lambda, saved_indices_list, cost_history) if isSavingEachIteration else (final_result, None, cost_history)

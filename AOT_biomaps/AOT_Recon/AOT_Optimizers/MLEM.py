@@ -61,9 +61,14 @@ def MLEM(
     sens_img = backward_projection(SMatrix, xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32)+1e-10)
     sens_img = xp.maximum(sens_img, denominator_threshold)
 
-    save_indices = list(range(0, numIterations, max(1, numIterations // max_saves)))
-    if save_indices[-1] != numIterations - 1:
-        save_indices.append(numIterations - 1)
+    # Setup save indices
+    if numIterations <= max_saves:
+        save_indices = list(range(numIterations))
+    else:
+        step = max(1, numIterations // max_saves)
+        save_indices = list(range(0, numIterations, step))
+        if save_indices[-1] != numIterations - 1:
+            save_indices.append(numIterations - 1)
 
     saved_lambda = []
     saved_indices_list = []

@@ -5,7 +5,7 @@ Penalized Iterative Gradient Descent (PIGD) reconstruction algorithm.
 Uses unified SMatrix interface and ReconTools functions.
 Single unified function that works with any SMatrix type (CSR, SELL, DENSE) and any device (CPU, GPU).
 
-Supports potential functions: QUADRATIC, HUBER, RELATIVE_DIFFERENCE
+Supports spatial potential functions: QUADRATIC, HUBER, RELATIVE_DIFFERENCE
 """
 
 import numpy as np
@@ -13,10 +13,10 @@ from tqdm import trange
 from typing import Optional, Union, Tuple
 
 from AOT_biomaps.AOT_Recon.ReconTools import (
-    check_gpu_available, estimate_operator_norm, forward_projection, backward_projection, 
-    clamp_positive, get_potential_function, cost_function, _get_array_module
+    estimate_operator_norm, forward_projection, backward_projection, 
+    clamp_positive, get_potential_function, _get_array_module, check_gpu_available
 )
-from AOT_biomaps.AOT_Recon.ReconEnums import OptimizerType, PotentialType
+from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, PotentialShapeType
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
@@ -33,11 +33,13 @@ def PIGD(
     SMatrix: Union['SMatrix_DENSE', 'SMatrix_CSR', 'SMatrix_SELL'],
     y: Union[np.ndarray, 'cp.ndarray'],
     numIterations: int = 100,
-    alpha: float = 1.0,      # Step size (learning rate)
-    beta: float = 1.0,       # Regularization weight
-    delta: float = 0.01,     # Parameter for potential function (e.g., Huber threshold)
-    eta: Optional[float] = None, # Parameter for the Lipschitz constant estimation (must be < 2 for convergence and > 1 for faster convergence). Useless if alpha is a float.
+    alpha: Union[float, str] = "auto",     
+    beta: float = 1.0,      
+    delta: float = 0.01,     
+    eta: Optional[float] = None, 
     potential_type: PotentialType = PotentialType.QUADRATIC,
+    potential_shape: PotentialShapeType = PotentialShapeType.CROSS,
+    potential_radius: int = 2,
     isSavingEachIteration: bool = True,
     isCostFunction: bool = False,
     withTumor: bool = True,
@@ -53,19 +55,18 @@ def PIGD(
         SMatrix: SMatrix instance (already allocated)
         y: Measurement data (shape: (T, N))
         numIterations: Number of iterations
-        alpha: Step size parameter
+        alpha: Step size parameter (float or 'auto' for power method estimation of Lipschitz constant)
         beta: Regularization weight
         delta: Additional parameter for potential functions
-        eta: Parameter for the Lipschitz constant estimation (must be < 2 for convergence and > 1 for faster convergence). Useless if alpha is a float.
-        potential_type: Type of potential function (QUADRATIC, HUBER, RELATIVE_DIFFERENCE)
+        eta: Parameter for the Lipschitz constant estimation.
+        potential_type: Type of spatial potential function.
+        potential_shape: Neighborhood shape (PotentialShapeType enum).
+        potential_radius: Neighborhood radius in pixels.
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
         withTumor: Boolean for description only
         max_saves: Maximum number of intermediate saves
         show_logs: If True, shows progress bar
-        
-    Returns:
-        tuple: (reconstructed_image, saved_indices, cost_history)
     """
     tumor_str = "WITH" if withTumor else "WITHOUT"
     device = SMatrix.device
@@ -75,13 +76,13 @@ def PIGD(
     ZX = Z * X
 
     if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
-        raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
+        raise ValueError(f"Shape mismatch: y={y.shape}, SMatrix T={SMatrix.T}, N={SMatrix.N}.")
 
     y_flat = xp.asarray(y.T.flatten().astype(xp.float32))
     lambda_flat = xp.full(ZX, 0.1, dtype=xp.float32)
 
     # Pre-calculate sensitivity image (A^T * 1) for diagonal preconditioning
-    sens_img = backward_projection(SMatrix, xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32)+1e-10)
+    sens_img = backward_projection(SMatrix, xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32) + 1e-10)
     inv_sens = 1.0 / xp.maximum(sens_img, 1e-8)
 
     if alpha == "auto":
@@ -89,34 +90,39 @@ def PIGD(
             print("Warning: eta is not set for power method estimation of step size. Using default value of 1.9.")
             eta = 1.9
         if eta >= 2.0 or eta <= 1.0:
-            print(f"Warning: For power method estimation of step size, eta should be in (1.0, 2.0) for convergence and faster convergence. Current value: {eta}. Proceeding with the given value, but consider adjusting it for better performance.")
+            print(f"Warning: eta should be in (1.0, 2.0) for optimal convergence. Current value: {eta}.")
+        
         # Estimate Lipschitz constant using power method
         L_estimate = estimate_operator_norm(SMatrix, num_iters=20)
         alpha = eta / L_estimate if L_estimate > 0 else 1.0
         print(f"Estimated Lipschitz constant: {L_estimate:.4f}, using step size alpha: {alpha:.5f}")
 
-
-    save_indices = list(range(0, numIterations, max(1, numIterations // max_saves)))
-    if save_indices[-1] != numIterations - 1:
-        save_indices.append(numIterations - 1)
+    # Setup save indices
+    if numIterations <= max_saves:
+        save_indices = list(range(numIterations))
+    else:
+        step = max(1, numIterations // max_saves)
+        save_indices = list(range(0, numIterations, step))
+        if save_indices[-1] != numIterations - 1:
+            save_indices.append(numIterations - 1)
 
     saved_lambda = []
     saved_indices_list = []
     cost_history = [] if isCostFunction else None
 
-    description = f"AOT-BioMaps -- PIGD ({matrix_type}) ---- {tumor_str} TUMOR ---- {device.upper()}"
+    description = f"AOT-BioMaps -- PIGD ({matrix_type}) with {potential_type.name} (shape: {potential_shape.name}, r: {potential_radius}) β={beta} ---- {tumor_str} TUMOR ---- {device.upper()}"
     iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
 
     for it in iterator:
         # 1. Forward projection
         q_flat = forward_projection(SMatrix, lambda_flat)
         
-        # 2. Compute potential gradient (Hessian is not used in PIGD)
-        # Gradient of potential U(lambda)
-        grad_U, _ , U_value = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta, delta=delta)
-        if grad_U is None: 
-            grad_U = xp.zeros_like(lambda_flat)
-            U_value = 0.0
+        # 2. Compute potential gradient dynamically (Hessian is not used in PIGD)
+        grad_U, _ , U_value = get_potential_function(
+            potential_type, SMatrix, lambda_flat, 
+            beta=beta, delta=delta, shape=potential_shape, radius=potential_radius,
+            compute_grad=True, compute_hess=False, compute_energy=isCostFunction
+        )
 
         # 3. Compute cost history
         if isCostFunction:
@@ -125,7 +131,6 @@ def PIGD(
             cost_history.append(float(llh + U_value))
 
         # 4. Compute gradient of fidelity term: A^T * (A*lambda - y)
-        # Note: (q_flat - y_flat) is the gradient of the Gaussian log-likelihood
         # For Poisson, we use the normalized residual (1 - y/Ax)
         residual = 1.0 - (y_flat / xp.maximum(q_flat, 1e-10))
         grad_fidelity = backward_projection(SMatrix, residual)
@@ -139,9 +144,16 @@ def PIGD(
         lambda_flat = clamp_positive(SMatrix, lambda_flat)
 
         if isSavingEachIteration and it in save_indices:
-            saved_lambda.append(lambda_flat.reshape(Z, X).get() if hasattr(lambda_flat, 'get') else lambda_flat.reshape(Z, X).copy())
+            if check_gpu_available(SMatrix):
+                saved_lambda.append(cp.asnumpy(lambda_flat.reshape(Z, X)))
+            else:
+                saved_lambda.append(lambda_flat.reshape(Z, X).copy())
             saved_indices_list.append(it)
 
-    final_result = lambda_flat.reshape(Z, X).get() if hasattr(lambda_flat, 'get') else lambda_flat.reshape(Z, X)
+    if check_gpu_available(SMatrix):
+        cp.cuda.Stream.null.synchronize()
+        final_result = cp.asnumpy(lambda_flat.reshape(Z, X))
+    else:
+        final_result = lambda_flat.reshape(Z, X)
 
     return (saved_lambda, saved_indices_list, cost_history) if isSavingEachIteration else (final_result, None, cost_history)

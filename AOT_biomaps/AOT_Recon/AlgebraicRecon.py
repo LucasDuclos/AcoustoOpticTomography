@@ -3,7 +3,7 @@ import warnings
 from AOT_biomaps.Config import config
 
 from ._mainRecon import Recon
-from .ReconEnums import NoiseType, ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, PreconditionerType
+from .ReconEnums import NoiseType, ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, PreconditionerType, PotentialShapeType
 from .AOT_Optimizers import MLEM, LS, MAPEM, DEPIERRO, PDHG, PGC, PPGMLEM, LBFGS, PIGD
 from .AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from .AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
@@ -45,7 +45,7 @@ ALGORITHM_FORMULAS = {
         "required_params": ["alpha"],
         "constraints": {
             "alpha": "> 0 or 'auto'",
-            "eta": "1 < and < 2 for faster convergence",
+            "eta": "< 2",
             "numIterations": "> 0",
         },
         "notes": "Convergence can be slow; consider using accelerated methods",
@@ -102,7 +102,7 @@ ALGORITHM_FORMULAS = {
         "constraints": {
             "beta": ">= 0",
             "delta": ">= 0",
-            "eta": "1 < and < 2 for faster convergence",
+            "eta": "< 2",
             "denominatorThreshold": "> 0",
             "numIterations": "> 0",
         },
@@ -149,7 +149,7 @@ ALGORITHM_FORMULAS = {
             "beta": ">= 0",
             "alpha": "> 0 or 'auto'",
             "delta": ">= 0",
-            "eta": "1 < and < 2 for faster convergence",
+            "eta": "< 2",
             "numIterations": "> 0",
         },
         "notes": "α is the step size, β regulates the potential influence. The inverse of the sensitivity (diag(AT*1)) acts as the diagonal preconditioner for the gradient update.",
@@ -223,7 +223,7 @@ class AlgebraicRecon(Recon):
         isComplexeRecon: bool = False,
         device: Optional[str] = None,
         # Preconditioning
-        preconditionerType: PreconditionerType = PreconditionerType.NONE,
+        preconditionerType: Optional[PreconditionerType] = PreconditionerType.NONE,
         # Regularization parameters
         alpha: Optional[float] = None,
         beta: Optional[float] = None,
@@ -237,8 +237,8 @@ class AlgebraicRecon(Recon):
         reshufflePeriod: Optional[int] = None,
         noiseType: Optional[NoiseType] = NoiseType.GAUSSIAN,
         # Potential function parameters
-        corner: Optional[float] = None,
-        face: Optional[float] = None,
+        PotentialShape: Optional[PotentialShapeType] = PotentialShapeType.CROSS,
+        PotentialRadius: Optional[int] = 2,
         **kwargs
     ):
         """
@@ -269,8 +269,8 @@ class AlgebraicRecon(Recon):
             tau: Primal step size for PDHG (default: None)
             sigma: Dual step size for PDHG (default: None)
             noiseType: Type of noise (NoiseType enum, default: GAUSSIAN) for PDHG if gaussian -> L2 data fidelity, if poisson -> KL divergence
-            corner: Corner parameter for potential functions (default: computed value)
-            face: Face parameter for potential functions (default: computed value)
+            PotentialShape: Shape parameter for potential functions (default: PotentialShapeType.CROSS). Useless for TOTAL_VARIATION potential which use cross shape by default.
+            PotentialRadius: Radius parameter for potential functions (default: 2). Useless for TOTAL_VARIATION potential which use radius = 1 by default.
             **kwargs: Additional keyword arguments
         
         Raises:
@@ -329,8 +329,8 @@ class AlgebraicRecon(Recon):
         self.reshufflePeriod = reshufflePeriod
         
         # Set corner and face with defaults
-        self.corner = corner if corner is not None else (0.5 - np.sqrt(2)/4) / np.sqrt(2)
-        self.face = face if face is not None else 0.5 - np.sqrt(2)/4
+        self.PotentialShape = PotentialShape
+        self.PotentialRadius = PotentialRadius
         
         # Initialize reconstruction results
         self.reconPhantom: List[np.ndarray] = []
@@ -811,9 +811,11 @@ class AlgebraicRecon(Recon):
                 y=y,
                 numIterations=self.numIterations,
                 preconditioner_type=self.preconditionerType,
-                beta=self.beta if self.beta is not None else 1.0,
-                delta=self.delta if self.delta is not None else 0.01,   
-                potential_type=self.potentialFunction,             
+                beta=self.beta,
+                delta=self.delta,   
+                potential_type=self.potentialFunction,  
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -826,9 +828,11 @@ class AlgebraicRecon(Recon):
                 y=y,
                 numIterations=self.numIterations,
                 preconditioner_type=self.preconditionerType,
-                beta=self.beta if self.beta is not None else 1.0,
-                delta=self.delta if self.delta is not None else 0.01,   
-                potential_type=self.potentialFunction,             
+                beta=self.beta,
+                delta=self.delta,   
+                potential_type=self.potentialFunction,  
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -846,6 +850,8 @@ class AlgebraicRecon(Recon):
                 beta=self.beta,
                 delta=self.delta,
                 potential_type=self.potentialFunction,
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -861,6 +867,8 @@ class AlgebraicRecon(Recon):
                 beta=self.beta,
                 delta=self.delta,
                 potential_type=self.potentialFunction,
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -878,6 +886,8 @@ class AlgebraicRecon(Recon):
                 beta=self.beta,
                 delta=self.delta,
                 potential_type=self.potentialFunction,
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -892,6 +902,8 @@ class AlgebraicRecon(Recon):
                 beta=self.beta,
                 delta=self.delta,
                 potential_type=self.potentialFunction,
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -909,8 +921,10 @@ class AlgebraicRecon(Recon):
                 beta=self.beta,
                 delta=self.delta,
                 gamma=self.gamma,
+                eta=self.eta,
                 potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -925,8 +939,10 @@ class AlgebraicRecon(Recon):
                 beta=self.beta,
                 delta=self.delta,
                 gamma=self.gamma,
+                eta=self.eta,
                 potential_type=self.potentialFunction,
-                preconditioner_type=self.preconditionerType,
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -946,6 +962,8 @@ class AlgebraicRecon(Recon):
                 delta=self.delta,
                 eta=self.eta,
                 potential_type=self.potentialFunction,
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -962,6 +980,8 @@ class AlgebraicRecon(Recon):
                 delta=self.delta,
                 eta=self.eta,
                 potential_type=self.potentialFunction,
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -981,6 +1001,8 @@ class AlgebraicRecon(Recon):
                 delta=self.delta,
                 eta=self.eta,
                 potential_type=self.potentialFunction,
+                potential_shape=self.PotentialShape,
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -997,6 +1019,8 @@ class AlgebraicRecon(Recon):
                 delta=self.delta,
                 eta=self.eta,
                 potential_type=self.potentialFunction,
+                potential_shape=self.PotentialShape,    
+                potential_radius=self.PotentialRadius,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,

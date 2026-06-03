@@ -35,12 +35,12 @@ def PDHG(
     SMatrix: Union['SMatrix_DENSE', 'SMatrix_CSR', 'SMatrix_SELL'],
     y: Union[np.ndarray, 'cp.ndarray'],
     numIterations: int = 100,
-    beta: float = 1.0,         # TV regularization weight parameter (lambda)
-    gamma: float = 1.0,        # Scaling factor balancing the tau/sigma step ratio
-    theta: float = 1.0,        # Extrapolation parameter for primal variable (relaxation step)
+    beta: float = 1.0,         
+    gamma: float = 1.0,        
+    theta: float = 1.0,        
     tau: Union[float, str] = "auto",
     sigma: Union[float, str] = "auto",
-    num_subsets: int = 1,      # Number of subsets for stochastic acoustic emissions acceleration
+    num_subsets: int = 1,     
     reshuffle_period: int = 10,
     noise_type: NoiseType = NoiseType.GAUSSIAN,
     preconditioner_type: PreconditionerType = PreconditionerType.NONE,

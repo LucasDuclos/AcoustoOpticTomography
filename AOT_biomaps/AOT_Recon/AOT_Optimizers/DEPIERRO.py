@@ -13,8 +13,8 @@ import numpy as np
 from tqdm import trange
 from typing import Optional, Union, Tuple
 
-from AOT_biomaps.AOT_Recon.ReconTools import _get_array_module, apply_preconditioner, forward_projection, backward_projection, clamp_positive, get_potential_function, check_gpu_available
-from AOT_biomaps.AOT_Recon.ReconEnums import OptimizerType, PotentialType, PreconditionerType
+from AOT_biomaps.AOT_Recon.ReconTools import _get_array_module, forward_projection, backward_projection, clamp_positive, get_potential_function, check_gpu_available
+from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, PotentialShapeType
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
@@ -34,6 +34,8 @@ def DEPIERRO(
     beta: float = 1.0,
     delta: float = 1.5,
     potential_type: PotentialType = PotentialType.QUADRATIC,
+    potential_shape: PotentialShapeType = PotentialShapeType.CROSS,
+    potential_radius: int = 2,
     isSavingEachIteration: bool = True,
     isCostFunction: bool = False,
     withTumor: bool = True,
@@ -47,9 +49,9 @@ def DEPIERRO(
     any SMatrix type (CSR, SELL, DENSE) and any device (CPU, GPU).
     
     Supports potential functions:
-    - QUADRATIC: p(u,v) = 0.5 * beta * (u-v)^2
-    - HUBER: p(u,v) = beta * (0.5 * (u-v)^2 if |u-v| <= delta else delta * (|u-v| - 0.5 * delta))
-    - RELATIVE_DIFFERENCE: p(u,v) = beta * (u-v)^2 / (v + epsilon)
+    - QUADRATIC: p(u,v) = 0.5 * β * (u-v)^2
+    - HUBER: p(u,v) = β * (0.5 * (u-v)^2 if |u-v| <= δ else δ * (|u-v| - 0.5 * δ))
+    - RELATIVE_DIFFERENCE: p(u,v) = β * (u-v)^2 / (v + ε)
         
     Supports preconditioning:
     - DIAGONAL: Diagonal preconditioning using A^T * 1 (NECESSARY FOR CONVERGENCE)
@@ -61,6 +63,8 @@ def DEPIERRO(
         beta: Regularization parameter (weight for potential)
         delta: Additional parameter for DEPIERRO
         potential_type: Type of potential function to use
+        potential_shape: Neighborhood shape (PotentialShapeType enum)
+        potential_radius: Neighborhood radius in pixels
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
         withTumor: Boolean for description only
@@ -102,34 +106,42 @@ def DEPIERRO(
     saved_indices_list = []
     cost_history = [] if isCostFunction else None
 
-    description = f"AOT-BioMaps -- DEPIERRO ({matrix_type}) ---- {tumor_str} TUMOR ---- {device.upper()}"
+    description = f"AOT-BioMaps -- DEPIERRO ({matrix_type}) with {potential_type.name} potential (shape :{potential_shape.name} and radius: {potential_radius}) β={beta} & δ={delta}  ---- {tumor_str} TUMOR ---- {device.upper()}"
     iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
 
     for it in iterator:
         # Forward projection
         q_flat = forward_projection(SMatrix, lambda_flat)
 
-        # Compute potential and its Hessian
-        _, hess_U, U_value = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta, delta=delta)
+        grad_U, hess_U, U_value = get_potential_function(
+            potential_type, SMatrix, lambda_flat, 
+            beta=beta, delta=delta, shape=potential_shape, radius=potential_radius,
+            compute_grad=True, compute_hess=True, compute_energy=isCostFunction
+        )
 
         if isCostFunction:
             q_safe = xp.maximum(q_flat, 1e-10)
-            data_fidelity = xp.sum(q_safe - y_flat * xp.log(q_safe))
-            total_cost = float(data_fidelity + U_value)
-            cost_history.append(total_cost)
+            # Poisson Log-Likelihood = sum(y * log(q) - q)
+            # We want to minimize the Negative LLH + U_value
+            nllh = xp.sum(q_safe - y_flat * xp.log(q_safe))
+            cost_history.append(float(nllh + U_value))
 
-        # Compute ratio: y / (A*λ + ε)
-        ratio = y_flat / (q_flat + 1e-10)
+        # 4. Compute EM Gradient: A^T * (y / Ax - 1)
+        # Note: (y - q) / q is mathematically identical to (y/q) - 1
+        ratio = (y_flat - q_flat) / xp.maximum(q_flat, 1e-10)
+        grad_EM = backward_projection(SMatrix, ratio)
 
-        # Backprojection: A^T * (y / (A*λ + ε))
-        c_flat = backward_projection(SMatrix, ratio) / sens_img
+        # 5. De Pierro's Surrogate Update Rule
+        # Denominator = A^T 1 + λ * Hessian_U
+        denom = sens_img + lambda_flat * hess_U
+        
+        # Numerator = λ * (Grad_EM - Grad_U)
+        num = lambda_flat * (grad_EM - grad_U)
 
-        hess_U = hess_U / sens_img
+        # Multiplicative/Additive Surrogate update
+        lambda_flat = lambda_flat + num / xp.maximum(denom, 1e-10)
 
-        # DEPIERRO update: λ_new = λ * (M^-1 * A^T * (y / (A*λ + ε))) / (M^-1 * (1 + δ * ∇²U(λ)))
-        lambda_flat = lambda_flat * c_flat / (1 + delta * hess_U)
-
-        # Clamp to non-negative
+        # 6. Enforce non-negativity constraint
         lambda_flat = clamp_positive(SMatrix, lambda_flat)
 
         if isSavingEachIteration and it in save_indices:

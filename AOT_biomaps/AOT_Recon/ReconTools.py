@@ -23,7 +23,7 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
 
-from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, PreconditionerType, OptimizerType
+from AOT_biomaps.AOT_Recon.ReconEnums import PotentialShapeType, PotentialType, PreconditionerType, OptimizerType
 
 def check_gpu_available(SMatrix) -> bool:
     """Check if GPU operations are available."""
@@ -115,7 +115,6 @@ def axpby(SMatrix, x, y, a, b):
                 pass
     
     return a * x + b * y
-
 
 def axpy(SMatrix, x, y, a):
     """Compute x + a*y. Uses CUDA kernel when available."""   
@@ -324,301 +323,284 @@ def cost_function_MAPEM(SMatrix, lambda_flat, y_flat, potential_type, beta):
 # POTENTIAL FUNCTIONS
 # =============================================================================
 
-def get_potential_function(potential_type, SMatrix, U, beta, delta=None):
+def build_neighborhood_offsets(shape=PotentialShapeType.CROSS, radius=1):
     """
-    Get potential function based on potential_type.
+    Generates the spatial offsets (dz, dx) and associated weights for MRF gradients.
+    It returns only the "half-neighborhood" to prevent computing identical edges twice 
+    (since edge A-B is the same as B-A), which doubles GPU performance.
+    
+    Args:
+        shape (PotentialShapeType): The shape of the neighborhood.
+        radius (int): Maximum neighborhood distance.
+        
+    Returns:
+        list of tuples: [(dz, dx, weight), ...]
+    """
+    # 1. Vérification de la forme AVANT la boucle (Sécurité)
+    if shape not in [PotentialShapeType.CROSS, PotentialShapeType.SQUARE, PotentialShapeType.CIRCLE]:
+        raise ValueError(f"Unsupported neighborhood shape: {shape}, must be one of {list(PotentialShapeType)}.")
+
+    offsets = []
+    total_weight = 0.0
+    
+    # Iterate over the lower half of the 2D space (dz >= 0)
+    for dz in range(0, radius + 1):
+        for dx in range(-radius, radius + 1):
+            # Skip the center pixel itself, and skip the left half of the same row (dz=0)
+            # to strictly capture only half of the neighborhood edges.
+            if dz == 0 and dx <= 0:
+                continue
+                
+            dist_l2 = np.sqrt(dz**2 + dx**2)
+            dist_l1 = abs(dz) + abs(dx)
+            dist_linf = max(abs(dz), abs(dx))
+            
+            # 2. Vérification géométrique de l'appartenance du pixel
+            is_valid = False
+            if shape == PotentialShapeType.CROSS:
+                is_valid = (dist_l1 <= radius)
+            elif shape == PotentialShapeType.SQUARE:
+                is_valid = (dist_linf <= radius)
+            elif shape == PotentialShapeType.CIRCLE:
+                is_valid = (dist_l2 <= radius + 1e-5)
+
+            if is_valid:
+                # Standard isotropic weight is 1 / Euclidean distance
+                weight = 1.0 / dist_l2
+                offsets.append((dz, dx, weight))
+                total_weight += weight * 2.0 # Multiply by 2 since we only compute half-edges
+                
+    # Normalize weights so the sum equals the standard 4-connectivity base (sum = 4.0).
+    # This ensures your 'beta' parameter keeps the same scale regardless of the radius.
+    normalization_factor = 4.0 / (total_weight + 1e-10)
+    offsets = [(dz, dx, w * normalization_factor) for dz, dx, w in offsets]
+    
+    return offsets
+
+def get_potential_function(potential_type, SMatrix, U, beta, shape, radius, delta=None, 
+                           compute_grad=True, compute_hess=True, compute_energy=True):
+    """
+    Get potential function derivatives and energy dynamically.
+    Returns (grad_U, hess_U, U_value). Elements are None if their compute flag is False.
     """
     xp = _get_array_module(SMatrix)
+    
     if potential_type == PotentialType.NONE:
-        return xp.zeros_like(U), xp.zeros_like(U), 0.0
-    elif potential_type == PotentialType.QUADRATIC:
-        return quadratic_potential(SMatrix, U, beta)
+        return (xp.zeros_like(U) if compute_grad else None, 
+                xp.zeros_like(U) if compute_hess else None, 
+                0.0 if compute_energy else None)
+                        
+    if potential_type == PotentialType.QUADRATIC:
+        return quadratic_potential(SMatrix, U, beta, shape, radius, compute_grad, compute_hess, compute_energy)
     elif potential_type == PotentialType.HUBER:
-        return huber_potential(SMatrix, U, beta, delta)
+        return huber_potential(SMatrix, U, beta, delta, shape, radius, compute_grad, compute_hess, compute_energy)
     elif potential_type == PotentialType.RELATIVE_DIFFERENCE:
-        return relative_difference_potential(SMatrix, U, beta, delta)
+        return relative_difference_potential(SMatrix, U, beta, delta, shape, radius, compute_grad, compute_hess, compute_energy)
     elif potential_type == PotentialType.TOTAL_VARIATION:
-        return total_variation_potential(SMatrix, U, beta)
+        raise ValueError("Total Variation potential is not differentiable and thus not implemented in this framework. Consider using Huber potential with a small delta for an edge-preserving approximation.")
     else:
         raise ValueError(f"Unsupported potential type: {potential_type}")
 
-def quadratic_potential(SMatrix, U, beta):
+def quadratic_potential(SMatrix, U, beta, shape="cross", radius=1, 
+                        compute_grad=True, compute_hess=True, compute_energy=True):
     """
-    Quadratic potential: 0.5 * beta * ||x||^2
+    True Spatial Quadratic Potential (Tikhonov / Markov Random Field).
+    Penalizes the squared difference between neighboring pixels to smooth the image.
+    Uses vectorized 2D array shifting for extreme GPU performance (no atomics).
     
     Returns:
-        tuple: (grad_U, hess_U, U_value)
-        - grad_U: Gradient of the potential (same shape as U)
-        - hess_U: Hessian diagonal of the potential (same shape as U)
-        - U_value: Total potential energy (scalar)
-    
-    Compatible with: All SMatrix types (DENSE, CSR, SELL) and all devices (CPU, GPU)
-    """    
-    xp = _get_array_module(SMatrix)
-    N = U.size if hasattr(U, 'size') else len(U)
-    
-    # Try GPU with CUDA kernel
-    if check_gpu_available(SMatrix):
-        try:
-            # Allocate output arrays on GPU
-            grad_U_gpu = cp.zeros_like(U)
-            hess_U_gpu = cp.zeros_like(U)
-            U_value_gpu = cp.zeros(1, dtype=cp.float32)
-            
-            # Get kernel
-            kernel = SMatrix.sparse_mod.get_function('quadratic_potential_kernel')
-            
-            # Launch kernel
-            threads = 256
-            blocks = (N + threads - 1) // threads
-            kernel(
-                grid=(blocks, 1, 1), block=(threads, 1, 1),
-                args=[grad_U_gpu.data.ptr, hess_U_gpu.data.ptr, U_value_gpu.data.ptr,
-                      U.data.ptr if hasattr(U, 'data') else U, cp.float32(beta), cp.int32(N)]
-            )
-            cp.cuda.Stream.null.synchronize()
-            
-            return grad_U_gpu, hess_U_gpu, U_value_gpu[0]
-        except Exception:
-            # Fall back to CPU implementation
-            pass
-    
-    # CPU or fallback implementation
-    grad_U = beta * U
-    hess_U = beta * xp.ones_like(U)
-    U_value = 0.5 * beta * xp.sum(U**2)
-    
-    return grad_U, hess_U, U_value
-
-
-def huber_potential(SMatrix, U, beta, delta=0.01):
-    """
-    Huber potential for robust regularization.
-    
-    p(u, delta) = 
-        - 0.5 * u^2, if |u| <= delta
-        - delta * |u| - 0.5 * delta^2, otherwise
-    
-    Returns:
-        tuple: (grad_U, hess_U, U_value)
-        - grad_U: Gradient of the potential (same shape as U)
-        - hess_U: Hessian diagonal of the potential (same shape as U)
-        - U_value: Total potential energy (scalar)
-    
-    Compatible with: All SMatrix types (DENSE, CSR, SELL) and all devices (CPU, GPU)
+        tuple: (grad_U, hess_U, U_value). Elements are None if compute flag is False.
     """
     xp = _get_array_module(SMatrix)
-    N = U.size if hasattr(U, 'size') else len(U)
-    
-    # Try GPU with CUDA kernel
-    if check_gpu_available(SMatrix):
-        try:
-            # Allocate output arrays on GPU
-            grad_U_gpu = cp.zeros_like(U)
-            hess_U_gpu = cp.zeros_like(U)
-            
-            # Get kernels
-            grad_kernel = SMatrix.sparse_mod.get_function('huber_potential_kernel')
-            energy_kernel = SMatrix.sparse_mod.get_function('huber_potential_energy_kernel')
-            
-            # Launch gradient kernel
-            threads = 256
-            blocks = (N + threads - 1) // threads
-            grad_kernel(
-                grid=(blocks, 1, 1), block=(threads, 1, 1),
-                args=[grad_U_gpu.data.ptr, hess_U_gpu.data.ptr, cp.zeros(1, dtype=cp.float32).data.ptr,
-                      U.data.ptr if hasattr(U, 'data') else U, cp.float32(beta), cp.float32(delta), cp.int32(N)]
-            )
-            
-            # Compute energy on CPU (simpler for now)
-            abs_U = xp.abs(U)
-            mask_small = abs_U <= delta
-            mask_large = ~mask_small
-            U_value = 0.5 * beta * xp.sum(U[mask_small]**2) + beta * delta * xp.sum(abs_U[mask_large] - 0.5 * delta)
-            
-            cp.cuda.Stream.null.synchronize()
-            
-            return grad_U_gpu, hess_U_gpu, U_value
-        except Exception:
-            # Fall back to CPU implementation
-            pass
-    
-    # CPU or fallback implementation
-    abs_U = xp.abs(U)
-    
-    # Huber function and derivatives
-    mask_small = abs_U <= delta
-    mask_large = ~mask_small
-    
-    grad_U = xp.zeros_like(U)
-    grad_U[mask_small] = beta * U[mask_small]
-    grad_U[mask_large] = beta * delta * xp.sign(U[mask_large])
-    
-    hess_U = xp.zeros_like(U)
-    hess_U[mask_small] = beta
-    hess_U[mask_large] = 0.0
-    
-    U_value = xp.zeros((), dtype=xp.float32)
-    U_value += 0.5 * beta * xp.sum(U[mask_small]**2)
-    U_value += beta * delta * xp.sum(abs_U[mask_large] - 0.5 * delta)
-    
-    return grad_U, hess_U, U_value
-
-
-def relative_difference_potential(SMatrix, U, beta, delta=1.0):
-    """
-    Relative difference potential for edge-preserving regularization.
-    
-    p(u, v, beta) = beta * (u - v)^2 / (u + v + delta * |u - v|)
-    
-    Uses adjacency from build_adjacency_indices.
-    
-    Returns:
-        tuple: (grad_U, hess_U, U_value)
-        - grad_U: Gradient of the potential (same shape as U)
-        - hess_U: Hessian diagonal of the potential (same shape as U)
-        - U_value: Total potential energy (scalar)
-    
-    Compatible with: All SMatrix types (DENSE, CSR, SELL) and all devices (CPU, GPU)
-    """
-    xp = _get_array_module(SMatrix)
-    Z = SMatrix.Z
-    X = SMatrix.X
-    N = Z * X
-    
-    # Build adjacency indices
-    adj_indices = build_adjacency_indices(SMatrix)
-    num_edges = len(adj_indices)
-    
-    # Try GPU with CUDA kernel
-    if check_gpu_available(SMatrix):
-        try:
-            # Allocate output arrays on GPU
-            grad_U_gpu = cp.zeros_like(U)
-            hess_U_gpu = cp.zeros_like(U)
-            U_value_gpu = cp.zeros(1, dtype=cp.float32)
-            
-            # Convert adjacency indices to GPU array
-            adj_indices_gpu = cp.array(adj_indices, dtype=cp.int32)
-            
-            # Get kernel
-            kernel = SMatrix.sparse_mod.get_function('relative_difference_potential_kernel')
-            
-            # Launch kernel
-            threads = 256
-            blocks = (max(N, num_edges) + threads - 1) // threads
-            kernel(
-                grid=(blocks, 1, 1), block=(threads, 1, 1),
-                args=[grad_U_gpu.data.ptr, hess_U_gpu.data.ptr, U_value_gpu.data.ptr,
-                      U.data.ptr if hasattr(U, 'data') else U, adj_indices_gpu.data.ptr,
-                      cp.float32(beta), cp.float32(delta), cp.int32(N), cp.int32(num_edges)]
-            )
-            cp.cuda.Stream.null.synchronize()
-            
-            return grad_U_gpu, hess_U_gpu, U_value_gpu[0]
-        except Exception:
-            # Fall back to CPU implementation
-            pass
-    
-    # CPU or fallback implementation
-    grad_U = xp.zeros_like(U)
-    U_value = xp.zeros((), dtype=xp.float32)
-    
-    for edge in adj_indices:
-        i, j = edge
-        diff = U[i] - U[j]
-        
-        # Relative difference potential
-        denom = xp.sqrt(U[i]**2 + U[j]**2 + delta**2)
-        
-        # Gradient contributions
-        grad_U[i] += beta * diff / denom
-        grad_U[j] -= beta * diff / denom
-        
-        # Energy
-        U_value += beta * (xp.sqrt(U[i]**2 + U[j]**2 + delta**2) - delta)
-    
-    # Hessian is more complex, approximate as constant for now
-    hess_U = beta * xp.ones_like(U)
-    
-    return grad_U, hess_U, U_value
-
-
-def total_variation_potential(SMatrix, U, beta):
-    """
-    Smooth Isotropic Total Variation Potential and Gradient.
-    Used
-    """
-    xp = _get_array_module(SMatrix)
-    Z = SMatrix.Z
-    X = SMatrix.X
-    N = Z * X
-
-    if check_gpu_available(SMatrix):
-        try:
-            grad_U_gpu = cp.zeros_like(U)
-            U_value_gpu = cp.zeros(1, dtype=cp.float32)
-
-            kernel = SMatrix.sparse_mod.get_function('tv_potential_kernel')
-            threads = 256
-            blocks = (N + threads - 1) // threads
-
-            kernel(
-                grid=(blocks, 1, 1), block=(threads, 1, 1),
-                args=[grad_U_gpu.data.ptr, U_value_gpu.data.ptr,
-                      U.data.ptr if hasattr(U, 'data') else U,
-                      cp.float32(beta), cp.int32(Z), cp.int32(X)]
-            )
-            cp.cuda.Stream.null.synchronize()
-
-            hess_U_gpu = cp.zeros_like(U)
-            return grad_U_gpu, hess_U_gpu, float(U_value_gpu[0])
-        except Exception:
-            pass
-
-    # CPU Fallback (Smooth Isotropic TV)
-    grad_U = xp.zeros_like(U)
-    U_value = 0.0
-    eps = 1e-6
-
+    Z, X = SMatrix.Z, SMatrix.X
     U_img = U.reshape(Z, X)
-    grad_img = xp.zeros((Z, X), dtype=xp.float32)
+    
+    grad_img = xp.zeros_like(U_img) if compute_grad else None
+    hess_img = xp.zeros_like(U_img) if compute_hess else None
+    U_value = 0.0 if compute_energy else None
+    
+    # Get dynamic neighborhood offsets
+    offsets = build_neighborhood_offsets(shape=shape, radius=radius)
+    
+    for dz, dx, weight in offsets:
+        # Create dynamic slices for the center pixel and its neighbor
+        slice_c_z = slice(None, -dz) if dz > 0 else slice(None)
+        slice_n_z = slice(dz, None) if dz > 0 else slice(None)
+        
+        if dx > 0:
+            slice_c_x = slice(None, -dx)
+            slice_n_x = slice(dx, None)
+        elif dx < 0:
+            slice_c_x = slice(-dx, None)
+            slice_n_x = slice(None, dx)
+        else:
+            slice_c_x = slice(None)
+            slice_n_x = slice(None)
 
-    # Forward differences
-    df_z = xp.zeros((Z, X), dtype=xp.float32)
-    df_x = xp.zeros((Z, X), dtype=xp.float32)
-    df_z[:-1, :] = U_img[1:, :] - U_img[:-1, :]
-    df_x[:, :-1] = U_img[:, 1:] - U_img[:, :-1]
+        # Calculate spatial difference: U_i - U_j
+        diff = U_img[slice_c_z, slice_c_x] - U_img[slice_n_z, slice_n_x]
+        
+        # Accumulate Gradient
+        if compute_grad:
+            g = beta * weight * diff
+            grad_img[slice_c_z, slice_c_x] += g
+            grad_img[slice_n_z, slice_n_x] -= g
+            
+        # Accumulate Hessian (Constant for quadratic MRF)
+        if compute_hess:
+            h = beta * weight
+            hess_img[slice_c_z, slice_c_x] += h
+            hess_img[slice_n_z, slice_n_x] += h
+            
+        # Accumulate Energy
+        if compute_energy:
+            # e = 0.5 * beta * weight * (U_i - U_j)^2
+            U_value += 0.5 * beta * weight * float(xp.sum(diff**2))
 
-    # Norm of forward gradient
-    norm_forward = xp.sqrt(df_z**2 + df_x**2 + eps)
+    return (grad_img.flatten() if compute_grad else None, 
+            hess_img.flatten() if compute_hess else None, 
+            U_value)
 
-    # Divergence computation
-    div = xp.zeros((Z, X), dtype=xp.float32)
+def huber_potential(SMatrix, U, beta, delta=0.01, shape="cross", radius=1,
+                    compute_grad=True, compute_hess=True, compute_energy=True):
+    """
+    True Spatial Huber Potential.
+    Acts as a quadratic penalty for small differences (smoothing noise) 
+    and a linear penalty for large differences (preserving edges).
+    Uses vectorized 2D array shifting for extreme GPU performance.
+    """
+    xp = _get_array_module(SMatrix)
+    Z, X = SMatrix.Z, SMatrix.X
+    U_img = U.reshape(Z, X)
+    
+    grad_img = xp.zeros_like(U_img) if compute_grad else None
+    hess_img = xp.zeros_like(U_img) if compute_hess else None
+    U_value = 0.0 if compute_energy else None
 
-    # Forward contributions
-    div[:-1, :] += df_z[:-1, :] / norm_forward[:-1, :]
-    div[:, :-1] += df_x[:, :-1] / norm_forward[:, :-1]
+    # Get dynamic neighborhood offsets
+    offsets = build_neighborhood_offsets(shape=shape, radius=radius)
 
-    # Backward contributions
-    df_z_back = xp.zeros((Z, X), dtype=xp.float32)
-    df_x_back = xp.zeros((Z, X), dtype=xp.float32)
-    df_z_back[1:, :] = U_img[1:, :] - U_img[:-1, :]
-    df_x_back[:, 1:] = U_img[:, 1:] - U_img[:, :-1]
+    for dz, dx, weight in offsets:
+        # Create dynamic slices
+        slice_c_z = slice(None, -dz) if dz > 0 else slice(None)
+        slice_n_z = slice(dz, None) if dz > 0 else slice(None)
+        
+        if dx > 0:
+            slice_c_x = slice(None, -dx)
+            slice_n_x = slice(dx, None)
+        elif dx < 0:
+            slice_c_x = slice(-dx, None)
+            slice_n_x = slice(None, dx)
+        else:
+            slice_c_x = slice(None)
+            slice_n_x = slice(None)
 
-    norm_back = xp.sqrt(df_z_back**2 + df_x_back**2 + eps)
-    div[1:, :] -= df_z_back[1:, :] / norm_back[1:, :]
-    div[:, 1:] -= df_x_back[:, 1:] / norm_back[:, 1:]
+        # Calculate spatial difference
+        diff = U_img[slice_c_z, slice_c_x] - U_img[slice_n_z, slice_n_x]
+        
+        # Huber Logic (split into quadratic and linear regions)
+        abs_diff = xp.abs(diff)
+        mask_quad = abs_diff <= delta
+        mask_lin = ~mask_quad
+        
+        if compute_grad:
+            g = xp.zeros_like(diff)
+            g[mask_quad] = beta * weight * diff[mask_quad]
+            g[mask_lin] = beta * weight * delta * xp.sign(diff[mask_lin])
+            
+            grad_img[slice_c_z, slice_c_x] += g
+            grad_img[slice_n_z, slice_n_x] -= g
+            
+        if compute_hess:
+            h = xp.zeros_like(diff)
+            h[mask_quad] = beta * weight
+            # Hessian in the linear region is technically 0
+            
+            hess_img[slice_c_z, slice_c_x] += h
+            hess_img[slice_n_z, slice_n_x] += h
+            
+        if compute_energy:
+            e = xp.zeros_like(diff)
+            e[mask_quad] = 0.5 * beta * weight * diff[mask_quad]**2
+            e[mask_lin] = beta * weight * delta * (abs_diff[mask_lin] - 0.5 * delta)
+            
+            U_value += float(xp.sum(e))
 
-    # Final gradient (with negative sign)
-    grad_img = -beta * div
-    grad_U = grad_img.flatten()
+    return (grad_img.flatten() if compute_grad else None, 
+            hess_img.flatten() if compute_hess else None, 
+            U_value)
 
-    # Energy (TV norm)
-    U_value = float(beta * xp.sum(norm_forward))
+def relative_difference_potential(SMatrix, U, beta, delta=1.0, shape="cross", radius=1,
+                                  compute_grad=True, compute_hess=True, compute_energy=True):
+    """
+    Relative Difference Prior (RDP).
+    Designed specifically for emission tomography (PET/SPECT) and Poisson noise.
+    Smooths low-contrast regions strongly while preserving high-contrast edges.
+    """
+    xp = _get_array_module(SMatrix)
+    Z, X = SMatrix.Z, SMatrix.X
+    eps = 1e-8 # Safety constant to prevent division by zero (0/0)
+    
+    U_img = U.reshape(Z, X)
+    grad_img = xp.zeros_like(U_img) if compute_grad else None
+    hess_img = xp.zeros_like(U_img) if compute_hess else None
+    U_value = 0.0 if compute_energy else None
 
-    hess_U = xp.zeros_like(U)
-    return grad_U, hess_U, U_value
+    # Get dynamic neighborhood offsets
+    offsets = build_neighborhood_offsets(shape=shape, radius=radius)
+
+    for dz, dx, weight in offsets:
+        # Create dynamic slices
+        slice_c_z = slice(None, -dz) if dz > 0 else slice(None)
+        slice_n_z = slice(dz, None) if dz > 0 else slice(None)
+        
+        if dx > 0:
+            slice_c_x = slice(None, -dx)
+            slice_n_x = slice(dx, None)
+        elif dx < 0:
+            slice_c_x = slice(-dx, None)
+            slice_n_x = slice(None, dx)
+        else:
+            slice_c_x = slice(None)
+            slice_n_x = slice(None)
+
+        # Extract neighbors: u_i and u_j
+        u_i = U_img[slice_c_z, slice_c_x]
+        u_j = U_img[slice_n_z, slice_n_x]
+        
+        diff = u_i - u_j
+        abs_diff = xp.abs(diff)
+        sum_ij = u_i + u_j
+        
+        # Denominator: u_i + u_j + gamma * |u_i - u_j| + eps
+        denom = sum_ij + delta * abs_diff + eps
+        
+        if compute_grad:
+            # Gradient formulation for RDP
+            sign_diff = xp.sign(diff)
+            d_denom_dui = 1.0 + delta * sign_diff
+            
+            g = beta * weight * (2.0 * diff * denom - (diff**2) * d_denom_dui) / (denom**2)
+            
+            grad_img[slice_c_z, slice_c_x] += g
+            grad_img[slice_n_z, slice_n_x] -= g
+            
+        if compute_hess:
+            # We use an approximated constant Hessian for stability in OSL/De Pierro
+            # Exact Hessian for RDP can easily go negative, causing algorithms to explode
+            h = beta * weight * 2.0 / denom
+            
+            hess_img[slice_c_z, slice_c_x] += h
+            hess_img[slice_n_z, slice_n_x] += h
+            
+        if compute_energy:
+            # e = beta * weight * (u_i - u_j)^2 / denom
+            e = beta * weight * (diff**2) / denom
+            U_value += float(xp.sum(e))
+
+    return (grad_img.flatten() if compute_grad else None, 
+            hess_img.flatten() if compute_hess else None, 
+            U_value)
 
 def estimate_operator_norm(SMatrix, num_iters: int = 15) -> float:
     """
@@ -678,7 +660,6 @@ def gradient_2d(SMatrix, x):
     
     return grad_x_img.flatten(), grad_z_img.flatten()
 
-
 def divergence_2d(SMatrix, p_x, p_z):
     """
     Compute the 2D spatial divergence of a flattened dual vector field (p_x, p_z).
@@ -712,7 +693,6 @@ def divergence_2d(SMatrix, p_x, p_z):
     div_z[-1, :] = p_z_img[-2, :]
     
     return (div_x + div_z).flatten()
-
 
 def proj_tv(SMatrix, p, radius=1.0):
     """

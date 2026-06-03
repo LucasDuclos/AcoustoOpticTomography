@@ -99,7 +99,7 @@ def LS(
     if alpha == "auto":
         if eta is None:
             print("Warning: eta is not set for power method estimation of step size. Using default value of 1.9.")
-            eta = 1.9
+            eta = 1
         if eta >= 2.0 or eta <= 1.0:
             print(f"Warning: For power method estimation of step size, eta should be in (1.0, 2.0) for convergence and faster convergence. Current value: {eta}. Proceeding with the given value, but consider adjusting it for better performance.")
         # Estimate Lipschitz constant using power method

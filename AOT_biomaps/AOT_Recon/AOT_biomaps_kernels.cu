@@ -18,208 +18,7 @@
  * - UTIL: Utility operations
  */
 
-// ============================================================================
-// POTENTIAL FUNCTION KERNELS
-// ============================================================================
-
-/**
- * Kernel: quadratic_potential
- * Purpose: Compute quadratic potential: grad_U = alpha * U, hess_U = alpha, U_value = 0.5 * alpha * sum(U^2)
- */
 extern "C"{
-
-__global__ void quadratic_potential_kernel(
-    float* __restrict__ grad_U,
-    float* __restrict__ hess_U,
-    float* __restrict__ U_value,
-    const float* __restrict__ U,
-    float alpha,
-    int N
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
-    
-    // Gradient: d/du (0.5 * alpha * u^2) = alpha * u
-    grad_U[idx] = alpha * U[idx];
-    
-    // Hessian: d^2/du^2 (0.5 * alpha * u^2) = alpha
-    hess_U[idx] = alpha;
-    
-    // Energy: 0.5 * alpha * u^2
-    if (idx == 0) {
-        float sum_sq = 0.0f;
-        for (int i = 0; i < N; i++) {
-            sum_sq += U[i] * U[i];
-        }
-        U_value[0] = 0.5f * alpha * sum_sq;
-    }
-}
-
-/**
- * Kernel: huber_potential
- * Purpose: Compute Huber potential gradient, Hessian, and energy
- */
-__global__ void huber_potential_kernel(
-    float* __restrict__ grad_U,
-    float* __restrict__ hess_U,
-    float* __restrict__ U_value,
-    const float* __restrict__ U,
-    float alpha,
-    float delta,
-    int N
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
-    
-    float u = U[idx];
-    float abs_u = fabsf(u);
-    
-    // Huber potential and derivatives
-    if (abs_u <= delta) {
-        // Quadratic region
-        grad_U[idx] = alpha * u;
-        hess_U[idx] = alpha;
-    } else {
-        // Linear region
-        grad_U[idx] = alpha * delta * (u > 0 ? 1.0f : -1.0f);
-        hess_U[idx] = 0.0f;
-    }
-    
-    // Compute energy (reduction in separate kernel or on CPU)
-}
-
-/**
- * Kernel: huber_potential_energy
- * Purpose: Compute Huber potential energy (separate kernel for reduction)
- */
-__global__ void huber_potential_energy_kernel(
-    float* __restrict__ partial_sums,
-    const float* __restrict__ U,
-    float alpha,
-    float delta,
-    int N
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
-    
-    float u = U[idx];
-    float abs_u = fabsf(u);
-    
-    if (abs_u <= delta) {
-        partial_sums[idx] = 0.5f * alpha * u * u;
-    } else {
-        partial_sums[idx] = alpha * delta * (abs_u - 0.5f * delta);
-    }
-}
-
-/**
- * Kernel: relative_difference_potential
- * Purpose: Compute relative difference potential for edge-preserving regularization
- */
-__global__ void relative_difference_potential_kernel(
-    float* __restrict__ grad_U,
-    float* __restrict__ hess_U,
-    float* __restrict__ U_value,
-    const float* __restrict__ U,
-    const int* __restrict__ adj_indices,
-    float alpha,
-    float beta,
-    int N,
-    int num_edges
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
-    
-    // Initialize gradient and hessian for this voxel
-    if (idx == 0) {
-        for (int i = 0; i < N; i++) {
-            grad_U[i] = 0.0f;
-            hess_U[i] = 0.0f;
-        }
-        U_value[0] = 0.0f;
-    }
-    __syncthreads();
-    
-    // Each thread processes one edge
-    if (idx < num_edges) {
-        int i = adj_indices[2 * idx];
-        int j = adj_indices[2 * idx + 1];
-        
-        float diff = U[i] - U[j];
-        float denom = sqrtf(U[i] * U[i] + U[j] * U[j] + beta * beta);
-        
-        // Gradient contributions
-        float grad_contrib = alpha * diff / denom;
-        atomicAdd(&grad_U[i], grad_contrib);
-        atomicAdd(&grad_U[j], -grad_contrib);
-        
-        // Energy
-        atomicAdd(&U_value[0], alpha * (denom - beta));
-    }
-    __syncthreads();
-    
-    // Approximate Hessian (simplified)
-    if (idx < N) {
-        hess_U[idx] = alpha;
-    }
-}
-
-__global__ void tv_potential_kernel(
-    float* __restrict__ grad_U,
-    float* __restrict__ U_value,
-    const float* __restrict__ U,
-    float beta,
-    int Z,
-    int X
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total_pixels = Z * X;
-    if (idx >= total_pixels) return;
-
-    int z = idx / X;
-    int x = idx % X;
-    float eps = 1e-6f;
-
-    // Forward differences
-    float df_z = 0.0f;
-    float df_x = 0.0f;
-    if (z < Z - 1) df_z = U[idx + X] - U[idx];
-    if (x < X - 1) df_x = U[idx + 1] - U[idx];
-
-    // Norm of the forward gradient
-    float norm = sqrtf(df_z * df_z + df_x * df_x + eps);
-
-    // Contribution to the divergence (backward differences)
-    float div = 0.0f;
-
-    // Forward contribution (current pixel)
-    if (z < Z - 1) {
-        float norm_forward_z = sqrtf(df_z * df_z + (x < X - 1 ? powf(U[idx + X + 1] - U[idx + X], 2) : 0.0f) + eps);
-        div += df_z / norm_forward_z;
-    }
-    if (x < X - 1) {
-        float norm_forward_x = sqrtf(powf(z < Z - 1 ? U[idx + X + 1] - U[idx + 1] : 0.0f, 2) + df_x * df_x + eps);
-        div += df_x / norm_forward_x;
-    }
-
-    // Backward contribution (neighboring pixels)
-    if (z > 0) {
-        float df_z_back = U[idx] - U[idx - X];
-        float norm_back_z = sqrtf(df_z_back * df_z_back + (x < X - 1 ? powf(U[idx - X + 1] - U[idx - X], 2) : 0.0f) + eps);
-        div -= df_z_back / norm_back_z;
-    }
-    if (x > 0) {
-        float df_x_back = U[idx] - U[idx - 1];
-        float norm_back_x = sqrtf(powf(z < Z - 1 ? U[idx + X - 1] - U[idx - 1] : 0.0f, 2) + df_x_back * df_x_back + eps);
-        div -= df_x_back / norm_back_x;
-    }
-
-    // Final gradient (with negative sign to match CPU version)
-    grad_U[idx] = -beta * div;
-
-    // Accumulate energy (TV norm)
-    atomicAdd(U_value, beta * sqrtf(df_z * df_z + df_x * df_x + eps));
-}
 
 // ============================================================================
 // DENSE MATRIX KERNELS
@@ -361,32 +160,32 @@ __global__ void backward_projection_kernel__DENSE(
 // UTILITY KERNELS
 // ============================================================================
 
-/**
- * Kernel: fill_array_value
- * Purpose: Fill an array with a constant value
- */
-__global__ void fill_array_value(float* ptr, float value, int size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) ptr[idx] = value;
-}
+// /**
+//  * Kernel: fill_array_value
+//  * Purpose: Fill an array with a constant value
+//  */
+// __global__ void fill_array_value(float* ptr, float value, int size) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx < size) ptr[idx] = value;
+// }
 
-/**
- * Kernel: fill_array_zero
- * Purpose: Fill an array with zeros
- */
-__global__ void fill_array_zero(float* ptr, int size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) ptr[idx] = 0.0f;
-}
+// /**
+//  * Kernel: fill_array_zero
+//  * Purpose: Fill an array with zeros
+//  */
+// __global__ void fill_array_zero(float* ptr, int size) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx < size) ptr[idx] = 0.0f;
+// }
 
-/**
- * Kernel: array_copy
- * Purpose: Copy elements from source to destination
- */
-__global__ void array_copy(float* dst, const float* src, int size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) dst[idx] = src[idx];
-}
+// /**
+//  * Kernel: array_copy
+//  * Purpose: Copy elements from source to destination
+//  */
+// __global__ void array_copy(float* dst, const float* src, int size) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx < size) dst[idx] = src[idx];
+// }
 
 /**
  * Kernel: clamp_positive
@@ -649,29 +448,29 @@ __global__ void apply_apodization_kernel__SELL(
 // SPARSE MATRIX-VECTOR OPERATIONS KERNELS
 // ============================================================================
 
-/**
- * Kernel: sparse_matrix_vector_product_csr
- * Purpose: Compute y = A * x for CSR sparse matrix
- */
-__global__ void sparse_matrix_vector_product_csr(
-    float* y,
-    const float* data,
-    const int* indices,
-    const int* indptr,
-    const float* x,
-    int num_rows
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row < num_rows) {
-        float sum = 0.0f;
-        int start = indptr[row];
-        int end = indptr[row + 1];
-        for (int i = start; i < end; i++) {
-            sum += data[i] * x[indices[i]];
-        }
-        y[row] = sum;
-    }
-}
+// /**
+//  * Kernel: sparse_matrix_vector_product_csr
+//  * Purpose: Compute y = A * x for CSR sparse matrix
+//  */
+// __global__ void sparse_matrix_vector_product_csr(
+//     float* y,
+//     const float* data,
+//     const int* indices,
+//     const int* indptr,
+//     const float* x,
+//     int num_rows
+// ) {
+//     int row = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (row < num_rows) {
+//         float sum = 0.0f;
+//         int start = indptr[row];
+//         int end = indptr[row + 1];
+//         for (int i = start; i < end; i++) {
+//             sum += data[i] * x[indices[i]];
+//         }
+//         y[row] = sum;
+//     }
+// }
 
 /**
  * Kernel: forward_projection_sell
@@ -801,693 +600,693 @@ __global__ void backward_projection_kernel__CSR(
 // MLEM KERNELS
 // ============================================================================
 
-/**
- * Kernel: ratio_kernel
- * Purpose: Compute element-wise ratio e = y / max(q, threshold) for MLEM
- */
-__global__ void ratio_kernel(
-    float* __restrict__ e_out,
-    const float* __restrict__ y_in,
-    const float* __restrict__ q_in,
-    float threshold,
-    int N
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
-    float denom = q_in[idx];
-    if (!(denom > threshold)) denom = threshold;
-    float r = y_in[idx] / denom;
-    if (!isfinite(r)) r = 0.0f;
-    e_out[idx] = r;
-}
+// /**
+//  * Kernel: ratio_kernel
+//  * Purpose: Compute element-wise ratio e = y / max(q, threshold) for MLEM
+//  */
+// __global__ void ratio_kernel(
+//     float* __restrict__ e_out,
+//     const float* __restrict__ y_in,
+//     const float* __restrict__ q_in,
+//     float threshold,
+//     int N
+// ) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx >= N) return;
+//     float denom = q_in[idx];
+//     if (!(denom > threshold)) denom = threshold;
+//     float r = y_in[idx] / denom;
+//     if (!isfinite(r)) r = 0.0f;
+//     e_out[idx] = r;
+// }
 
-/**
- * Kernel: update_theta_kernel
- * Purpose: Update theta values in MLEM: theta *= norm_inv * c_flat
- */
-__global__ void update_theta_kernel(
-    float* __restrict__ theta_flat,
-    const float* __restrict__ c_flat,
-    const float* __restrict__ norm_factor_inv,
-    int ZX
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= ZX) return;
-    float v = theta_flat[idx] * (norm_factor_inv[idx] * c_flat[idx]);
-    if (!isfinite(v)) v = 0.0f;
-    theta_flat[idx] = fmaxf(v, 0.0f);
-}
+// /**
+//  * Kernel: update_theta_kernel
+//  * Purpose: Update theta values in MLEM: theta *= norm_inv * c_flat
+//  */
+// __global__ void update_theta_kernel(
+//     float* __restrict__ theta_flat,
+//     const float* __restrict__ c_flat,
+//     const float* __restrict__ norm_factor_inv,
+//     int ZX
+// ) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx >= ZX) return;
+//     float v = theta_flat[idx] * (norm_factor_inv[idx] * c_flat[idx]);
+//     if (!isfinite(v)) v = 0.0f;
+//     theta_flat[idx] = fmaxf(v, 0.0f);
+// }
 
 // ============================================================================
 // TOTAL VARIATION (TV) KERNELS
 // ============================================================================
 
-/**
- * Kernel: gradient_2d
- * Purpose: Compute 2D gradient (forward differences) for TV regularization
- * Output: p[0:N] = gradient in x direction, p[N:2N] = gradient in z direction
- */
-__global__ void gradient_kernel(
-    float* __restrict__ p_out,
-    const float* __restrict__ x_in,
-    int Z,
-    int X,
-    int ZX
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= ZX) return;
+// /**
+//  * Kernel: gradient_2d
+//  * Purpose: Compute 2D gradient (forward differences) for TV regularization
+//  * Output: p[0:N] = gradient in x direction, p[N:2N] = gradient in z direction
+//  */
+// __global__ void gradient_kernel(
+//     float* __restrict__ p_out,
+//     const float* __restrict__ x_in,
+//     int Z,
+//     int X,
+//     int ZX
+// ) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx >= ZX) return;
     
-    int z_idx = idx / X;
-    int x_idx = idx % X;
+//     int z_idx = idx / X;
+//     int x_idx = idx % X;
     
-    float v_curr = x_in[idx];
-    float dx = 0.0f;
-    float dz = 0.0f;
+//     float v_curr = x_in[idx];
+//     float dx = 0.0f;
+//     float dz = 0.0f;
     
-    if (x_idx < X - 1) dx = x_in[idx + 1] - v_curr;
-    if (z_idx < Z - 1) dz = x_in[idx + X] - v_curr;
+//     if (x_idx < X - 1) dx = x_in[idx + 1] - v_curr;
+//     if (z_idx < Z - 1) dz = x_in[idx + X] - v_curr;
     
-    p_out[idx] = dx;
-    p_out[ZX + idx] = dz;
-}
+//     p_out[idx] = dx;
+//     p_out[ZX + idx] = dz;
+// }
 
-/**
- * Kernel: divergence_2d
- * Purpose: Compute 2D divergence (adjoint of gradient) for TV regularization
- */
-__global__ void divergence_kernel(
-    float* __restrict__ div_out,
-    const float* __restrict__ p_in,
-    int Z,
-    int X,
-    int ZX
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= ZX) return;
+// /**
+//  * Kernel: divergence_2d
+//  * Purpose: Compute 2D divergence (adjoint of gradient) for TV regularization
+//  */
+// __global__ void divergence_kernel(
+//     float* __restrict__ div_out,
+//     const float* __restrict__ p_in,
+//     int Z,
+//     int X,
+//     int ZX
+// ) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx >= ZX) return;
     
-    int z_idx = idx / X;
-    int x_idx = idx % X;
+//     int z_idx = idx / X;
+//     int x_idx = idx % X;
     
-    float val_x = 0.0f;
-    float val_z = 0.0f;
+//     float val_x = 0.0f;
+//     float val_z = 0.0f;
     
-    if (x_idx < X - 1) val_x -= p_in[idx];
-    if (x_idx > 0) val_x += p_in[idx - 1];
-    if (z_idx < Z - 1) val_z -= p_in[ZX + idx];
-    if (z_idx > 0 && idx >= X) val_z += p_in[ZX + idx - X];
+//     if (x_idx < X - 1) val_x -= p_in[idx];
+//     if (x_idx > 0) val_x += p_in[idx - 1];
+//     if (z_idx < Z - 1) val_z -= p_in[ZX + idx];
+//     if (z_idx > 0 && idx >= X) val_z += p_in[ZX + idx - X];
     
-    div_out[idx] = val_x + val_z;
-}
+//     div_out[idx] = val_x + val_z;
+// }
 
-/**
- * Kernel: proj_tv_kernel
- * Purpose: Project vector field p = (p_x, p_z) onto the L_infinity ball of radius alpha.
- *       
- */
-__global__ void proj_tv_kernel(
-    float* __restrict__ p,
-    float alpha,            
-    int ZX                  
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= ZX) return;  
+// /**
+//  * Kernel: proj_tv_kernel
+//  * Purpose: Project vector field p = (p_x, p_z) onto the L_infinity ball of radius alpha.
+//  *       
+//  */
+// __global__ void proj_tv_kernel(
+//     float* __restrict__ p,
+//     float alpha,            
+//     int ZX                  
+// ) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx >= ZX) return;  
 
-    float px = p[idx];          // p_x[idx]
-    float pz = p[ZX + idx];    // p_z[idx]
+//     float px = p[idx];          // p_x[idx]
+//     float pz = p[ZX + idx];    // p_z[idx]
 
-    float norm = sqrtf(px * px + pz * pz + 1e-12); 
-    if (norm > alpha) {
-        float scale = alpha / norm; 
-        p[idx] = px * scale;         // p_x[idx] = p_x[idx] * (alpha / norm)
-        p[ZX + idx] = pz * scale;    // p_z[idx] = p_z[idx] * (alpha / norm)
-    }
-}
+//     float norm = sqrtf(px * px + pz * pz + 1e-12); 
+//     if (norm > alpha) {
+//         float scale = alpha / norm; 
+//         p[idx] = px * scale;         // p_x[idx] = p_x[idx] * (alpha / norm)
+//         p[ZX + idx] = pz * scale;    // p_z[idx] = p_z[idx] * (alpha / norm)
+//     }
+// }
 
-/**
- * Kernel: laplacian_2d
- * Purpose: Compute 2D Laplacian with Neumann boundary conditions
- */
-__global__ void laplacian_kernel(
-    float* out,
-    const float* in,
-    int Z,
-    int X,
-    int ZX
-) {
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+// /**
+//  * Kernel: laplacian_2d
+//  * Purpose: Compute 2D Laplacian with Neumann boundary conditions
+//  */
+// __global__ void laplacian_kernel(
+//     float* out,
+//     const float* in,
+//     int Z,
+//     int X,
+//     int ZX
+// ) {
+//     int x = blockIdx.x * blockDim.x + threadIdx.x;
+//     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
-    if (x >= X || y >= Z) return;
+//     if (x >= X || y >= Z) return;
     
-    int idx = y * X + x;
-    float val = 0.0f;
-    float center = in[idx];
+//     int idx = y * X + x;
+//     float val = 0.0f;
+//     float center = in[idx];
     
-    val += (x > 0) ? in[idx - 1] : center;
-    val += (x < X - 1) ? in[idx + 1] : center;
-    val += (y > 0) ? in[idx - X] : center;
-    val += (y < Z - 1) ? in[idx + X] : center;
-    val -= 4.0f * center;
+//     val += (x > 0) ? in[idx - 1] : center;
+//     val += (x < X - 1) ? in[idx + 1] : center;
+//     val += (y > 0) ? in[idx - X] : center;
+//     val += (y < Z - 1) ? in[idx + X] : center;
+//     val -= 4.0f * center;
     
-    out[idx] = val;
-}
+//     out[idx] = val;
+// }
 
-// ============================================================================
-// PDHG KERNELS (Primal-Dual Hybrid Gradient)
-// ============================================================================
+// // ============================================================================
+// // PDHG KERNELS (Primal-Dual Hybrid Gradient)
+// // ============================================================================
 
-/**
- * Kernel: pdhg_primal_update
- * Purpose: Update primal variable with positivity constraint
- */
-__global__ void dpdhg_primal_update_kernel(
-    float* x,
-    const float* delta_z,
-    const float* tau,
-    int N
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < N) {
-        x[i] = fmaxf(0.0f, x[i] - tau[i] * delta_z[i]);
-    }
-}
+// /**
+//  * Kernel: pdhg_primal_update
+//  * Purpose: Update primal variable with positivity constraint
+//  */
+// __global__ void dpdhg_primal_update_kernel(
+//     float* x,
+//     const float* delta_z,
+//     const float* tau,
+//     int N
+// ) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i < N) {
+//         x[i] = fmaxf(0.0f, x[i] - tau[i] * delta_z[i]);
+//     }
+// }
 
-/**
- * Kernel: pdhg_extrapolation
- * Purpose: Extrapolation step in PDHG
- */
-__global__ void dpdhg_extrapolation_kernel(
-    float* z_bar,
-    const float* x_new,
-    const float* x_old,
-    float theta,
-    int N
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < N) {
-        z_bar[i] = x_new[i] + theta * (x_new[i] - x_old[i]);
-    }
-}
+// /**
+//  * Kernel: pdhg_extrapolation
+//  * Purpose: Extrapolation step in PDHG
+//  */
+// __global__ void dpdhg_extrapolation_kernel(
+//     float* z_bar,
+//     const float* x_new,
+//     const float* x_old,
+//     float theta,
+//     int N
+// ) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i < N) {
+//         z_bar[i] = x_new[i] + theta * (x_new[i] - x_old[i]);
+//     }
+// }
 
-/**
- * Kernel: pdhg_gradient
- * Purpose: Compute gradient for PDHG TV regularization
- */
-__global__ void dpdhg_gradient_kernel(
-    float* grad,
-    const float* x,
-    int Nz,
-    int Nx,
-    int N
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N) return;
+// /**
+//  * Kernel: pdhg_gradient
+//  * Purpose: Compute gradient for PDHG TV regularization
+//  */
+// __global__ void dpdhg_gradient_kernel(
+//     float* grad,
+//     const float* x,
+//     int Nz,
+//     int Nx,
+//     int N
+// ) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i >= N) return;
     
-    int z = i / Nx;
-    int x_id = i % Nx;
-    int right = (x_id < Nx - 1) ? i + 1 : i;
-    int down = (z < Nz - 1) ? i + Nx : i;
+//     int z = i / Nx;
+//     int x_id = i % Nx;
+//     int right = (x_id < Nx - 1) ? i + 1 : i;
+//     int down = (z < Nz - 1) ? i + Nx : i;
     
-    grad[i] = x[right] - x[i];
-    grad[i + N] = x[down] - x[i];
-}
+//     grad[i] = x[right] - x[i];
+//     grad[i + N] = x[down] - x[i];
+// }
 
-/**
- * Kernel: pdhg_divergence
- * Purpose: Compute divergence for PDHG
- */
-__global__ void dpdhg_divergence_kernel(
-    float* div,
-    const float* p,
-    int Nz,
-    int Nx,
-    int N
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N) return;
+// /**
+//  * Kernel: pdhg_divergence
+//  * Purpose: Compute divergence for PDHG
+//  */
+// __global__ void dpdhg_divergence_kernel(
+//     float* div,
+//     const float* p,
+//     int Nz,
+//     int Nx,
+//     int N
+// ) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i >= N) return;
     
-    int z = i / Nx;
-    int x_id = i % Nx;
+//     int z = i / Nx;
+//     int x_id = i % Nx;
     
-    float val_x = 0.0f;
-    float val_z = 0.0f;
+//     float val_x = 0.0f;
+//     float val_z = 0.0f;
     
-    if (x_id < Nx - 1) val_x -= p[i];
-    if (x_id > 0) val_x += p[i - 1];
-    if (z < Nz - 1) val_z -= p[N + i];
-    if (z > 0 && i >= Nx) val_z += p[N + i - Nx];
+//     if (x_id < Nx - 1) val_x -= p[i];
+//     if (x_id > 0) val_x += p[i - 1];
+//     if (z < Nz - 1) val_z -= p[N + i];
+//     if (z > 0 && i >= Nx) val_z += p[N + i - Nx];
     
-    div[i] = val_x + val_z;
-}
+//     div[i] = val_x + val_z;
+// }
 
-/**
- * Kernel: pdhg_prox_tv
- * Purpose: Proximal operator for TV in PDHG
- */
-__global__ void dpdhg_prox_tv_kernel(
-    float* p,
-    const float* grad,
-    const float* sigma,
-    float lambda,
-    int N
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N) return;
+// /**
+//  * Kernel: pdhg_prox_tv
+//  * Purpose: Proximal operator for TV in PDHG
+//  */
+// __global__ void dpdhg_prox_tv_kernel(
+//     float* p,
+//     const float* grad,
+//     const float* sigma,
+//     float lambda,
+//     int N
+// ) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i >= N) return;
     
-    float vx = p[i] + sigma[i] * grad[i];
-    float vz = p[i + N] + sigma[i + N] * grad[i + N];
+//     float vx = p[i] + sigma[i] * grad[i];
+//     float vz = p[i + N] + sigma[i + N] * grad[i + N];
     
-    float norm = sqrtf(vx * vx + vz * vz + 1e-12f);
-    float factor = fminf(1.0f, lambda / norm);
+//     float norm = sqrtf(vx * vx + vz * vz + 1e-12f);
+//     float factor = fminf(1.0f, lambda / norm);
     
-    p[i] = vx * factor;
-    p[i + N] = vz * factor;
-}
+//     p[i] = vx * factor;
+//     p[i + N] = vz * factor;
+// }
 
-/**
- * Kernel: pdhg_prox_data
- * Purpose: Proximal operator for data fidelity (L2) in PDHG
- */
-__global__ void dpdhg_prox_data_kernel(
-    float* q,
-    const float* Ax,
-    const float* y,
-    const float* sigma,
-    int N
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < N) {
-        q[i] = (q[i] + sigma[i] * (Ax[i] - y[i])) / (1.0f + sigma[i]);
-    }
-}
+// /**
+//  * Kernel: pdhg_prox_data
+//  * Purpose: Proximal operator for data fidelity (L2) in PDHG
+//  */
+// __global__ void dpdhg_prox_data_kernel(
+//     float* q,
+//     const float* Ax,
+//     const float* y,
+//     const float* sigma,
+//     int N
+// ) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i < N) {
+//         q[i] = (q[i] + sigma[i] * (Ax[i] - y[i])) / (1.0f + sigma[i]);
+//     }
+// }
 
-/**
- * Kernel: pdhg_backward_projection_sell
- * Purpose: backward projection for PDHG using SELL format
- */
-__global__ void dpdhg_backward_projection_kernel(
-    const float* __restrict__ sell_values,
-    const unsigned int* __restrict__ sell_colinds,
-    const long long* __restrict__ slice_ptr,
-    const int* __restrict__ slice_len,
-    const float* __restrict__ q,
-    float* __restrict__ delta_z,
-    int TN,
-    int slice_height
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= TN) return;
+// /**
+//  * Kernel: pdhg_backward_projection_sell
+//  * Purpose: backward projection for PDHG using SELL format
+//  */
+// __global__ void dpdhg_backward_projection_kernel(
+//     const float* __restrict__ sell_values,
+//     const unsigned int* __restrict__ sell_colinds,
+//     const long long* __restrict__ slice_ptr,
+//     const int* __restrict__ slice_len,
+//     const float* __restrict__ q,
+//     float* __restrict__ delta_z,
+//     int TN,
+//     int slice_height
+// ) {
+//     int row = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (row >= TN) return;
     
-    float q_val = q[row];
-    if (q_val == 0.0f) return;
+//     float q_val = q[row];
+//     if (q_val == 0.0f) return;
     
-    int slice_id = row / slice_height;
-    int row_in_slice = row % slice_height;
-    long long base = slice_ptr[slice_id];
-    int len = slice_len[slice_id];
+//     int slice_id = row / slice_height;
+//     int row_in_slice = row % slice_height;
+//     long long base = slice_ptr[slice_id];
+//     int len = slice_len[slice_id];
     
-    long long pos = base + (long long)row_in_slice;
-    for (int j = 0; j < len; ++j) {
-        float v = sell_values[pos];
-        if (v != 0.0f) {
-            unsigned int col = sell_colinds[pos];
-            atomicAdd(&delta_z[col], v * q_val);
-        }
-        pos += (long long)slice_height;
-    }
-}
+//     long long pos = base + (long long)row_in_slice;
+//     for (int j = 0; j < len; ++j) {
+//         float v = sell_values[pos];
+//         if (v != 0.0f) {
+//             unsigned int col = sell_colinds[pos];
+//             atomicAdd(&delta_z[col], v * q_val);
+//         }
+//         pos += (long long)slice_height;
+//     }
+// }
 
-/**
- * Kernel: pdhg_sell_sums
- * Purpose: Compute row and column sums for PDHG preconditioning
- */
-__global__ void dpdhg_sell_sums_kernel(
-    float* s_row,
-    float* s_col,
-    const float* sell_values,
-    const unsigned int* sell_colinds,
-    const long long* slice_ptr,
-    const int* slice_len,
-    int num_rows,
-    int slice_height
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= num_rows) return;
+// /**
+//  * Kernel: pdhg_sell_sums
+//  * Purpose: Compute row and column sums for PDHG preconditioning
+//  */
+// __global__ void dpdhg_sell_sums_kernel(
+//     float* s_row,
+//     float* s_col,
+//     const float* sell_values,
+//     const unsigned int* sell_colinds,
+//     const long long* slice_ptr,
+//     const int* slice_len,
+//     int num_rows,
+//     int slice_height
+// ) {
+//     int row = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (row >= num_rows) return;
     
-    int slice_idx = row / slice_height;
-    int row_in_slice = row % slice_height;
-    long long offset = slice_ptr[slice_idx];
-    int length = slice_len[slice_idx];
+//     int slice_idx = row / slice_height;
+//     int row_in_slice = row % slice_height;
+//     long long offset = slice_ptr[slice_idx];
+//     int length = slice_len[slice_idx];
     
-    float sum_r = 0.0f;
-    for (int k = 0; k < length; ++k) {
-        long long data_idx = offset + (long long)k * slice_height + row_in_slice;
-        float val = fabsf(sell_values[data_idx]);
-        unsigned int col = sell_colinds[data_idx];
+//     float sum_r = 0.0f;
+//     for (int k = 0; k < length; ++k) {
+//         long long data_idx = offset + (long long)k * slice_height + row_in_slice;
+//         float val = fabsf(sell_values[data_idx]);
+//         unsigned int col = sell_colinds[data_idx];
         
-        if (val != 0.0f) {
-            sum_r += val;
-            atomicAdd(&s_col[col], val);
-        }
-    }
-    s_row[row] = sum_r;
-}
+//         if (val != 0.0f) {
+//             sum_r += val;
+//             atomicAdd(&s_col[col], val);
+//         }
+//     }
+//     s_row[row] = sum_r;
+// }
 
-// ============================================================================
-// LBFGS KERNELS
-// ============================================================================
+// // ============================================================================
+// // LBFGS KERNELS
+// // ============================================================================
 
-/**
- * Kernel: lbfgs_calc_q
- * Purpose: Compute residual q = Ax - y for LBFGS
- */
-__global__ void lbfgs_calc_q_kernel(
-    float* q,
-    const float* Ax,
-    const float* y,
-    int N
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < N) q[i] = Ax[i] - y[i];
-}
+// /**
+//  * Kernel: lbfgs_calc_q
+//  * Purpose: Compute residual q = Ax - y for LBFGS
+//  */
+// __global__ void lbfgs_calc_q_kernel(
+//     float* q,
+//     const float* Ax,
+//     const float* y,
+//     int N
+// ) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i < N) q[i] = Ax[i] - y[i];
+// }
 
-/**
- * Kernel: lbfgs_backward_projection_sell
- * Purpose: backward projection for LBFGS using SELL format
- */
-__global__ void lbfgs_backward_projection_kernel(
-    const float* __restrict__ sell_values,
-    const unsigned int* __restrict__ sell_colinds,
-    const long long* __restrict__ slice_ptr,
-    const int* __restrict__ slice_len,
-    const float* __restrict__ q,
-    float* __restrict__ grad_data,
-    int TN,
-    int slice_height
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= TN) return;
+// /**
+//  * Kernel: lbfgs_backward_projection_sell
+//  * Purpose: backward projection for LBFGS using SELL format
+//  */
+// __global__ void lbfgs_backward_projection_kernel(
+//     const float* __restrict__ sell_values,
+//     const unsigned int* __restrict__ sell_colinds,
+//     const long long* __restrict__ slice_ptr,
+//     const int* __restrict__ slice_len,
+//     const float* __restrict__ q,
+//     float* __restrict__ grad_data,
+//     int TN,
+//     int slice_height
+// ) {
+//     int row = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (row >= TN) return;
     
-    float q_val = q[row];
-    if (q_val == 0.0f) return;
+//     float q_val = q[row];
+//     if (q_val == 0.0f) return;
     
-    int slice_id = row / slice_height;
-    int row_in_slice = row % slice_height;
-    long long base = slice_ptr[slice_id];
-    int len = slice_len[slice_id];
+//     int slice_id = row / slice_height;
+//     int row_in_slice = row % slice_height;
+//     long long base = slice_ptr[slice_id];
+//     int len = slice_len[slice_id];
     
-    long long pos = base + (long long)row_in_slice;
-    for (int j = 0; j < len; ++j) {
-        float v = sell_values[pos];
-        if (v != 0.0f) {
-            unsigned int col = sell_colinds[pos];
-            atomicAdd(&grad_data[col], v * q_val);
-        }
-        pos += (long long)slice_height;
-    }
-}
+//     long long pos = base + (long long)row_in_slice;
+//     for (int j = 0; j < len; ++j) {
+//         float v = sell_values[pos];
+//         if (v != 0.0f) {
+//             unsigned int col = sell_colinds[pos];
+//             atomicAdd(&grad_data[col], v * q_val);
+//         }
+//         pos += (long long)slice_height;
+//     }
+// }
 
-/**
- * Kernel: lbfgs_aniso_tv_eval
- * Purpose: Evaluate anisotropic TV for LBFGS
- */
-__global__ void lbfgs_aniso_tv_eval_kernel(
-    float* p,
-    float* cost_val,
-    const float* x,
-    float alpha_x,
-    float alpha_z,
-    float eps,
-    int Nz,
-    int Nx,
-    int N
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N) return;
+// /**
+//  * Kernel: lbfgs_aniso_tv_eval
+//  * Purpose: Evaluate anisotropic TV for LBFGS
+//  */
+// __global__ void lbfgs_aniso_tv_eval_kernel(
+//     float* p,
+//     float* cost_val,
+//     const float* x,
+//     float alpha_x,
+//     float alpha_z,
+//     float eps,
+//     int Nz,
+//     int Nx,
+//     int N
+// ) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i >= N) return;
     
-    int z = i / Nx;
-    int x_id = i % Nx;
+//     int z = i / Nx;
+//     int x_id = i % Nx;
     
-    float val = x[i];
-    float dx = (x_id < Nx - 1) ? (x[i + 1] - val) : 0.0f;
-    float dz = (z < Nz - 1) ? (x[i + Nx] - val) : 0.0f;
+//     float val = x[i];
+//     float dx = (x_id < Nx - 1) ? (x[i + 1] - val) : 0.0f;
+//     float dz = (z < Nz - 1) ? (x[i + Nx] - val) : 0.0f;
     
-    float norm_x = sqrtf(dx * dx + eps * eps);
-    float norm_z = sqrtf(dz * dz + eps * eps);
+//     float norm_x = sqrtf(dx * dx + eps * eps);
+//     float norm_z = sqrtf(dz * dz + eps * eps);
     
-    p[i] = alpha_x * (dx / norm_x);
-    p[i + N] = alpha_z * (dz / norm_z);
+//     p[i] = alpha_x * (dx / norm_x);
+//     p[i + N] = alpha_z * (dz / norm_z);
     
-    cost_val[i] = alpha_x * norm_x + alpha_z * norm_z;
-}
+//     cost_val[i] = alpha_x * norm_x + alpha_z * norm_z;
+// }
 
-/**
- * Kernel: lbfgs_divergence
- * Purpose: Compute divergence for LBFGS TV
- */
-__global__ void lbfgs_divergence_kernel(
-    float* grad_reg,
-    const float* p,
-    int Nz,
-    int Nx,
-    int N
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N) return;
+// /**
+//  * Kernel: lbfgs_divergence
+//  * Purpose: Compute divergence for LBFGS TV
+//  */
+// __global__ void lbfgs_divergence_kernel(
+//     float* grad_reg,
+//     const float* p,
+//     int Nz,
+//     int Nx,
+//     int N
+// ) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i >= N) return;
     
-    int z = i / Nx;
-    int x_id = i % Nx;
+//     int z = i / Nx;
+//     int x_id = i % Nx;
     
-    float val_x = 0.0f;
-    float val_z = 0.0f;
+//     float val_x = 0.0f;
+//     float val_z = 0.0f;
     
-    if (x_id < Nx - 1) val_x -= p[i];
-    if (x_id > 0) val_x += p[i - 1];
-    if (z < Nz - 1) val_z -= p[N + i];
-    if (z > 0 && i >= Nx) val_z += p[N + i - Nx];
+//     if (x_id < Nx - 1) val_x -= p[i];
+//     if (x_id > 0) val_x += p[i - 1];
+//     if (z < Nz - 1) val_z -= p[N + i];
+//     if (z > 0 && i >= Nx) val_z += p[N + i - Nx];
     
-    grad_reg[i] = val_x + val_z;
-}
+//     grad_reg[i] = val_x + val_z;
+// }
 
-// ============================================================================
-// PRECONDITIONING KERNELS (Pock & Chambolle)
-// ============================================================================
+// // ============================================================================
+// // PRECONDITIONING KERNELS (Pock & Chambolle)
+// // ============================================================================
 
-/**
- * Kernel: update_dual_data_precond
- * Purpose: Update dual variable with vector preconditioning for data term
- */
-__global__ void update_dual_data_precond_kernel(
-    float* __restrict__ q_out,
-    const float* __restrict__ Ax,
-    const float* __restrict__ y,
-    const float* __restrict__ sigma_vec,
-    int N
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
+// /**
+//  * Kernel: update_dual_data_precond
+//  * Purpose: Update dual variable with vector preconditioning for data term
+//  */
+// __global__ void update_dual_data_precond_kernel(
+//     float* __restrict__ q_out,
+//     const float* __restrict__ Ax,
+//     const float* __restrict__ y,
+//     const float* __restrict__ sigma_vec,
+//     int N
+// ) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx >= N) return;
     
-    float sig = sigma_vec[idx];
-    float ax_val = Ax[idx];
-    float y_val = y[idx];
-    float q_val = q_out[idx];
+//     float sig = sigma_vec[idx];
+//     float ax_val = Ax[idx];
+//     float y_val = y[idx];
+//     float q_val = q_out[idx];
     
-    float num = q_val + sig * (ax_val - y_val);
-    float denom = 1.0f + sig;
+//     float num = q_val + sig * (ax_val - y_val);
+//     float denom = 1.0f + sig;
     
-    q_out[idx] = num / denom;
-}
+//     q_out[idx] = num / denom;
+// }
 
-/**
- * Kernel: update_primal_precond
- * Purpose: Update primal variable with vector preconditioning
- */
-__global__ void update_primal_precond_kernel(
-    float* __restrict__ x_out,
-    const float* __restrict__ gradient_combined,
-    const float* __restrict__ tau_vec,
-    int ZX
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= ZX) return;
+// /**
+//  * Kernel: update_primal_precond
+//  * Purpose: Update primal variable with vector preconditioning
+//  */
+// __global__ void update_primal_precond_kernel(
+//     float* __restrict__ x_out,
+//     const float* __restrict__ gradient_combined,
+//     const float* __restrict__ tau_vec,
+//     int ZX
+// ) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (idx >= ZX) return;
     
-    float t = tau_vec[idx];
-    float grad = gradient_combined[idx];
-    float x_val = x_out[idx];
+//     float t = tau_vec[idx];
+//     float grad = gradient_combined[idx];
+//     float x_val = x_out[idx];
     
-    x_out[idx] = x_val - t * grad;
-}
+//     x_out[idx] = x_val - t * grad;
+// }
 
-// ============================================================================
-// SUBSET OPERATIONS KERNELS (for Stochastic Methods)
-// ============================================================================
+// // ============================================================================
+// // SUBSET OPERATIONS KERNELS (for Stochastic Methods)
+// // ============================================================================
 
-/**
- * Kernel: proj_tv_inplace_and_diff
- * Purpose: TV projection with in-place difference computation
- */
-__global__ void proj_tv_inplace_and_diff_kernel(
-    float* p,
-    float* grad,
-    const float* sigma,
-    float lambda,
-    int N
-) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N) return;
+// /**
+//  * Kernel: proj_tv_inplace_and_diff
+//  * Purpose: TV projection with in-place difference computation
+//  */
+// __global__ void proj_tv_inplace_and_diff_kernel(
+//     float* p,
+//     float* grad,
+//     const float* sigma,
+//     float lambda,
+//     int N
+// ) {
+//     int i = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (i >= N) return;
     
-    float p_old_x = p[i];
-    float p_old_z = p[i + N];
+//     float p_old_x = p[i];
+//     float p_old_z = p[i + N];
     
-    float val_x = p_old_x + sigma[i] * grad[i];
-    float val_z = p_old_z + sigma[i + N] * grad[i + N];
+//     float val_x = p_old_x + sigma[i] * grad[i];
+//     float val_z = p_old_z + sigma[i + N] * grad[i + N];
     
-    float norm = sqrtf(val_x * val_x + val_z * val_z + 1e-12f);
-    float factor = fminf(1.0f, lambda / norm);
+//     float norm = sqrtf(val_x * val_x + val_z * val_z + 1e-12f);
+//     float factor = fminf(1.0f, lambda / norm);
     
-    float p_new_x = val_x * factor;
-    float p_new_z = val_z * factor;
+//     float p_new_x = val_x * factor;
+//     float p_new_z = val_z * factor;
     
-    p[i] = p_new_x;
-    p[i + N] = p_new_z;
+//     p[i] = p_new_x;
+//     p[i + N] = p_new_z;
     
-    grad[i] = p_new_x - p_old_x;
-    grad[i + N] = p_new_z - p_old_z;
-}
+//     grad[i] = p_new_x - p_old_x;
+//     grad[i + N] = p_new_z - p_old_z;
+// }
 
-/**
- * Kernel: prox_and_diff_subset
- * Purpose: Proximal operator with in-place difference for subset
- */
-__global__ void prox_and_diff_subset_kernel(
-    float* q,
-    float* Ax,
-    const float* y,
-    const float* sigma,
-    int start_idx,
-    int end_idx
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int i = start_idx + idx;
-    if (i >= end_idx) return;
+// /**
+//  * Kernel: prox_and_diff_subset
+//  * Purpose: Proximal operator with in-place difference for subset
+//  */
+// __global__ void prox_and_diff_subset_kernel(
+//     float* q,
+//     float* Ax,
+//     const float* y,
+//     const float* sigma,
+//     int start_idx,
+//     int end_idx
+// ) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     int i = start_idx + idx;
+//     if (i >= end_idx) return;
     
-    float q_old = q[i];
-    float q_new = (q_old + sigma[i] * (Ax[i] - y[i])) / (1.0f + sigma[i]);
+//     float q_old = q[i];
+//     float q_new = (q_old + sigma[i] * (Ax[i] - y[i])) / (1.0f + sigma[i]);
     
-    q[i] = q_new;
-    Ax[i] = q_new - q_old;
-}
+//     q[i] = q_new;
+//     Ax[i] = q_new - q_old;
+// }
 
-/**
- * Kernel: projection_subset_sell
- * Purpose: Forward projection on subset using SELL format
- */
-__global__ void projection_subset_kernel(
-    float* __restrict__ q_out,
-    const float* __restrict__ sell_values,
-    const unsigned int* __restrict__ sell_colinds,
-    const long long* __restrict__ slice_ptr,
-    const int* __restrict__ slice_len,
-    const float* __restrict__ theta,
-    int start_row,
-    int end_row,
-    int slice_height
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = start_row + idx;
-    if (row >= end_row) return;
+// /**
+//  * Kernel: projection_subset_sell
+//  * Purpose: Forward projection on subset using SELL format
+//  */
+// __global__ void projection_subset_kernel(
+//     float* __restrict__ q_out,
+//     const float* __restrict__ sell_values,
+//     const unsigned int* __restrict__ sell_colinds,
+//     const long long* __restrict__ slice_ptr,
+//     const int* __restrict__ slice_len,
+//     const float* __restrict__ theta,
+//     int start_row,
+//     int end_row,
+//     int slice_height
+// ) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     int row = start_row + idx;
+//     if (row >= end_row) return;
     
-    int slice_id = row / slice_height;
-    int row_in_slice = row % slice_height;
-    long long base = slice_ptr[slice_id];
-    int len = slice_len[slice_id];
+//     int slice_id = row / slice_height;
+//     int row_in_slice = row % slice_height;
+//     long long base = slice_ptr[slice_id];
+//     int len = slice_len[slice_id];
     
-    float acc = 0.0f;
-    long long pos = base + (long long)row_in_slice;
-    for (int j = 0; j < len; ++j) {
-        float v = sell_values[pos];
-        if (v != 0.0f) {
-            unsigned int col = sell_colinds[pos];
-            float t = __ldg(&theta[col]);
-            acc += v * t;
-        }
-        pos += (long long)slice_height;
-    }
-    q_out[row] = acc;
-}
+//     float acc = 0.0f;
+//     long long pos = base + (long long)row_in_slice;
+//     for (int j = 0; j < len; ++j) {
+//         float v = sell_values[pos];
+//         if (v != 0.0f) {
+//             unsigned int col = sell_colinds[pos];
+//             float t = __ldg(&theta[col]);
+//             acc += v * t;
+//         }
+//         pos += (long long)slice_height;
+//     }
+//     q_out[row] = acc;
+// }
 
-/**
- * Kernel: backward_projection_subset_sell
- * Purpose: backward projection on subset using SELL format
- */
-__global__ void backward_projection_subset_kernel(
-    const float* __restrict__ sell_values,
-    const unsigned int* __restrict__ sell_colinds,
-    const long long* __restrict__ slice_ptr,
-    const int* __restrict__ slice_len,
-    const float* __restrict__ e_flat,
-    float* __restrict__ c_flat,
-    int start_row,
-    int end_row,
-    int slice_height
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = start_row + idx;
-    if (row >= end_row) return;
+// /**
+//  * Kernel: backward_projection_subset_sell
+//  * Purpose: backward projection on subset using SELL format
+//  */
+// __global__ void backward_projection_subset_kernel(
+//     const float* __restrict__ sell_values,
+//     const unsigned int* __restrict__ sell_colinds,
+//     const long long* __restrict__ slice_ptr,
+//     const int* __restrict__ slice_len,
+//     const float* __restrict__ e_flat,
+//     float* __restrict__ c_flat,
+//     int start_row,
+//     int end_row,
+//     int slice_height
+// ) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     int row = start_row + idx;
+//     if (row >= end_row) return;
     
-    float e = e_flat[row];
-    if (e == 0.0f) return;
+//     float e = e_flat[row];
+//     if (e == 0.0f) return;
     
-    int slice_id = row / slice_height;
-    int row_in_slice = row % slice_height;
-    long long base = slice_ptr[slice_id];
-    int len = slice_len[slice_id];
+//     int slice_id = row / slice_height;
+//     int row_in_slice = row % slice_height;
+//     long long base = slice_ptr[slice_id];
+//     int len = slice_len[slice_id];
     
-    long long pos = base + (long long)row_in_slice;
-    for (int j = 0; j < len; ++j) {
-        float v = sell_values[pos];
-        if (v != 0.0f) {
-            unsigned int col = sell_colinds[pos];
-            float contrib = v * e;
-            atomicAdd(&c_flat[col], contrib);
-        }
-        pos += (long long)slice_height;
-    }
-}
+//     long long pos = base + (long long)row_in_slice;
+//     for (int j = 0; j < len; ++j) {
+//         float v = sell_values[pos];
+//         if (v != 0.0f) {
+//             unsigned int col = sell_colinds[pos];
+//             float contrib = v * e;
+//             atomicAdd(&c_flat[col], contrib);
+//         }
+//         pos += (long long)slice_height;
+//     }
+// }
 
-/**
- * Kernel: sell_sums
- * Purpose: Compute row and column sums for SELL matrix
- */
-__global__ void sell_sums_kernel(
-    float* s_row,
-    float* s_col,
-    const float* sell_values,
-    const unsigned int* sell_colinds,
-    const long long* slice_ptr,
-    const int* slice_len,
-    int num_rows,
-    int slice_height
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= num_rows) return;
+// /**
+//  * Kernel: sell_sums
+//  * Purpose: Compute row and column sums for SELL matrix
+//  */
+// __global__ void sell_sums_kernel(
+//     float* s_row,
+//     float* s_col,
+//     const float* sell_values,
+//     const unsigned int* sell_colinds,
+//     const long long* slice_ptr,
+//     const int* slice_len,
+//     int num_rows,
+//     int slice_height
+// ) {
+//     int row = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (row >= num_rows) return;
     
-    int slice_idx = row / slice_height;
-    int row_in_slice = row % slice_height;
-    long long offset = slice_ptr[slice_idx];
-    int length = slice_len[slice_idx];
+//     int slice_idx = row / slice_height;
+//     int row_in_slice = row % slice_height;
+//     long long offset = slice_ptr[slice_idx];
+//     int length = slice_len[slice_idx];
     
-    float sum_r = 0.0f;
-    for (int k = 0; k < length; ++k) {
-        long long data_idx = offset + (long long)k * slice_height + row_in_slice;
-        float val = sell_values[data_idx];
-        unsigned int col = sell_colinds[data_idx];
+//     float sum_r = 0.0f;
+//     for (int k = 0; k < length; ++k) {
+//         long long data_idx = offset + (long long)k * slice_height + row_in_slice;
+//         float val = sell_values[data_idx];
+//         unsigned int col = sell_colinds[data_idx];
         
-        if (val != 0.0f) {
-            sum_r += val;
-            atomicAdd(&s_col[col], val);
-        }
-    }
-    s_row[row] = sum_r;
-}
+//         if (val != 0.0f) {
+//             sum_r += val;
+//             atomicAdd(&s_col[col], val);
+//         }
+//     }
+//     s_row[row] = sum_r;
+// }
 }

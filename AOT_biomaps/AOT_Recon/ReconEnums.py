@@ -196,6 +196,14 @@ class PotentialType(Enum):
     Reference: Chambolle and Pock, J. Math. Imaging Vis., 2011.
     """
 
+class PotentialShapeType(Enum):
+    CROSS = 'CROSS'
+    """Penalizes differences between the center voxel and its n face-connected neighbors."""
+    SQUARE = 'SQUARE'
+    """Penalizes differences between the center voxel and its n face-connected neighbors, as well as between the face-connected neighbors themselves (4-neighborhood in 2D, 6-neighborhood in 3D)."""
+    CIRCLE = 'CIRCLE'
+    """Penalizes differences between the center voxel and all neighbors within a specified radius, as well as between those neighbors themselves (8-neighborhood in 2D, 26-neighborhood in 3D)."""
+
 class ProcessType(Enum):
     CASToR = 'CASToR'
     PYTHON = 'PYTHON'

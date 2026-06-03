@@ -5,7 +5,7 @@ Penalized Gauss-Newton Conjugate Gradient (PGC) reconstruction algorithm.
 Uses unified SMatrix interface and ReconTools functions.
 Single unified function that works with any SMatrix type (CSR, SELL, DENSE) and any device (CPU, GPU).
 
-Supports potential functions: QUADRATIC, HUBER, RELATIVE_DIFFERENCE
+Supports spatial potential functions: QUADRATIC, HUBER, RELATIVE_DIFFERENCE
 """
 
 import numpy as np
@@ -14,9 +14,9 @@ from typing import Optional, Union, Tuple
 
 from AOT_biomaps.AOT_Recon.ReconTools import (
     check_gpu_available, forward_projection, backward_projection, 
-    clamp_positive, get_potential_function, cost_function, _get_array_module, estimate_operator_norm
+    clamp_positive, get_potential_function, _get_array_module, estimate_operator_norm
 )
-from AOT_biomaps.AOT_Recon.ReconEnums import OptimizerType, PotentialType
+from AOT_biomaps.AOT_Recon.ReconEnums import OptimizerType, PotentialType, PotentialShapeType
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
@@ -33,11 +33,13 @@ def PGC(
     SMatrix: Union['SMatrix_DENSE', 'SMatrix_CSR', 'SMatrix_SELL'],
     y: Union[np.ndarray, 'cp.ndarray'],
     numIterations: int = 100,
-    alpha: float = 0.05,     # Step size (learning rate)
-    beta: float = 1.0,       # Regularization weight
-    delta: float = 0.01,     # Parameter for potential function
-    eta: Optional[float] = None, # Parameter for the Lipschitz constant estimation (must be < 2 for convergence and > 1 for faster convergence). Useless if alpha is a float.
+    alpha: Union[float, str] = "auto",     
+    beta: float = 1.0,       
+    delta: float = 0.01,    
+    eta: Optional[float] = None, 
     potential_type: PotentialType = PotentialType.QUADRATIC,
+    potential_shape: PotentialShapeType = PotentialShapeType.CROSS,
+    potential_radius: int = 2,
     isSavingEachIteration: bool = True,
     isCostFunction: bool = False,
     withTumor: bool = True,
@@ -52,11 +54,13 @@ def PGC(
         SMatrix: System matrix object.
         y: Measurement data vector.
         numIterations: Total number of iterations.
-        alpha: Step size (learning rate). If set to "auto" 
+        alpha: Step size parameter (float or 'auto' for power method estimation of Lipschitz constant)
         beta: Regularization weight parameter.
         delta: Threshold for non-quadratic potentials.
-        eta: Parameter for the Lipschitz constant estimation (must be < 2 for convergence and > 1 for faster convergence). Useless if alpha is a float.
-        potential_type: Type of potential function to use.
+        eta: Parameter for Lipschitz estimation.
+        potential_type: Type of MRF spatial potential to use.
+        potential_shape: Neighborhood shape (PotentialShapeType enum).
+        potential_radius: Neighborhood radius in pixels.
         isSavingEachIteration: If True, stores intermediate reconstructions.
         isCostFunction: If True, tracks the cost function history.
         withTumor: Flag for description.
@@ -86,33 +90,39 @@ def PGC(
             print("Warning: eta is not set for power method estimation of step size. Using default value of 1.9.")
             eta = 1.9
         if eta >= 2.0 or eta <= 1.0:
-            print(f"Warning: For power method estimation of step size, eta should be in (1.0, 2.0) for convergence and faster convergence. Current value: {eta}. Proceeding with the given value, but consider adjusting it for better performance.")
+            print(f"Warning: eta should be in (1.0, 2.0) for optimal convergence. Current value: {eta}.")
+        
         # Estimate Lipschitz constant using power method
         L_estimate = estimate_operator_norm(SMatrix, num_iters=20)
         alpha = eta / L_estimate if L_estimate > 0 else 1.0
         print(f"Estimated Lipschitz constant: {L_estimate:.4f}, using step size alpha: {alpha:.5f}")
 
-
-    save_indices = list(range(0, numIterations, max(1, numIterations // max_saves)))
-    if save_indices[-1] != numIterations - 1:
-        save_indices.append(numIterations - 1)
+    # Setup save indices
+    if numIterations <= max_saves:
+        save_indices = list(range(numIterations))
+    else:
+        step = max(1, numIterations // max_saves)
+        save_indices = list(range(0, numIterations, step))
+        if save_indices[-1] != numIterations - 1:
+            save_indices.append(numIterations - 1)
 
     saved_lambda = []
     saved_indices_list = []
     cost_history = [] if isCostFunction else None
 
-    description = f"AOT-BioMaps -- PGC ({matrix_type}) ---- {tumor_str} TUMOR ---- {device.upper()}"
+    description = f"AOT-BioMaps -- PGC ({matrix_type}) with {potential_type.name} (shape: {potential_shape.name}, r: {potential_radius}) β={beta} ---- {tumor_str} TUMOR ---- {device.upper()}"
     iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
 
     for it in iterator:
         # 1. Forward model
         q_flat = forward_projection(SMatrix, lambda_flat)
         
-        # 2. Compute potential gradient
-        _, grad_U, U_value = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta, delta=delta)
-        if grad_U is None: 
-            grad_U = xp.zeros_like(lambda_flat)
-            U_value = 0.0
+        # 2. Compute potential gradient dynamically (Hessian is not used in PGC)
+        grad_U, _, U_value = get_potential_function(
+            potential_type, SMatrix, lambda_flat, 
+            beta=beta, delta=delta, shape=potential_shape, radius=potential_radius,
+            compute_grad=True, compute_hess=False, compute_energy=isCostFunction
+        )
 
         if isCostFunction:
             q_safe = xp.maximum(q_flat, 1e-10)
@@ -140,9 +150,16 @@ def PGC(
         prev_r_dot = r_dot
 
         if isSavingEachIteration and it in save_indices:
-            saved_lambda.append(lambda_flat.reshape(Z, X).get() if hasattr(lambda_flat, 'get') else lambda_flat.reshape(Z, X).copy())
+            if check_gpu_available(SMatrix):
+                saved_lambda.append(cp.asnumpy(lambda_flat.reshape(Z, X)))
+            else:
+                saved_lambda.append(lambda_flat.reshape(Z, X).copy())
             saved_indices_list.append(it)
 
-    final_result = lambda_flat.reshape(Z, X).get() if hasattr(lambda_flat, 'get') else lambda_flat.reshape(Z, X)
+    if check_gpu_available(SMatrix):
+        cp.cuda.Stream.null.synchronize()
+        final_result = cp.asnumpy(lambda_flat.reshape(Z, X))
+    else:
+        final_result = lambda_flat.reshape(Z, X)
 
     return (saved_lambda, saved_indices_list, cost_history) if isSavingEachIteration else (final_result, None, cost_history)
