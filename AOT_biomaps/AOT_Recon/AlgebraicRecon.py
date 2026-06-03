@@ -551,7 +551,7 @@ class AlgebraicRecon(Recon):
         else:
             raise ValueError(f"Unknown Algebraic reconstruction type: {processType}")
 
-    def _algebraic_recon_Python(self, withTumor: bool = True, show_logs: bool = True):
+    def _algebraic_recon_Python(self, withTumor: bool = True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs: bool = True):
         """
         Run algebraic reconstruction using Python implementation.
         
@@ -578,23 +578,23 @@ class AlgebraicRecon(Recon):
 
         # Dispatch to optimizer-specific method
         if self.optimizer == OptimizerType.MLEM:
-            self._run_MLEM(y=y, withTumor=withTumor, show_logs=show_logs)
+            self._run_MLEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.LS:
-            self._run_LS(y=y, withTumor=withTumor, show_logs=show_logs)
+            self._run_LS(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.MAPEM:
-            self._run_MAPEM(y=y, withTumor=withTumor, show_logs=show_logs)
+            self._run_MAPEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.DEPIERRO:
-            self._run_DEPIERRO(y=y, withTumor=withTumor, show_logs=show_logs)
+            self._run_DEPIERRO(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PPGMLEM:
-            self._run_PPGMLEM(y=y, withTumor=withTumor, show_logs=show_logs)
+            self._run_PPGMLEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PIGD:
-            self._run_PIGD(y=y, withTumor=withTumor, show_logs=show_logs)
+            self._run_PIGD(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PGC:
-            self._run_PGC(y=y, withTumor=withTumor, show_logs=show_logs)
+            self._run_PGC(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PDHG:
-            self._run_PDHG(y=y, withTumor=withTumor, show_logs=show_logs)
+            self._run_PDHG(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.LBFGS:
-            self._run_LBFGS(y=y, withTumor=withTumor, show_logs=show_logs)
+            self._run_LBFGS(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
         else:
             raise ValueError(f"Unsupported optimizer type: {self.optimizer}")
 
