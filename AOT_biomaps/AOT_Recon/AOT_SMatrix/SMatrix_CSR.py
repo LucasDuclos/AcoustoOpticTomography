@@ -311,7 +311,10 @@ class SMatrix_CSR(SMatrix):
                     c[col] += self.h_values[j] * e_cpu[i]
             return c
 
-    def flip_angle(self):
+    def apply_apodization(self, window_vector: Union[np.ndarray, 'cp.ndarray']):
+        raise NotImplementedError("Apodization not implemented for CSR matrix.")
+
+    def flip_probe(self):
         """
         Permute the columns of the CSR matrix corresponding to opposite angles.
         Assumes N is even and angles are symmetrically organized.

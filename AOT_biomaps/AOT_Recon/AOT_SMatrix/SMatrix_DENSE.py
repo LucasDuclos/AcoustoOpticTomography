@@ -196,6 +196,12 @@ class SMatrix_DENSE(SMatrix):
                             c[col_idx] += self.dense_matrix[t, n, z, x] * e_val
             return c    
     
+    def apply_apodization(self, window_vector: Union[np.ndarray, 'cp.ndarray']):
+        raise NotImplementedError("Apodization not implemented for DENSE matrix.")
+
+    def flip_probe(self):
+        raise NotImplementedError("Probe flipping not implemented for DENSE matrix.")
+    
     def get_matrix_size(self):
         """Get matrix size information."""
         if self.dense_matrix is not None:

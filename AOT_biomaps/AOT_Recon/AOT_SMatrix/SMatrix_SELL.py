@@ -327,7 +327,7 @@ class SMatrix_SELL(SMatrix):
                 if col < len(window_cpu):
                     self.sell_values[i] *= window_cpu[col]
 
-    def flip_angle(self):
+    def flip_probe(self):
         """Permute the columns of the SELL-C-sigma matrix corresponding to opposite angles."""
         if self.N % 2 != 0:
             raise ValueError("Number of angles must be even to permute opposite angles.")

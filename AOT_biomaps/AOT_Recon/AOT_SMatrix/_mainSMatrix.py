@@ -181,6 +181,16 @@ class SMatrix(ABC):
         pass
 
     @abstractmethod
+    def apply_apodization(self, window_vector: Union[np.ndarray, 'cp.ndarray']):
+        """Apply apodization window to the matrix."""
+        pass
+
+    @abstractmethod
+    def flip_probe(self):
+        """Flip the probe at 180 degrees."""
+        pass
+
+    @abstractmethod
     def _free_specific(self):
         """Free specific GPU memory allocated by the child class."""
         pass

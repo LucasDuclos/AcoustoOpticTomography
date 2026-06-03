@@ -237,7 +237,6 @@ class PreconditionerType(Enum):
     DIAGONAL = 'DIAGONAL'
     """Diagonal preconditioning: M^-1 where M is diagonal matrix with A^T*1."""
 
-
 class SMatrixType(Enum):
     """
     Enum for different sparsing methods used in reconstructions.
@@ -262,3 +261,22 @@ class SMatrixType(Enum):
           "A Unified Sparse Matrix Data Format for Efficient General Sparse Matrix-Vector Multiply on Modern Processors".
           ACM Transactions on Mathematical Software, 41(2), 1–24. DOI: 10.1145/2592376.
     """
+
+class StopCriterionType(Enum):
+    """
+    Enum for different stopping criteria used in iterative reconstruction algorithms.
+    
+    Selection of stopping criteria:
+    - MaxIterations: Stop after a maximum number of iterations.
+    - CostFunction: Stop when the cost function value falls below a threshold.
+    - RelativeChange: Stop when the relative change in the solution is below a threshold.
+    - GradientNorm: Stop when the norm of the gradient is below a threshold.
+    """
+    MAX_ITERATIONS = 'MAX_ITERATIONS'
+    """Stop after a maximum number of iterations."""
+    COST_FUNCTION = 'COST_FUNCTION'
+    """Stop when the cost function value falls below a threshold."""
+    RELATIVE_CHANGE = 'RELATIVE_CHANGE'
+    """Stop when the relative change in the solution is below a threshold."""
+    GRADIENT_NORM = 'GRADIENT_NORM'
+    """Stop when the norm of the gradient is below a threshold."""

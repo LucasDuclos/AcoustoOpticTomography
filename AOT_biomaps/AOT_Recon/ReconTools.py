@@ -23,49 +23,11 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
 
-from AOT_biomaps.AOT_Recon.ReconEnums import PotentialShapeType, PotentialType, PreconditionerType, OptimizerType
-
-def check_gpu_available(SMatrix) -> bool:
-    """Check if GPU operations are available."""
-    if not isinstance(SMatrix.device, str) or "gpu" not in SMatrix.device:
-        return False
-    if not hasattr(SMatrix, 'sparse_mod'):
-        return False
-    if not CUPY_AVAILABLE:
-        warnings.warn("CuPy not available. Falling back to CPU.")
-        SMatrix.device = 'cpu'
-        return False
-    return True
-
-
-def _get_array_module(SMatrix):
-    """Get the appropriate array module based on device."""
-    if check_gpu_available(SMatrix):
-        return cp
-    else:
-        return np
+from AOT_biomaps.AOT_Recon.ReconEnums import PotentialShapeType, PotentialType, PreconditionerType, StopCriterionType
 
 # =============================================================================
 # BASIC ARRAY OPERATIONS
 # =============================================================================
-
-def zeros(SMatrix, shape):
-    """Create a zero array with the appropriate device and type."""
-    xp = _get_array_module(SMatrix)
-    return xp.zeros(shape, dtype=xp.float32)
-
-
-def ones(SMatrix, shape):
-    """Create an array of ones with the appropriate device and type."""
-    xp = _get_array_module(SMatrix)
-    return xp.ones(shape, dtype=xp.float32)
-
-
-def fill_array(SMatrix, value, shape):
-    """Create an array filled with a specific value."""
-    xp = _get_array_module(SMatrix)
-    return xp.full(shape, value, dtype=xp.float32)
-
 
 def clamp_positive(SMatrix, x):
     """Clamp array values to be non-negative. Uses CUDA kernel when available."""   
@@ -85,9 +47,8 @@ def clamp_positive(SMatrix, x):
             except Exception:
                 pass
     
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     return xp.maximum(x, 0.0)
-
 
 # =============================================================================
 # VECTOR OPERATIONS
@@ -142,9 +103,8 @@ def axpy(SMatrix, x, y, a):
 
 def dot_product(SMatrix, x, y):
     """Compute dot product of two vectors."""
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     return xp.sum(x * y)
-
 
 def vector_divide(SMatrix, x, y, epsilon=1e-12):
     """Element-wise division: x / y with protection against division by zero."""
@@ -183,11 +143,9 @@ def vector_divide(SMatrix, x, y, epsilon=1e-12):
 
     return x / (y + epsilon)
 
-
 def apply_normalization(SMatrix, x, norm_factor):
     """Apply normalization to vector."""
     return x * norm_factor
-
 
 # =============================================================================
 # MATRIX-VECTOR OPERATIONS (delegated to SMatrix implementation)
@@ -203,139 +161,111 @@ def backward_projection(SMatrix, e):
     """Backprojection: c = A^T * e. Uses SMatrix.backward_projection() which calls CUDA kernels."""
     return SMatrix.backward_projection(e)
 
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
 
-# =============================================================================
-# ADJACENCY AND GRAPH OPERATIONS
-# =============================================================================
+def mse(SMatrix, lambda_true, lambda_pred):
+    """
+    Calculate the Mean Squared Error (MSE) between two arrays.
+    Equivalent to sklearn.metrics.mean_squared_error.
+    """
+    xp = get_array_module(SMatrix)
 
-def build_adjacency_indices(SMatrix):
-    """Build adjacency indices for regularization (4-connectivity)."""
-    Z = SMatrix.Z
-    X = SMatrix.X
-    
-    xp = _get_array_module(SMatrix)
-    
-    # Create adjacency list: each pixel has up to 4 neighbors
-    # Format: (num_edges, 2) array where each row is (i, j) for edge between i and j
-    edges = []
-    
-    for z in range(Z):
-        for x in range(X):
-            idx = z * X + x
-            # Right neighbor
-            if x < X - 1:
-                edges.append((idx, idx + 1))
-            # Down neighbor
-            if z < Z - 1:
-                edges.append((idx, idx + X))
-    
-    return xp.array(edges, dtype=xp.int32)
-
+    lambda_true = xp.asarray(lambda_true)
+    lambda_pred = xp.asarray(lambda_pred)
+    return xp.mean((lambda_true - lambda_pred) ** 2)
 
 # =============================================================================
 # ALGORITHM FUNCTIONS
 # =============================================================================
 
-def cost_function(SMatrix, lambda_flat, y_flat, optimizer, potential_type=None, beta=None):
+def calculate_step_size_reg(SMatrix, gamma, num_subsets, num_iters, show_logs):
     """
-    Compute the cost function for the given algorithm and potential type.
+    Calculate step sizes tau and sigma for PDHG when alpha or sigma is "auto" in the regularized case.
+    Args:
+        - SMatrix: The system matrix, used to estimate the Lipschitz constant.
+        - gamma: Regularization parameter
+        - eta: Parameter for the step size calculation when alpha or sigma is "auto". Must be > 1 for convergence and < 2 for optimal convergence.
+        - num_subsets: Number of subsets used in the algorithm (affects the effective Lipschitz constant)
+        - num_iters: Number of iterations to use for the power method estimation of the Lipschitz constant
+        - show_logs: If True, prints the estimated Lipschitz constant and chosen step sizes
     """
-    if optimizer == OptimizerType.MAPEM:
-        # MAPEM cost: -log-likelihood + potential
-        return cost_function_MAPEM(SMatrix, lambda_flat, y_flat, potential_type, beta)
-    elif optimizer == OptimizerType.DEPIERRO:
-        return cost_function_DEPIERRO(SMatrix, lambda_flat, y_flat, beta)
-    elif optimizer == OptimizerType.PDHG:
-        # PDHG cost: data fidelity + potential
-        return cost_function_PDHG(SMatrix, lambda_flat, y_flat, potential_type, beta)
-    elif optimizer == OptimizerType.LBFGS:
-        # LBFGS cost: data fidelity + potential
-        return cost_function_LBFGS(SMatrix, lambda_flat, y_flat, potential_type, beta)
-    elif optimizer == OptimizerType.LS:
-        # Least squares cost: 0.5 * ||A*λ - y||^2
-        return cost_function_LS(SMatrix, lambda_flat, y_flat)
-    elif optimizer == OptimizerType.MLEM:
-        # MLEM cost: -log-likelihood
-        return cost_function_MLEM(SMatrix, lambda_flat, y_flat)
-    else:
-        raise ValueError(f"Unsupported optimizer type: {optimizer}")
+    L_estimate = estimate_operator_norm(SMatrix, num_iters=num_iters)
+    L_grad = 8.0  # L_grad = 8.0 is the exact squared operator norm of the 2D finite difference matrix
+    L_total = (L_estimate**2) + L_grad
+    # Calculate Chambolle-Pock step sizes
+    tau_val = float(0.99 / (np.sqrt(L_total) * gamma))
+    sigma_val = float((0.99 * gamma / np.sqrt(L_total)) * num_subsets)
+    
+    if show_logs:
+        print(f"Estimated Lipschitz: {L_estimate:.4f} | tau: {tau_val:.5e} | sigma: {sigma_val:.5e}")
+        
+    return tau_val, sigma_val
+def calculate_step_size(SMatrix, eta, num_iters, show_logs):
+    """
+    Calculate the step size for the optimization algorithm if alpha is "auto".
+    Args :
+        SMatrix: The system matrix, used to estimate the Lipschitz constant.
+        eta: Parameter for the step size calculation when alpha is "auto". Must be > 1 for convergence and < 2 for optimal convergence.
+        num_iters: Number of iterations to use for the power method estimation of the Lipschitz constant
+        show_logs: If True, prints the estimated Lipschitz constant and chosen alpha.
+    """
+    if eta is None:
+        print("Warning: eta not set. Defaulting to 1.9.")
+        eta = 1.9
+    if not (1.0 < eta < 2.0):
+        print(f"Warning: eta={eta} is outside (1.0, 2.0). Convergence might be suboptimal.")
+    L_estimate = estimate_operator_norm(SMatrix, num_iters=num_iters)
+    alpha = eta / L_estimate if L_estimate > 0 else 1.0
+    if show_logs:
+        print(f"Estimated Lipschitz constant: {L_estimate:.4f}, using step size alpha: {alpha:.5f}")
+    return alpha
 
-def cost_function_DEPIERRO(SMatrix, lambda_flat, y_flat, beta):
+def estimate_operator_norm(SMatrix, num_iters: int = 15) -> float:
     """
-    Compute the cost function for DEPIERRO algorithm.
+    Estimate the spectral norm (largest singular value) of the forward operator A using power iteration.
+     - SMatrix: The system matrix with forward_projection and backward_projection methods.
+     - num_iters: Number of power iterations to perform (default 15).
     """
-    xp = _get_array_module(SMatrix)
-    q_flat = forward_projection(SMatrix, lambda_flat)
-    # Poisson log-likelihood + quadratic regularization
-    likelihood = xp.sum(y_flat * xp.log(q_flat + 1e-10) - q_flat)
-    return float(-likelihood + 0.5 * beta * xp.sum(lambda_flat**2))
+    xp = get_array_module(SMatrix)
 
-def cost_function_PDHG(SMatrix, lambda_flat, y_flat, potential_type, beta):
-    """
-    Compute the cost function for PDHG algorithm.
-    """
-    xp = _get_array_module(SMatrix)
-    q_flat = forward_projection(SMatrix, lambda_flat)
-    data_fidelity = 0.5 * xp.sum((q_flat - y_flat)**2)
-    _, _, potential_val = get_potential_function(potential_type, SMatrix, lambda_flat, beta, delta=None)
-    return float(data_fidelity + potential_val)
+    v = xp.random.rand(SMatrix.Z * SMatrix.X).astype(xp.float32)
+    v /= xp.linalg.norm(v) + 1e-12
 
-def cost_function_LBFGS(SMatrix, lambda_flat, y_flat, potential_type, beta):
-    """
-    Compute the cost function for LBFGS algorithm.
-    """
-    xp = _get_array_module(SMatrix)
-    q_flat = forward_projection(SMatrix, lambda_flat)
-    data_fidelity = 0.5 * xp.sum((q_flat - y_flat)**2)
-    _, _, potential_val = get_potential_function(potential_type, SMatrix, lambda_flat, beta, delta=None)
-    return float(data_fidelity + potential_val)
+    eig = 0.0
 
-def cost_function_LS(SMatrix, lambda_flat, y_flat):
-    """
-    Compute the least squares cost function for any algorithm.
-    """
-    xp = _get_array_module(SMatrix)
-    q_flat = forward_projection(SMatrix, lambda_flat)
-    data_fidelity = 0.5 * xp.sum((q_flat - y_flat)**2)
-    return float(data_fidelity)
+    for _ in range(num_iters):
+        Av = forward_projection(SMatrix, v)
+        AtAv = backward_projection(SMatrix, Av)
 
-def cost_function_MLEM(SMatrix, lambda_flat, y_flat):
-    """
-    Compute the cost function for MLEM algorithm.
-    """
-    xp = _get_array_module(SMatrix)
-    q_flat = forward_projection(SMatrix, lambda_flat)
-    # Poisson log-likelihood
-    likelihood = xp.sum(y_flat * xp.log(q_flat + 1e-10) - q_flat)
-    return float(-likelihood)
+        eig = xp.dot(v, AtAv)
 
-def cost_function_MAPEM(SMatrix, lambda_flat, y_flat, potential_type, beta):
-    """
-    Compute the cost function for MAP-EM algorithm.
-    """
-    xp = _get_array_module(SMatrix)
-    q_flat = forward_projection(SMatrix, lambda_flat)
-    # Poisson log-likelihood + regularization
-    likelihood = xp.sum(y_flat * xp.log(q_flat + 1e-10) - q_flat)
-    _, _, U_val = get_potential_function(potential_type, SMatrix, lambda_flat, beta, delta=None)
-    return float(-likelihood + U_val)
+        norm = xp.linalg.norm(AtAv)
+        if norm > 1e-12:
+            v = AtAv / norm
+
+    return float(xp.sqrt(eig))
+
 # =============================================================================
 # POTENTIAL FUNCTIONS
 # =============================================================================
 
-def build_neighborhood_offsets(shape=PotentialShapeType.CROSS, radius=1):
+def build_neighborhood_offsets(SMatrix, shape=PotentialShapeType.CROSS, radius=1):
     """
     Generates the spatial offsets (dz, dx) and associated weights for MRF gradients.
     It returns only the "half-neighborhood" to prevent computing identical edges twice 
     (since edge A-B is the same as B-A), which doubles GPU performance.
     
     Args:
+        SMatrix: The system matrix.
         shape (PotentialShapeType): The shape of the neighborhood.
         radius (int): Maximum neighborhood distance.
         
     Returns:
         list of tuples: [(dz, dx, weight), ...]
     """
+    xp = get_array_module(SMatrix)
     # 1. Vérification de la forme AVANT la boucle (Sécurité)
     if shape not in [PotentialShapeType.CROSS, PotentialShapeType.SQUARE, PotentialShapeType.CIRCLE]:
         raise ValueError(f"Unsupported neighborhood shape: {shape}, must be one of {list(PotentialShapeType)}.")
@@ -351,7 +281,7 @@ def build_neighborhood_offsets(shape=PotentialShapeType.CROSS, radius=1):
             if dz == 0 and dx <= 0:
                 continue
                 
-            dist_l2 = np.sqrt(dz**2 + dx**2)
+            dist_l2 = xp.sqrt(dz**2 + dx**2)
             dist_l1 = abs(dz) + abs(dx)
             dist_linf = max(abs(dz), abs(dx))
             
@@ -377,19 +307,15 @@ def build_neighborhood_offsets(shape=PotentialShapeType.CROSS, radius=1):
     
     return offsets
 
-def get_potential_function(potential_type, SMatrix, U, beta, shape, radius, delta=None, 
-                           compute_grad=True, compute_hess=True, compute_energy=True):
+def get_potential_function(potential_type, SMatrix, U, beta, shape, radius, delta=None, compute_grad=True, compute_hess=True, compute_energy=True):
     """
     Get potential function derivatives and energy dynamically.
     Returns (grad_U, hess_U, U_value). Elements are None if their compute flag is False.
     """
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     
     if potential_type == PotentialType.NONE:
-        return (xp.zeros_like(U) if compute_grad else None, 
-                xp.zeros_like(U) if compute_hess else None, 
-                0.0 if compute_energy else None)
-                        
+        return (xp.zeros_like(U) if compute_grad else None, xp.zeros_like(U) if compute_hess else None, 0.0 if compute_energy else None)
     if potential_type == PotentialType.QUADRATIC:
         return quadratic_potential(SMatrix, U, beta, shape, radius, compute_grad, compute_hess, compute_energy)
     elif potential_type == PotentialType.HUBER:
@@ -401,8 +327,7 @@ def get_potential_function(potential_type, SMatrix, U, beta, shape, radius, delt
     else:
         raise ValueError(f"Unsupported potential type: {potential_type}")
 
-def quadratic_potential(SMatrix, U, beta, shape="cross", radius=1, 
-                        compute_grad=True, compute_hess=True, compute_energy=True):
+def quadratic_potential(SMatrix, U, beta, shape="cross", radius=1, compute_grad=True, compute_hess=True, compute_energy=True):
     """
     True Spatial Quadratic Potential (Tikhonov / Markov Random Field).
     Penalizes the squared difference between neighboring pixels to smooth the image.
@@ -411,7 +336,7 @@ def quadratic_potential(SMatrix, U, beta, shape="cross", radius=1,
     Returns:
         tuple: (grad_U, hess_U, U_value). Elements are None if compute flag is False.
     """
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     Z, X = SMatrix.Z, SMatrix.X
     U_img = U.reshape(Z, X)
     
@@ -420,7 +345,7 @@ def quadratic_potential(SMatrix, U, beta, shape="cross", radius=1,
     U_value = 0.0 if compute_energy else None
     
     # Get dynamic neighborhood offsets
-    offsets = build_neighborhood_offsets(shape=shape, radius=radius)
+    offsets = build_neighborhood_offsets(SMatrix, shape=shape, radius=radius)
     
     for dz, dx, weight in offsets:
         # Create dynamic slices for the center pixel and its neighbor
@@ -461,15 +386,14 @@ def quadratic_potential(SMatrix, U, beta, shape="cross", radius=1,
             hess_img.flatten() if compute_hess else None, 
             U_value)
 
-def huber_potential(SMatrix, U, beta, delta=0.01, shape="cross", radius=1,
-                    compute_grad=True, compute_hess=True, compute_energy=True):
+def huber_potential(SMatrix, U, beta, delta=0.01, shape="cross", radius=1, compute_grad=True, compute_hess=True, compute_energy=True):
     """
     True Spatial Huber Potential.
     Acts as a quadratic penalty for small differences (smoothing noise) 
     and a linear penalty for large differences (preserving edges).
     Uses vectorized 2D array shifting for extreme GPU performance.
     """
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     Z, X = SMatrix.Z, SMatrix.X
     U_img = U.reshape(Z, X)
     
@@ -478,7 +402,7 @@ def huber_potential(SMatrix, U, beta, delta=0.01, shape="cross", radius=1,
     U_value = 0.0 if compute_energy else None
 
     # Get dynamic neighborhood offsets
-    offsets = build_neighborhood_offsets(shape=shape, radius=radius)
+    offsets = build_neighborhood_offsets(SMatrix, shape=shape, radius=radius)
 
     for dz, dx, weight in offsets:
         # Create dynamic slices
@@ -530,14 +454,13 @@ def huber_potential(SMatrix, U, beta, delta=0.01, shape="cross", radius=1,
             hess_img.flatten() if compute_hess else None, 
             U_value)
 
-def relative_difference_potential(SMatrix, U, beta, delta=1.0, shape="cross", radius=1,
-                                  compute_grad=True, compute_hess=True, compute_energy=True):
+def relative_difference_potential(SMatrix, U, beta, delta=1.0, shape="cross", radius=1, compute_grad=True, compute_hess=True, compute_energy=True):
     """
     Relative Difference Prior (RDP).
     Designed specifically for emission tomography (PET/SPECT) and Poisson noise.
     Smooths low-contrast regions strongly while preserving high-contrast edges.
     """
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     Z, X = SMatrix.Z, SMatrix.X
     eps = 1e-8 # Safety constant to prevent division by zero (0/0)
     
@@ -547,7 +470,7 @@ def relative_difference_potential(SMatrix, U, beta, delta=1.0, shape="cross", ra
     U_value = 0.0 if compute_energy else None
 
     # Get dynamic neighborhood offsets
-    offsets = build_neighborhood_offsets(shape=shape, radius=radius)
+    offsets = build_neighborhood_offsets(SMatrix, shape=shape, radius=radius)
 
     for dz, dx, weight in offsets:
         # Create dynamic slices
@@ -602,32 +525,46 @@ def relative_difference_potential(SMatrix, U, beta, delta=1.0, shape="cross", ra
             hess_img.flatten() if compute_hess else None, 
             U_value)
 
-def estimate_operator_norm(SMatrix, num_iters: int = 15) -> float:
+# =============================================================================
+# STOPPING CRITERIA
+# =============================================================================
+
+def check_stopping_criterion(SMatrix, current_lambda, prev_lambda, criterion_type, threshold, history = None, ground_truth = None):
     """
-    Estimate the spectral norm (largest singular value) of the forward operator A using power iteration.
-     - SMatrix: The system matrix with forward_projection and backward_projection methods.
-     - num_iters: Number of power iterations to perform (default 15).
+    Evaluates stopping criteria including MSE against ground truth.
+    
+    Args:
+        current_lambda: Current reconstruction state.
+        prev_lambda: State from previous iteration.
+        iteration: Current iteration index.
+        criterion_type: 'relative_change', 'cost_stagnation', or 'mse'.
+        threshold: The epsilon value for the criterion.
+        history: List of cost values.
+        ground_truth: The reference image (required for 'mse').
     """
-    ZX = SMatrix.Z * SMatrix.X
-    xp = _get_array_module(SMatrix)
-
-    v = xp.random.rand(ZX).astype(xp.float32)
-    v /= xp.linalg.norm(v) + 1e-12
-
-    eig = 0.0
-
-    for _ in range(num_iters):
-        Av = forward_projection(SMatrix, v)
-        AtAv = backward_projection(SMatrix, Av)
-
-        eig = xp.dot(v, AtAv)
-
-        norm = xp.linalg.norm(AtAv)
-        if norm > 1e-12:
-            v = AtAv / norm
-
-    return float(xp.sqrt(eig))
-
+    xp = get_array_module(SMatrix)
+    
+    if criterion_type == StopCriterionType.MAX_ITERATIONS:
+        return False, None  # This criterion is handled in the main loop, not here.
+    elif criterion_type == StopCriterionType.RELATIVE_CHANGE:
+        relative_change = xp.linalg.norm(current_lambda - prev_lambda) / (xp.linalg.norm(current_lambda) + 1e-10)
+        return bool(relative_change < threshold), float(relative_change)
+    elif criterion_type == StopCriterionType.COST_FUNCTION:
+        if history is None or len(history) < 2:
+            return False, None
+        relative_diff = abs(history[-2] - history[-1]) / (abs(history[-2]) + 1e-10)
+        return bool(relative_diff < threshold), float(relative_diff)
+    elif criterion_type == StopCriterionType.MSE:
+        if ground_truth is None:
+            raise ValueError("Ground truth image required for MSE stopping criterion.")
+        mse = mse(SMatrix, ground_truth, current_lambda)
+        return bool(mse < threshold), float(mse)
+    elif criterion_type == StopCriterionType.GRADIENT_NORM:
+        grad_norm = xp.linalg.norm(current_lambda)
+        return bool(grad_norm < threshold), float(grad_norm)
+    else:
+        raise ValueError(f"Unsupported stopping criterion type: {criterion_type}, must be one of {list(StopCriterionType)}.")
+        
 # =============================================================================
 # GRADIENT AND DIVERGENCE OPERATIONS (for TV regularization)
 # =============================================================================
@@ -644,7 +581,7 @@ def gradient_2d(SMatrix, x):
     Returns:
         tuple: (grad_x, grad_z) where each component is a flattened 1D array of shape (Z*X,)
     """
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     Z = SMatrix.Z
     X = SMatrix.X
     
@@ -673,7 +610,7 @@ def divergence_2d(SMatrix, p_x, p_z):
     Returns:
         div_p: Flattened 1D divergence array of shape (Z*X,)
     """
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     Z = SMatrix.Z
     X = SMatrix.X
     
@@ -707,7 +644,7 @@ def proj_tv(SMatrix, p, radius=1.0):
     Returns:
         p_projected: Flattened projected array of shape (2 * Z * X,)
     ```"""
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     ZX = SMatrix.Z * SMatrix.X
     
     # Separate the stacked dual vector components cleanly
@@ -723,6 +660,7 @@ def proj_tv(SMatrix, p, radius=1.0):
     p_z_proj = xp.where(mask, p_z * radius / norm_p, p_z)
     
     return xp.concatenate([p_x_proj, p_z_proj])
+
 # =============================================================================
 # FILE I/O
 # =============================================================================
@@ -795,17 +733,6 @@ def load_recon(hdr_path):
 
     return image
 
-
-def mse(y_true, y_pred):
-    """
-    Calculate the Mean Squared Error (MSE) between two arrays.
-    Equivalent to sklearn.metrics.mean_squared_error.
-    """
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
-    return np.mean((y_true - y_pred) ** 2)
-
-
 # =============================================================================
 # MEMORY UTILITIES
 # =============================================================================
@@ -841,7 +768,6 @@ def calculate_memory_requirement(SMatrix, y):
     
     return total_bytes / (1024 ** 3)
 
-
 def check_gpu_memory(device_index, required_memory, show_logs=True):
     """Check if enough memory is available on the specified GPU."""
     if not CUPY_AVAILABLE:
@@ -855,6 +781,24 @@ def check_gpu_memory(device_index, required_memory, show_logs=True):
     
     return free_memory_gb >= required_memory
 
+def check_gpu_available(SMatrix) -> bool:
+    """Check if GPU operations are available."""
+    if not isinstance(SMatrix.device, str) or "gpu" not in SMatrix.device:
+        return False
+    if not hasattr(SMatrix, 'sparse_mod'):
+        return False
+    if not CUPY_AVAILABLE:
+        warnings.warn("CuPy not available. Falling back to CPU.")
+        SMatrix.device = 'cpu'
+        return False
+    return True
+
+def get_array_module(SMatrix):
+    """Get the appropriate array module based on device."""
+    if check_gpu_available(SMatrix):
+        return cp
+    else:
+        return np
 
 # =============================================================================
 # OLD CUDA/GPU FUNCTIONS (kept for backward compatibility with AnalyticRecon)
@@ -874,7 +818,6 @@ def fourierz_gpu(z, X):
             axes=0
         ) * (Nz * dz)
 
-
 def ifourierz_gpu(z, X):
     """Inverse Fourier transform along z-axis (GPU)."""
     if CUPY_AVAILABLE:
@@ -888,7 +831,6 @@ def ifourierz_gpu(z, X):
             axes=0
         ) * (1 / dz)
 
-
 def ifourierx_gpu(F_fx_z, dx):
     """Inverse Fourier along X (axis=1), Matlab-compatible (GPU)."""
     if CUPY_AVAILABLE:
@@ -901,7 +843,6 @@ def ifourierx_gpu(F_fx_z, dx):
                 axes=1
             ) * (1.0 / dx)
         )
-
 
 def EvalDelayLawOS_center(X_m, theta, DelayLAWS, ActiveLIST, c):
     """
@@ -923,7 +864,6 @@ def EvalDelayLawOS_center(X_m, theta, DelayLAWS, ActiveLIST, c):
             C[i, 0] = (Z0[-1]*X0[0] - Z0[0]*X0[-1]) / (Z0[-1] - Z0[0])
             C[i, 1] = 0
     return C
-
 
 def rotate_theta_gpu(X, Z, Iin, theta, C):
     """GPU equivalent of RotateTheta.m"""
@@ -948,7 +888,6 @@ def rotate_theta_gpu(X, Z, Iin, theta, C):
         )
         return Iout.reshape(Iin.shape)
 
-
 def filter_radon_gpu(fz, Fc):
     """Filter for filtered backprojection (GPU)."""
     if CUPY_AVAILABLE:
@@ -956,7 +895,6 @@ def filter_radon_gpu(fz, Fc):
         FILTER = cp.where(cp.abs(fz) > Fc, 0, FILTER)
         FILTER *= cp.exp(-2 * cp.abs(fz / Fc)**10)
         return FILTER
-
 
 def filter_radon(f, N, filter_type, Fc):
     """
@@ -1001,7 +939,6 @@ def filter_radon(f, N, filter_type, Fc):
 
     return FILTER
 
-
 # =============================================================================
 # PRECONDITIONERS
 # =============================================================================
@@ -1019,13 +956,11 @@ def _compute_diagonal_preconditioner(SMatrix):
         SMatrix: SMatrix instance (DENSE, CSR, or SELL) - must be allocated
         
     Returns:
-        tuple: (preconditioner, preconditioner_inv) on the same device as SMatrix
-        - preconditioner: Diagonal vector (Z*X,) with A^T * 1 values
-        - preconditioner_inv: Inverse of preconditioner (safe division, clamped to avoid zeros)
+        preconditioner: Diagonal vector (Z*X,) with A^T * 1 values, clamped to avoid zeros
         
     Compatible with: All SMatrix types (DENSE, CSR, SELL) and all devices (CPU, GPU)
     """
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     
     # Compute A^T * 1 (column sums)
     ones = xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32)
@@ -1050,19 +985,16 @@ def _compute_diagonal_preconditioner(SMatrix):
     
     # Clamp to avoid division by zero
     preconditioner = xp.maximum(preconditioner, 1e-10)
-    
-    # Compute inverse
-    preconditioner_inv = 1.0 / preconditioner
-    
-    return preconditioner, preconditioner_inv
 
-def _apply_diagonal_preconditioner(U, preconditioner_inv, SMatrix):
+    return preconditioner
+
+def _apply_diagonal_preconditioner(U, preconditioner, SMatrix):
     """
     Apply diagonal preconditioner to a vector: U -> M^-1 * U
     
     Args:
         U: Vector to precondition (Z*X,)
-        preconditioner_inv: Inverse diagonal preconditioner (Z*X,)
+        preconditioner: Diagonal preconditioner (Z*X,)
         SMatrix: SMatrix instance (for device information)
         
     Returns:
@@ -1070,15 +1002,14 @@ def _apply_diagonal_preconditioner(U, preconditioner_inv, SMatrix):
         
     Compatible with: All SMatrix types and all devices (CPU, GPU)
     """
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     
     # Ensure arrays are on the same device
     U = xp.asarray(U)
-    preconditioner_inv = xp.asarray(preconditioner_inv)
+    preconditioner = xp.asarray(preconditioner)
     
     # Apply diagonal preconditioning: element-wise multiplication
-    return U * preconditioner_inv
-
+    return U / preconditioner
 
 def build_preconditioner(SMatrix, preconditioner_type):
     """
@@ -1089,30 +1020,30 @@ def build_preconditioner(SMatrix, preconditioner_type):
         preconditioner_type: PreconditionerType enum value
         
     Returns:
-        tuple: (preconditioner, preconditioner_inv) or (None, None) if NONE
+        preconditioner or None if NONE
         
     Compatible with: All SMatrix types and all devices (CPU, GPU)
     """    
     if preconditioner_type == PreconditionerType.NONE:
-        return (None, None)
+        return None
     elif preconditioner_type == PreconditionerType.DIAGONAL:
         return _compute_diagonal_preconditioner(SMatrix)
     else:
         raise ValueError(f"Unknown preconditioner type: {preconditioner_type}")
 
-def apply_preconditioner(U, preconditioner_inv, SMatrix):
+def apply_preconditioner(U, preconditioner, SMatrix):
     """
     Apply the specified preconditioner to vector U.
     
     Args:
         U: Vector to precondition (Z*X,)
-        preconditioner_inv: Inverse of the preconditioner (Z*X,) or None if no preconditioning
+        preconditioner: The preconditioner (Z*X,) or None if no preconditioning
         SMatrix: SMatrix instance (for device information)
         
     Returns:
         Preconditioned vector on the same device as input
     """
-    if preconditioner_inv is None:
+    if preconditioner is None:
         return U
     else:
-        return _apply_diagonal_preconditioner(U, preconditioner_inv, SMatrix)
+        return _apply_diagonal_preconditioner(U, preconditioner, SMatrix)

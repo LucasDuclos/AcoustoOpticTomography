@@ -13,12 +13,8 @@ import numpy as np
 from tqdm import trange
 from typing import Optional, Union, Tuple
 
-from AOT_biomaps.AOT_Recon.ReconTools import (
-    check_gpu_available, forward_projection, backward_projection, clamp_positive, 
-    build_preconditioner, apply_preconditioner, _get_array_module,
-    gradient_2d, divergence_2d, proj_tv, estimate_operator_norm
-)
-from AOT_biomaps.AOT_Recon.ReconEnums import NoiseType, PotentialType, PreconditionerType
+from AOT_biomaps.AOT_Recon.ReconTools import get_array_module, forward_projection, backward_projection, clamp_positive, check_stopping_criterion, calculate_step_size_reg, gradient_2d, divergence_2d, proj_tv
+from AOT_biomaps.AOT_Recon.ReconEnums import NoiseType, PreconditionerType, StopCriterionType
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
@@ -40,15 +36,20 @@ def PDHG(
     theta: float = 1.0,        
     tau: Union[float, str] = "auto",
     sigma: Union[float, str] = "auto",
+    eta: Optional[float] = None,
+    numIterations_stepCalculation: int = 20,
     num_subsets: int = 1,     
     reshuffle_period: int = 10,
     noise_type: NoiseType = NoiseType.GAUSSIAN,
     preconditioner_type: PreconditionerType = PreconditionerType.NONE,
+    stop_criterion: StopCriterionType = StopCriterionType.MAX_ITERATIONS,
+    stop_threshold: float = 100.0,
     isSavingEachIteration: bool = True,
     isCostFunction: bool = False,
     withTumor: bool = True,
     max_saves=5000,
     show_logs=True,
+    show_criterion: bool = True,
 ) -> Tuple[Union[np.ndarray, list], Optional[list], Optional[list]]:
     """
     Primal-Dual Hybrid Gradient (PDHG) function - Implemented via Chambolle-Pock Algorithm.
@@ -57,6 +58,21 @@ def PDHG(
     any SMatrix type (CSR, SELL, DENSE) and device (CPU, GPU).
     Supports both deterministic and stochastic updates (SPDHG) for accelerated convergence.
     
+    Supports potential functions:
+        - NONE: No regularization
+        - TOTAL_VARIATION: β*||∇u||_1 (Isotropic Total Variation regularization (implemented via dual variable projection))
+
+    Supports stopping criteria:
+        - MAX_ITERATIONS: Stop after a fixed number of iterations
+        - RELATIVE_CHANGE: Stop when relative change in lambda is below threshold
+        - COST_FUNCTION: Stop when cost function value changes by less than threshold
+        - MSE: Stop when mean squared error with respect to ground truth is below threshold (requires ground truth) ONLY FOR SIMULATED DATA 
+        - GRADIENT_NORM: Stop when norm of the update step is below threshold
+    
+    Supports preconditioning:
+        - DIAGONAL: Diagonal preconditioning using A^T * 1
+        - NONE: No preconditioning (equivalent to standard gradient descent, but may not converge for ill-conditioned problems)
+
     Args:
         SMatrix: SMatrix instance (already allocated)
         y: Measurement data
@@ -67,31 +83,32 @@ def PDHG(
         theta: Extrapolation parameter for primal variable (relaxation step)
         tau: Step size parameter for primal update ('auto' for operator norm adaptation)
         sigma: Step size parameter for dual update ('auto' for operator norm adaptation)
+        eta: Kept for backward compatibility with main call signatures
         num_subsets: Number of subsets for stochastic updates (SPDHG). If 1, runs deterministic PDHG.
         reshuffle_period: Number of iterations after which subsets are reshuffled
         noise_type: Type of noise (POISSON or GAUSSIAN)
         potential_type: Kept for signature compatibility, operates strictly as TOTAL_VARIATION
         preconditioner_type: Type of preconditioner to use (default: NONE)
+        stop_criterion: Criterion for stopping the iterations (StopCriterionType enum)
+        stop_threshold: Threshold value for the stopping criterion (for MAX_iterations, this is ignored)
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
         withTumor: Boolean for description only
         max_saves: Maximum number of intermediate saves
         show_logs: If True, shows progress bar
-        
+        show_criterion: If True, shows stopping criterion evolution in progress bar
+  
     Returns:
         tuple: (reconstructed_image, saved_indices, cost_history)
+        - reconstructed_image: Final or list of images (Z, X)
+        - saved_indices: List of saved iteration indices (None if not saving)
+        - cost_history: List of cost function values (None if not requested)
     """
-    tumor_str = "WITH" if withTumor else "WITHOUT"
-    device = SMatrix.device
-    matrix_type = SMatrix.matrix_type.name
-    xp = _get_array_module(SMatrix)
+    xp = get_array_module(SMatrix)
     Z = SMatrix.Z
     X = SMatrix.X
     ZX = Z * X
-    
-    num_emissions = SMatrix.N    
-    num_time_frames = SMatrix.T  
-    NT = num_emissions * num_time_frames
+    NT = SMatrix.N * SMatrix.T
 
     if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
         raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions.")
@@ -105,165 +122,82 @@ def PDHG(
         y_flat = xp.maximum(y_flat, 0.0)  
     
     y_data = y_flat.copy()
-    x_flat = xp.zeros(ZX, dtype=xp.float32)
+    lambda_flat = xp.zeros(ZX, dtype=xp.float32)
     x_bar = xp.zeros(ZX, dtype=xp.float32)
 
-    emission_indices = np.random.permutation(num_emissions)
+    emission_indices = np.random.permutation(NT)
     subset_slices = np.array_split(emission_indices, num_subsets)
     p_i = 1.0 / num_subsets 
 
     # --- TRUE DIAGONAL PRECONDITIONING (Independent of Beta) ---
     if preconditioner_type != PreconditionerType.NONE:
-        ones_x = xp.ones(ZX, dtype=xp.float32)
-        A_ones = forward_projection(SMatrix, ones_x) + 1e-8  
-        
-        ones_q = xp.ones(NT, dtype=xp.float32)
-        At_ones = backward_projection(SMatrix, ones_q) + 1e-8
-
-        rho = 0.99
-        
-        sigma_q = gamma * rho / A_ones
-        sigma_p = gamma * rho / 2.0  
-        
-        tau_vec = (rho * p_i / gamma) / (At_ones + 4.0) 
-        
-        if show_logs:
-            print(f"Using Diagonal Preconditioning vectors | Subsets: {num_subsets}.")
+        sigma_q = gamma * 0.99 / xp.maximum(forward_projection(SMatrix, xp.ones(ZX, dtype=xp.float32)), 1e-10)
+        sigma_p = gamma * 0.99 / 2.0  
+        tau_vec = (0.99 * p_i / gamma) / (xp.maximum(backward_projection(SMatrix, xp.ones(NT, dtype=xp.float32)), 1e-10) + 4.0) 
     else:
-        if str(tau).lower() == "auto" or str(sigma).lower() == "auto":
-            L_A = estimate_operator_norm(SMatrix, num_iters=20)
-            L_grad = 8.0  
-            L_total = (L_A**2) + L_grad  # Pure operator norm without beta scale
+        tau_val, sigma_val = calculate_step_size_reg(SMatrix, gamma, num_subsets, numIterations_stepCalculation, show_logs) if tau == "auto" or sigma == "auto" else (tau, sigma)
+        sigma_q = sigma_val
+        sigma_p = sigma_val
+        tau_vec = tau_val
 
-            tau_val = 0.99 / (np.sqrt(L_total) * gamma)
-            sigma_val = (0.99 * gamma / np.sqrt(L_total)) * float(num_subsets)
-            
-            tau_vec = tau_val
-            sigma_q = sigma_val
-            sigma_p = sigma_val
-            
-            if show_logs:
-                print(f"Using spectral norm estimation | Subsets: {num_subsets} | L_A: {L_A:.4f} | Selected scalar tau: {tau_val:.5f}, sigma: {sigma_val:.5f}.")
-
-    if numIterations <= max_saves:
-        save_indices = list(range(numIterations))
-    else:
-        step = max(1, numIterations // max_saves)
-        save_indices = list(range(0, numIterations, step))
-        if save_indices[-1] != numIterations - 1:
-            save_indices.append(numIterations - 1)
+    save_indices = np.unique(np.append(np.arange(0, numIterations, max(1, numIterations // max_saves)), numIterations - 1)).tolist()
 
     saved_lambda = []
     saved_indices_list = []
     cost_history = [] if isCostFunction else None
 
     algo_name = f"SPDHG (Chambolle-Pock) ({num_subsets} subsets)" if num_subsets > 1 else "PDHG (Chambolle-Pock)"
-    description = f"AOT-BioMaps -- {algo_name} ({matrix_type}) ---- {tumor_str} TUMOR ---- {device.upper()}"
+    description = f"AOT-BioMaps --- {algo_name} ({SMatrix.matrix_type.name}) --- Diagonal preconditioning : {'YES' if preconditioner_type != PreconditionerType.NONE else 'NO'} --- {'WITH' if withTumor else 'WITHOUT'} TUMOR --- {SMatrix.device.upper()}"
     iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
 
     for it in iterator:
-        x_prev = x_flat.copy() if hasattr(x_flat, 'copy') else x_flat + 0
+        prev_lambda = lambda_flat.copy() if hasattr(lambda_flat, 'copy') else lambda_flat + 0
         
-        Ax_bar = forward_projection(SMatrix, x_bar)
-        
-        if noise_type == NoiseType.POISSON:
-            Ax_bar = xp.maximum(Ax_bar, 1e-8)
-
-        # --- DUAL UPDATE 1: Data Fidelity Proximal Resolution ---
-        if num_subsets == 1:            
-            if noise_type == NoiseType.POISSON:
-                q_tilde = q + sigma_q * Ax_bar
-                inner_term = (1.0 - q_tilde)**2 + 4.0 * sigma_q * y_data
-                q = 0.5 * (1.0 + q_tilde - xp.sqrt(xp.maximum(inner_term, 0.0)))
-            else:  
-                q = (q + sigma_q * (Ax_bar - y_data)) / (1.0 + sigma_q)
+        Ax_bar = xp.maximum(forward_projection(SMatrix, x_bar), 1e-8) if noise_type == NoiseType.POISSON else forward_projection(SMatrix, x_bar)
             
-            AT_q = backward_projection(SMatrix, q)
+        # --- DUAL UPDATE 1: Data Fidelity Proximal Resolution --- For Poisson noise: q = (q + sigma * A * x_bar - sqrt((1 - (q + sigma * A * x_bar))^2 + 4 * sigma * y)) / 2  --- For Gaussian noise: q = (q + sigma * (A * x_bar - y)) / (1 + sigma)
+        if num_subsets == 1:  
+            q = 0.5 * (1.0 + (q + sigma_q * Ax_bar) - xp.sqrt(xp.maximum(((1.0 - (q + sigma_q * Ax_bar))**2 + 4.0 * sigma_q * y_data), 0.0))) if noise_type == NoiseType.POISSON else (q + sigma_q * (Ax_bar - y_data)) / (1.0 + sigma_q)           
         else:
-            if it > 0 and it % reshuffle_period == 0:
-                emission_indices = np.random.permutation(num_emissions)
-                subset_slices = np.array_split(emission_indices, num_subsets)
-                
-            active_subset_idx = it % num_subsets
-            active_emissions = subset_slices[active_subset_idx]
-            
-            if check_gpu_available(SMatrix):
-                subset_mask = cp.zeros(NT, dtype=cp.bool_)
-                for emis in active_emissions:
-                    subset_mask[emis * num_time_frames : (emis + 1) * num_time_frames] = True
-            else:
-                subset_mask = np.zeros(NT, dtype=np.bool_)
-                for emis in active_emissions:
-                    subset_mask[emis * num_time_frames : (emis + 1) * num_time_frames] = True
-            
-            if isinstance(sigma_q, float):
-                sig_q_sub = sigma_q
-            else:
-                sig_q_sub = sigma_q[subset_mask]
+            subset_mask = xp.zeros(NT, dtype=xp.bool_)
+            subset_slices = np.array_split(np.random.permutation(SMatrix.N), num_subsets) if it % reshuffle_period == 0 else subset_slices
 
-            if noise_type == NoiseType.POISSON:
-                q_sub = q[subset_mask]
-                Ax_sub = Ax_bar[subset_mask]
-                y_sub = y_data[subset_mask]
-                
-                q_sub_tilde = q_sub + sig_q_sub * Ax_sub
-                inner_term = (1.0 - q_sub_tilde)**2 + 4.0 * sig_q_sub * y_sub
-                q[subset_mask] = 0.5 * (1.0 + q_sub_tilde - xp.sqrt(xp.maximum(inner_term, 0.0)))
-            else:  
-                q[subset_mask] = (q[subset_mask] + sig_q_sub * (Ax_bar[subset_mask] - y_data[subset_mask])) / (1.0 + sig_q_sub)
+            for emis in subset_slices[it % num_subsets]:
+                subset_mask[emis * SMatrix.T : (emis + 1) * SMatrix.T] = True
 
-            AT_q = backward_projection(SMatrix, q)
+            sig_q_sub = sigma_q if isinstance(sigma_q, float) else sigma_q[subset_mask]
+            q[subset_mask] = 0.5 * (1.0 + (q[subset_mask] + sig_q_sub * Ax_bar[subset_mask]) - xp.sqrt(xp.maximum(((1.0 - (q[subset_mask] + sig_q_sub * Ax_bar[subset_mask]))**2 + 4.0 * sig_q_sub * y_data[subset_mask]), 0.0))) if noise_type == NoiseType.POISSON else (q[subset_mask] + sig_q_sub * (Ax_bar[subset_mask] - y_data[subset_mask])) / (1.0 + sig_q_sub)
+
 
         # --- DUAL UPDATE 2: Total Variation Regularization ---
         grad_x, grad_z = gradient_2d(SMatrix, x_bar)
-        p_x += sigma_p * grad_x
-        p_z += sigma_p * grad_z
+        p_projected = proj_tv(SMatrix, xp.concatenate([p_x + sigma_p * grad_x, p_z + sigma_p * grad_z]), radius=beta) # PURE CP: Beta is exclusively acting as the projection radius limit
+        p_x, p_z = p_projected[:ZX], p_projected[ZX:]
+        # --- PRIMAL UPDATE: Element-wise execution using tau vector --- (Negative div_p maps exact adjointness)
+        lambda_flat = clamp_positive(SMatrix, (lambda_flat - tau_vec * backward_projection(SMatrix, q) - tau_vec * divergence_2d(SMatrix, p_x, p_z)))
 
-        p_stacked = xp.concatenate([p_x, p_z])
-        # PURE CP: Beta is exclusively acting as the projection radius limit
-        p_projected = proj_tv(SMatrix, p_stacked, radius=beta)
-        p_x = p_projected[:ZX]
-        p_z = p_projected[ZX:]
-
-        # --- PRIMAL UPDATE: Element-wise execution using tau vector ---
-        div_p = divergence_2d(SMatrix, p_x, p_z)
-
-        # Primal update execution (Negative div_p maps exact adjointness)
-        x_flat = x_flat - tau_vec * AT_q - tau_vec * div_p
-        x_flat = clamp_positive(SMatrix, x_flat)
-
-        # --- PRIMAL EXTRAPOLATION ---
-        x_bar = x_flat + theta * (x_flat - x_prev)
+        # --- EXTRAPOLATION ---
+        x_bar = lambda_flat + theta * (lambda_flat - prev_lambda)
 
         # Compute cost function metrics if requested
         if isCostFunction:
-            Ax = forward_projection(SMatrix, x_flat)
-            if noise_type == NoiseType.POISSON:
-                Ax_clamped = xp.maximum(Ax, 1e-10)
-                likelihood = xp.sum(y_data * xp.log(Ax_clamped) - Ax_clamped)
-                cost = float(-likelihood)
-            else:  
-                cost = 0.5 * float(xp.sum((Ax - y_data)**2))
-                
-            gx_eval, gz_eval = gradient_2d(SMatrix, x_flat)
-            tv_val = float(xp.sum(xp.sqrt(gx_eval**2 + gz_eval**2 + 1e-12)))
-            cost += beta * tv_val
-            cost_history.append(cost)
+            Ax = forward_projection(SMatrix, lambda_flat)
+            gx_eval, gz_eval = gradient_2d(SMatrix, lambda_flat)
+            cost_history.append(float(-(xp.sum(y_data * xp.log(xp.maximum(Ax, 1e-10)) - xp.maximum(Ax, 1e-10)))) + beta * float(xp.sum(xp.sqrt(gx_eval**2 + gz_eval**2 + 1e-12))) if noise_type == NoiseType.POISSON else 0.5 * float(xp.sum((Ax - y_data)**2)) + beta * float(xp.sum(xp.sqrt(gx_eval**2 + gz_eval**2 + 1e-10))))
+
+        # Stopping Criterion
+        if stop_criterion != StopCriterionType.MAX_ITERATIONS:
+            ground_truth = SMatrix.experiment.OpticImage.phantom if withTumor else SMatrix.experiment.OpticImage.laser.intensity
+            isStop, val = check_stopping_criterion(SMatrix, lambda_flat, prev_lambda, stop_criterion, stop_threshold, cost_history, ground_truth)
+            if show_logs and show_criterion:
+                iterator.set_postfix_str(f"{stop_criterion.name}: {val:.2e}")
+            if isStop:
+                if show_logs: print(f"\n[Stopping] Criterion {stop_criterion.name} reached at iteration {it}.")
+                break
 
         if isSavingEachIteration and it in save_indices:
-            if check_gpu_available(SMatrix):
-                saved_lambda.append(cp.asnumpy(x_flat.reshape(Z, X)))  
-            else:
-                saved_lambda.append(x_flat.reshape(Z, X).copy())     
+            saved_lambda.append(lambda_flat.reshape(Z, X).get() if hasattr(lambda_flat, 'get') else lambda_flat.reshape(Z, X).copy())
             saved_indices_list.append(it)
 
-    if check_gpu_available(SMatrix):
-        cp.cuda.Stream.null.synchronize()
-        final_result = cp.asnumpy(x_flat.reshape(Z, X)) 
-    else:
-        final_result = x_flat.reshape(Z, X)  
-
-    if isSavingEachIteration:
-        return saved_lambda, saved_indices_list, cost_history
-    else:
-        return final_result, None, cost_history
+    final_result = lambda_flat.reshape(Z, X).get() if hasattr(lambda_flat, 'get') else lambda_flat.reshape(Z, X)
+    return (saved_lambda, saved_indices_list, cost_history) if isSavingEachIteration else (final_result, None, cost_history)
