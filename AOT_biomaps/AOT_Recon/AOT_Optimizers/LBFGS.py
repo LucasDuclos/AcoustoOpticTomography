@@ -40,7 +40,6 @@ def LBFGS(
     potential_type: PotentialType = PotentialType.QUADRATIC,
     potential_shape: PotentialShapeType = PotentialShapeType.CROSS,
     potential_radius: int = 1,
-    preconditioner_type: PreconditionerType = PreconditionerType.NONE,
     isSavingEachIteration: bool = True,
     isCostFunction: bool = False,
     withTumor: bool = True,
@@ -69,11 +68,6 @@ def LBFGS(
     # ---------------------------------------------------------
     lambda_flat = xp.full(ZX, 0.1, dtype=xp.float32)
     w_flat = xp.sqrt(lambda_flat) 
-
-    # Compute preconditioner if requested
-    preconditioner, preconditioner_inv = None, None
-    if preconditioner_type != PreconditionerType.NONE:
-        preconditioner, preconditioner_inv = build_preconditioner(SMatrix, preconditioner_type)
 
     # L-BFGS Memory initialization
     m = 10 
@@ -144,9 +138,6 @@ def LBFGS(
 
         # Search Direction
         d_w = -d_w
-
-        if preconditioner_inv is not None:
-            d_w = apply_preconditioner(d_w, preconditioner_inv, SMatrix)
 
         # --- PURE BACKTRACKING LINE SEARCH (Unconstrained) ---
         c1 = 1e-4
