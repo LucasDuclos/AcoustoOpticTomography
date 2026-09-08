@@ -50,8 +50,8 @@ def test_imports():
         return False
     
     try:
-        from AOT_biomaps.AOT_Recon.AOT_Optimizers import LS
-        print(f"  [OK] LS")
+        from AcoustoOpticTomography.AOT_biomaps.AOT_Recon.AOT_Optimizers import PGD
+        print(f"  [OK] PGD")
     except Exception as e:
         print(f"  [FAIL] LS: {e}")
         return False

@@ -4,6 +4,6 @@ from .MLEM import *
 from .PDHG import *
 from .PGC import *
 from .PPGMLEM import *
-from .LS import *
+from .PGD import *
 from .LBFGS import *
-from .PIGD import *
+from .FISTA import *

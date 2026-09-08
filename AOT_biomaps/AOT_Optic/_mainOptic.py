@@ -24,9 +24,9 @@ class Phantom:
             self.laser.intensity = np.transpose(self.laser.intensity)
             self.find_ROI() 
         except KeyError as e:
-            raise ValueError(f"Missing parameter: {e}")
+            raise ValueError(f"[AOT-biomaps] Missing parameter: {e}")
         except Exception as e:
-            raise RuntimeError(f"Error initializing Phantom: {e}")
+            raise RuntimeError(f"[AOT-biomaps] Error initializing Phantom: {e}")
 
     def __str__(self):
         """
@@ -67,7 +67,7 @@ class Phantom:
 
             return result
         except Exception as e:
-            raise RuntimeError(f"Error generating string representation: {e}")
+            raise RuntimeError(f"[AOT-biomaps] Error generating string representation: {e}")
         
     def find_ROI(self):
         """
@@ -77,7 +77,7 @@ class Phantom:
         try:
             X_mm, Z_mm = np.meshgrid(self.laser.x, self.laser.z, indexing='xy')
             assert self.phantom.shape == X_mm.shape, (
-                f"Shape mismatch: phantom={self.phantom.shape}, grid={X_mm.shape}"
+                f"[AOT-biomaps] Shape mismatch: phantom={self.phantom.shape}, grid={X_mm.shape}"
             )
             self.maskList = []  # Reset the list
 
@@ -91,7 +91,7 @@ class Phantom:
                 self.maskList.append(mask_i)
 
         except Exception as e:
-            raise RuntimeError(f"Error in find_ROI: {e}")
+            raise RuntimeError(f"[AOT-biomaps] Error in find_ROI: {e}")
 
     def _apply_absorbers(self):
         """
@@ -109,7 +109,7 @@ class Phantom:
 
             return np.clip(intensity, 0, None)
         except Exception as e:
-            raise RuntimeError(f"Error applying absorbers: {e}")
+            raise RuntimeError(f"[AOT-biomaps] Error applying absorbers: {e}")
 
     def show_phantom(self, withROI=False, figsize=(4,4)):
         """
@@ -173,12 +173,12 @@ class Phantom:
 
                 roi_values = self.phantom[ROI_mask]
                 if roi_values.size == 0:
-                    print("❌ NO PIXELS IN ROIs! Check positions:")
+                    print("[AOT-biomaps] Warning: NO PIXELS IN ROIs! Check positions:")
                     for i, absorber in enumerate(self.absorbers):
-                        print(f"  Absorber {i}: center=({absorber.center[0]*1000:.3f}, {absorber.center[1]*1000:.3f}) mm")
-                        print(f"          radius={absorber.radius*1000:.3f} mm")
+                        print(f"[AOT-biomaps]   Absorber {i}: center=({absorber.center[0]*1000:.3f}, {absorber.center[1]*1000:.3f}) mm")
+                        print(f"[AOT-biomaps]           radius={absorber.radius*1000:.3f} mm")
                 else:
-                    print(f" Average intensity in ROIs: {np.mean(roi_values):.4f}")
+                    print(f"[AOT-biomaps] Average intensity in ROIs: {np.mean(roi_values):.4f}")
 
                 ax.set_xlabel('x (mm)')
                 ax.set_ylabel('z (mm)')
@@ -192,4 +192,4 @@ class Phantom:
             plt.tight_layout()
             plt.show()
         except Exception as e:
-            raise RuntimeError(f"Error in show_phantom: {e}")
+            raise RuntimeError(f"[AOT-biomaps] Error in show_phantom: {e}")

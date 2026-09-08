@@ -44,7 +44,7 @@ class OptimizerType(Enum):
     
     Available optimizers and their properties:
     - MLEM: Maximum Likelihood Expectation Maximization (multiplicative form)
-    - LS: Landweber (Least Squares) algorithm
+    - PGD: Projected Gradient Descent algorithm
     - MAPEM: Maximum A Posteriori Expectation Maximization
     - DEPIERRO: De Pierro's optimization transfer algorithm
     - PPGMLEM: Penalized Preconditioned Gradient MLEM
@@ -56,14 +56,16 @@ class OptimizerType(Enum):
     Maximum Likelihood Expectation Maximization.
     Multiplicative form implementation that truncates negative data to 0.
     Supports subsets (becomes OSEM).
-    Compatible with: emission and transmission data, histogram and list-mode.
     """
-    LS = 'LS'
+    PGD = 'PGD'
     """
-    Landweber Least Squares algorithm.
+    Projected Gradient Descent algorithm.
     Uses log-converted model for transmission data.
-    Requires manual relaxation parameter tuning.
-    Compatible with: histogram data, emission and transmission.
+    """
+    FISTA = 'FISTA'
+    """
+    Fast Iterative Shrinkage-Thresholding Algorithm (FISTA).
+    Accelerated proximal gradient method for convex optimization problems.
     """
     MAPEM = 'MAPEM'
     """
@@ -101,12 +103,6 @@ class OptimizerType(Enum):
     """
     Limited-memory BFGS.
     Quasi-Newton optimization algorithm with regularization support.
-    Compatible with: differentiable potential functions (QUADRATIC, HUBER, RELATIVE_DIFFERENCE).
-    """
-    PIGD = 'PIGD'
-    """
-    Penalized Iterative Gradient Descent (PIGD).
-    Gradient-based optimization algorithm for penalized ML reconstruction. 
     Compatible with: differentiable potential functions (QUADRATIC, HUBER, RELATIVE_DIFFERENCE).
     """
 
@@ -224,19 +220,6 @@ class NoiseType(Enum):
     None_ = 'none'
     """No noise is applied."""
 
-class PreconditionerType(Enum):
-    """
-    Enum for preconditioning types used in iterative reconstruction.
-    
-    Available preconditioners:
-    - NONE: No preconditioning (identity)
-    - DIAGONAL: Diagonal preconditioning using inverse of diagonal elements
-    """
-    NONE = 'NONE'
-    """No preconditioning applied."""
-    DIAGONAL = 'DIAGONAL'
-    """Diagonal preconditioning: M^-1 where M is diagonal matrix with A^T*1."""
-
 class SMatrixType(Enum):
     """
     Enum for different sparsing methods used in reconstructions.
@@ -280,3 +263,5 @@ class StopCriterionType(Enum):
     """Stop when the relative change in the solution is below a threshold."""
     GRADIENT_NORM = 'GRADIENT_NORM'
     """Stop when the norm of the gradient is below a threshold."""
+    MSE = 'MSE'
+    """Stop when the mean squared error with respect to ground truth is below a threshold (requires ground truth, only for simulated data)."""

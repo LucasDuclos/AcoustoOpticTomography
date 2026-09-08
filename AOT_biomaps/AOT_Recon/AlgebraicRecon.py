@@ -3,8 +3,10 @@ import warnings
 from AOT_biomaps.Config import config
 
 from ._mainRecon import Recon
-from .ReconEnums import NoiseType, ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, PreconditionerType, PotentialShapeType, StopCriterionType
-from .AOT_Optimizers import MLEM, LS, MAPEM, DEPIERRO, PDHG, PGC, PPGMLEM, LBFGS, PIGD
+from .ReconEnums import ReconType, OptimizerType, ProcessType, SMatrixType, PotentialType, PotentialShapeType, StopCriterionType
+from .AOT_Preconditioner.PreconditionerEnums import PreconditionerType
+from .AOT_Preconditioner import DiagPreconditioner, NoPreconditioner
+from .AOT_Optimizers import MLEM, PGD, MAPEM, DEPIERRO, PDHG, PGC, PPGMLEM, LBFGS, FISTA
 from .AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
 from .AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from .AOT_SMatrix.SMatrix_DENSE import SMatrix_DENSE
@@ -19,6 +21,13 @@ import matplotlib.animation as animation
 from typing import Optional, List
 from IPython.display import HTML
 
+# Check for CuPy availability
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    cp = None
+    CUPY_AVAILABLE = False
 
 # ============================================================================
 # ALGORITHM FORMULAS (for error messages and documentation)
@@ -37,18 +46,17 @@ ALGORITHM_FORMULAS = {
         "notes": "Native Poisson solver. Unregularized, tends to amplify high-frequency noise at high iterations.",
         "potentialFunction": [PotentialType.NONE]
     },
-    OptimizerType.LS: {
+    OptimizerType.PGD: {
         "formula": "λ^(k+1) = [ λ^(k) - α * M^-1 * A^T * (A*λ^(k) - y) ]_+",
-        "description": "Least Squares (Projected Gradient Descent)",
+        "description": "Projected Gradient Descent (Least-Squares minimization with non-negativity constraint)",
         "reference": "Landweber, 1951",
         "required_params": ["alpha"],
         "constraints": {
             "alpha": "> 0 or 'auto'",
-            "eta": "in (1.0, 2.0)",
             "numIterations": "> 0",
             "numIterations_stepCalculation": "> 0",
         },
-        "notes": "Gaussian noise solver. Alpha='auto' uses power method for Lipschitz estimation.",
+        "notes": "Gaussian noise solver. Alpha='auto' uses power method for Lipschitz estimation. Hardly recommanded to set eta to 1",
         "potentialFunction": [PotentialType.NONE]
     },
     OptimizerType.MAPEM: {
@@ -81,15 +89,11 @@ ALGORITHM_FORMULAS = {
         "formula": "λ^(k+1) = [ λ^(k) + α * (∇EM - ∇U) / (A^T * 1 + δ * H_U + γ) ]_+",
         "description": "Penalized Preconditioned Gradient ML-EM",
         "reference": "Nuyts et al., IEEE TNS, 2002",
-        "required_params": ["alpha", "beta", "gamma", "delta"],
+        "required_params": ["beta", "delta"],
         "constraints": {
-            "alpha": "> 0 or 'auto'",
             "beta": ">= 0",
             "delta": ">= 0",
-            "gamma": ">= 0",
-            "eta": "in (1.0, 2.0)",
             "numIterations": "> 0",
-            "numIterations_stepCalculation": "> 0",
         },
         "notes": "Additive Poisson gradient descent stabilized by pseudo-Hessian and Tikhonov parameter.",
         "potentialFunction": [PotentialType.QUADRATIC, PotentialType.HUBER, PotentialType.RELATIVE_DIFFERENCE]
@@ -103,7 +107,6 @@ ALGORITHM_FORMULAS = {
             "alpha": "> 0 or 'auto'",
             "beta": ">= 0",
             "delta": ">= 0",
-            "eta": "in (1.0, 2.0)",
             "numIterations": "> 0",
             "numIterations_stepCalculation": "> 0",
         },
@@ -141,20 +144,20 @@ ALGORITHM_FORMULAS = {
         "notes": "Uses λ = w^2 transform to inherently enforce non-negativity without projection artifacts.",
         "potentialFunction": [PotentialType.QUADRATIC, PotentialType.HUBER, PotentialType.RELATIVE_DIFFERENCE]
     },
-    OptimizerType.PIGD: {
-        "formula": "λ^(k+1) = [ λ^(k) - α * diag(A^T 1)^-1 * (∇f(λ^(k)) + ∇U(λ^(k))) ]_+",
-        "description": "Penalized Iterative Gradient Descent",
-        "reference": "Standard Proximal Gradient Method",
-        "required_params": ["alpha", "beta", "delta"],
+    OptimizerType.FISTA: {
+        "formula": "z = x + ((t_k - 1) / t_{k+1}) * (x - x_old) | x = prox_{α*U}(z - α*∇f(z))",
+        "description": "Fast Iterative Shrinkage-Thresholding Algorithm (Accelerated Proximal Gradient)",
+        "reference": "Beck and Teboulle, SIAM J. Imaging Sci., 2009",
+        "required_params": ["alpha", "beta", "delta", "eta"],
         "constraints": {
             "alpha": "> 0 or 'auto'",
             "beta": ">= 0",
-            "delta": "> 0",
-            "eta": "in (1.0, 2.0)",
+            "delta": ">= 0",
+            "eta": "> 0",
             "numIterations": "> 0",
             "numIterations_stepCalculation": "> 0",
         },
-        "notes": "Poisson gradient descent diagonally preconditioned by sensitivity.",
+        "notes": "Accelerated proximal gradient method with Nesterov momentum. Requires proximal operator for the potential function.",
         "potentialFunction": [PotentialType.QUADRATIC, PotentialType.HUBER, PotentialType.RELATIVE_DIFFERENCE]
     },
 }
@@ -164,7 +167,7 @@ class AlgebraicRecon(Recon):
     Algebraic reconstruction class for AOT_biomaps.
     
     This class provides a unified interface for all iterative reconstruction algorithms,
-    including MLEM, LS, MAPEM, DEPIERRO, PPGMLEM, PGC, PDHG, and PIGD.
+    including MLEM, PGD, MAPEM, DEPIERRO, PPGMLEM, PGC, PDHG, and FISTA.
     
     Features:
     - Support for multiple optimizer types
@@ -213,11 +216,13 @@ class AlgebraicRecon(Recon):
         isCostFunction: bool = False,
         maxSaves: int = 5000,
         denominatorThreshold: float = 1e-6,
+        # Sparsing
         smatrixType: SMatrixType = SMatrixType.SELL,
         sparseThreshold: float = 0.1,
         blockRows: int = 64,
         sliceHeight: int = 64,
-        isComplexeRecon: bool = False,
+        sigma_sell: int = 4096,
+        isComplexRecon: bool = False,
         device: Optional[str] = None,
         # Preconditioning
         preconditionerType: Optional[PreconditionerType] = PreconditionerType.NONE,
@@ -234,7 +239,6 @@ class AlgebraicRecon(Recon):
         tau: Optional[float] = None,
         sigma: Optional[float] = None,
         reshufflePeriod: Optional[int] = None,
-        noiseType: Optional[NoiseType] = NoiseType.GAUSSIAN,
         # Potential function parameters
         PotentialShape: Optional[PotentialShapeType] = PotentialShapeType.CROSS,
         PotentialRadius: Optional[int] = 2,
@@ -256,10 +260,10 @@ class AlgebraicRecon(Recon):
             sparseThreshold: Threshold for sparse matrix construction (default: 0.1)
             blockRows: Number of rows per block for sparse matrix construction (default: 64) (only used for CSR and SELL)
             sliceHeight: Number of rows per slice for SELL format (default: 64)
-            isComplexeRecon: Whether to perform complex reconstruction (default: False)
+            isComplexRecon: Whether to perform complex reconstruction (default: False)
             device: Device to use ('cpu' or 'gpu') (default: auto-detected)
             preconditionerType: Type of preconditioner (PreconditionerType.NONE or DIAGONAL, default: NONE)
-            alpha: Step size for LS (default: None)
+            alpha: Step size for PGD, FISTA (default: None)
             beta: Regularization parameter for MAPEM, DEPIERRO, PPGMLEM, PGC, PDHG (default: None)
             gamma: Preconditioning parameter for PPGMLEM (default: None)
             delta: Huber threshold or relative difference parameter for MAPEM, PPGMLEM, DEPIERRO (default: None)
@@ -268,7 +272,6 @@ class AlgebraicRecon(Recon):
             theta: Extrapolation parameter for PDHG (default: None)
             tau: Primal step size for PDHG (default: None)
             sigma: Dual step size for PDHG (default: None)
-            noiseType: Type of noise (NoiseType enum, default: GAUSSIAN) for PDHG if gaussian -> L2 data fidelity, if poisson -> KL divergence
             PotentialShape: Shape parameter for potential functions (default: PotentialShapeType.CROSS). Useless for TOTAL_VARIATION potential which use cross shape by default.
             PotentialRadius: Radius parameter for potential functions (default: 2). Useless for TOTAL_VARIATION potential which use radius = 1 by default.
             **kwargs: Additional keyword arguments
@@ -299,20 +302,28 @@ class AlgebraicRecon(Recon):
         self.isCostFunction = isCostFunction
         self.maxSaves = maxSaves
         self.denominatorThreshold = denominatorThreshold
-        self.isComplexeRecon = isComplexeRecon
+        self.isComplexRecon = isComplexRecon
+
         if device is None:
-            device = config.select_best_gpu()
-            if device is None:
-                self.device = 'cpu'
+            self.device = f'gpu:{config.select_best_gpu()}' if CUPY_AVAILABLE else 'cpu'
+        else:
+            if type(device) is not str:
+                print(f"[AOT-biomaps] Error occurred while setting device. Must be 'cpu' or 'gpu:<index>'. Falling back to auto-detection.")
+                self.device = f'gpu:{config.select_best_gpu()}' if CUPY_AVAILABLE else 'cpu'
+            elif device not in ['cpu'] and not device.startswith('gpu:'):
+                print(f"[AOT-biomaps] Error occurred while setting device. Must be 'cpu' or 'gpu:<index>'. Falling back to auto-detection.")
+                self.device = f'gpu:{config.select_best_gpu()}' if CUPY_AVAILABLE else 'cpu'
             else:
-                self.device = f'gpu:{device}'
+                self.device = device
+
         self.SMatrix = None
         self.smatrixType = smatrixType
         self.sparseThreshold = sparseThreshold
         self.blockRows = blockRows
         self.sliceHeight = sliceHeight
+        self.sigma_sell = sigma_sell
         self.preconditionerType = preconditionerType
-        
+
         # Store regularization parameters
         self.alpha = alpha
         self.beta = beta
@@ -328,7 +339,6 @@ class AlgebraicRecon(Recon):
         self.theta = theta
         self.tau = tau
         self.sigma = sigma
-        self.noiseType = noiseType
         self.reshufflePeriod = reshufflePeriod
         
         # Set corner and face with defaults
@@ -338,19 +348,21 @@ class AlgebraicRecon(Recon):
         # Initialize reconstruction results
         self.reconPhantom: List[np.ndarray] = []
         self.reconLaser: List[np.ndarray] = []
+        self.cost_historyPhantom = None
+        self.cost_historyLaser = None
         self.indices: List[int] = []
         self.MSE: Optional[List[float]] = None
         self.SSIM: Optional[List[float]] = None
         self.CRC: Optional[List[float]] = None
                
         # Handle complex reconstruction
-        if self.isComplexeRecon:
+        if self.isComplexRecon:
             if self.experiment.AOsignal_withTumor is not None:
-                self.experiment.AOsignal_withTumor_demodulated = self.experiment.parse_and_demodulate(withTumor=True)
+                self.experiment.AOsignal_withTumor_demodulated = self.experiment.demodulate_AOsignal(withTumor=True)
             elif self.experiment.AOsignal_withoutTumor is not None:
-                self.experiment.AOsignal_withoutTumor_demodulated = self.experiment.parse_and_demodulate(withTumor=False)
+                self.experiment.AOsignal_withoutTumor_demodulated = self.experiment.demodulate_AOsignal(withTumor=False)
             else:
-                raise ValueError("No AO signal available for demodulation. Please provide at least one signal, with or without tumor.")
+                raise ValueError("[AOT-biomaps] No AO signal available for demodulation. Please provide at least one signal, with or without tumor.")
             self.experiment.AcousticFields_demodulated = self.experiment.demodulate_acoustic_fields()
     
     def _validate_potential_compatibility(self, errors: list):
@@ -361,60 +373,60 @@ class AlgebraicRecon(Recon):
         POTENTIAL_COMPATIBILITY = {
             PotentialType.QUADRATIC: [
                 OptimizerType.MAPEM, OptimizerType.DEPIERRO, OptimizerType.PPGMLEM,
-                OptimizerType.PGC, OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.PIGD
+                OptimizerType.PGC, OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.FISTA
             ],
             PotentialType.HUBER: [
                 OptimizerType.MAPEM, OptimizerType.DEPIERRO, OptimizerType.PPGMLEM, OptimizerType.PGC,
-                OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.PIGD
+                OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.FISTA
             ],
             PotentialType.RELATIVE_DIFFERENCE: [
                 OptimizerType.MAPEM, OptimizerType.DEPIERRO, OptimizerType.PPGMLEM, OptimizerType.PGC,
-                OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.PIGD
+                OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.FISTA
             ],
             PotentialType.TOTAL_VARIATION: [
                 OptimizerType.PDHG
             ],
             PotentialType.NONE: [
-                OptimizerType.MLEM, OptimizerType.LS, OptimizerType.MAPEM, OptimizerType.DEPIERRO, 
-                OptimizerType.PPGMLEM, OptimizerType.PGC, OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.PIGD
+                OptimizerType.MLEM, OptimizerType.PGD, OptimizerType.MAPEM, OptimizerType.DEPIERRO, 
+                OptimizerType.PPGMLEM, OptimizerType.PGC, OptimizerType.PDHG, OptimizerType.LBFGS, OptimizerType.FISTA
             ],
         }
         
         current_potential = self.potentialFunction if self.potentialFunction is not None else PotentialType.NONE
 
         if current_potential not in POTENTIAL_COMPATIBILITY:
-            errors.append(f"Unknown potential function: {current_potential}")
+            errors.append(f"[AOT-biomaps] Unknown potential function: {current_potential}")
             return
         
         compatible_optimizers = POTENTIAL_COMPATIBILITY[current_potential]
         if self.optimizer not in compatible_optimizers:
             compatible_names = [opt.value for opt in compatible_optimizers]
             errors.append(
-                f"Potential '{current_potential.value}' is not compatible with optimizer '{self.optimizer.value}'. "
-                f"Compatible optimizers: {', '.join(compatible_names)}"
+                f"[AOT-biomaps] Potential '{current_potential.value}' is not compatible with optimizer '{self.optimizer.value}'. "
+                f"[AOT-biomaps] Compatible optimizers: {', '.join(compatible_names)}"
             )
         
         # Hyperparameters dependency checks per potential type
         if current_potential == PotentialType.TOTAL_VARIATION:
             if self.beta is None:
-                errors.append("TOTAL_VARIATION potential requires 'beta' parameter to be set.")
+                errors.append("[AOT-biomaps] TOTAL_VARIATION potential requires 'beta' parameter to be set.")
             if self.PotentialShape != PotentialShapeType.CROSS or self.PotentialRadius != 1:
-                errors.append(f"TOTAL_VARIATION strictly requires shape=CROSS and radius=1 for proximal evaluation. Got shape={self.PotentialShape}, radius={self.PotentialRadius}.")
+                errors.append(f"[AOT-biomaps] TOTAL_VARIATION strictly requires shape=CROSS and radius=1 for proximal evaluation. Got shape={self.PotentialShape}, radius={self.PotentialRadius}.")
         
         elif current_potential == PotentialType.HUBER:
             if self.delta is None:
-                errors.append("HUBER potential requires 'delta' parameter to be set.")
+                errors.append("[AOT-biomaps] HUBER potential requires 'delta' parameter to be set.")
         
         elif current_potential == PotentialType.RELATIVE_DIFFERENCE:
             if self.beta is None:
-                errors.append("RELATIVE_DIFFERENCE potential requires 'beta' parameter to be set.")
+                errors.append("[AOT-biomaps] RELATIVE_DIFFERENCE potential requires 'beta' parameter to be set.")
             if self.delta is None:
-                errors.append("RELATIVE_DIFFERENCE potential requires 'delta' parameter to be set.")
+                errors.append("[AOT-biomaps] RELATIVE_DIFFERENCE potential requires 'delta' parameter to be set.")
 
     def _validate_hyperparameters(self):
         """Validate all hyperparameters and stopping criteria for the selected optimizer."""
         if self.optimizer not in ALGORITHM_FORMULAS:
-            warnings.warn(f"Unknown optimizer type: {self.optimizer}. Skipping hyperparameter validation.")
+            warnings.warn(f"[AOT-biomaps] Unknown optimizer type: {self.optimizer}. Skipping hyperparameter validation.")
             return
 
         formula_info = ALGORITHM_FORMULAS[self.optimizer]
@@ -422,20 +434,20 @@ class AlgebraicRecon(Recon):
 
         # 1. Structural checks
         if self.numIterations <= 0:
-            errors.append(f"numIterations must be > 0, got {self.numIterations}")
+            errors.append(f"[AOT-biomaps] numIterations must be > 0, got {self.numIterations}")
         if self.numSubsets <= 0:
-            errors.append(f"numSubsets must be > 0, got {self.numSubsets}")
+            errors.append(f"[AOT-biomaps] numSubsets must be > 0, got {self.numSubsets}")
 
         # 2. Validate Stopping Criteria Logic
         stop_crit = getattr(self, 'stop_criterion', StopCriterionType.MAX_ITERATIONS)
         if stop_crit != StopCriterionType.MAX_ITERATIONS:
             threshold = getattr(self, 'stop_threshold', None)
             if threshold is None or threshold <= 0:
-                errors.append(f"Stopping criterion {stop_crit.name} requires a positive 'stop_threshold'. Got {threshold}.")
+                errors.append(f"[AOT-biomaps] Stopping criterion {stop_crit.name} requires a positive 'stop_threshold'. Got {threshold}.")
             if stop_crit == StopCriterionType.MSE:
                 # Basic check to ensure we are in a simulated context if MSE is requested
                 if self.experiment.OpticImage is None or self.experiment.OpticImage.phantom is None:
-                    errors.append("MSE stopping criterion requires a simulated Ground Truth (phantom) in the experiment.")
+                    errors.append("[AOT-biomaps] MSE stopping criterion requires a simulated Ground Truth (phantom) in the experiment.")
 
         # 3. Check optimizer-specific mathematical constraints
         constraints = formula_info.get("constraints", {})
@@ -447,30 +459,26 @@ class AlgebraicRecon(Recon):
 
             if param_value is None:
                 if param_name in formula_info.get("required_params", []):
-                    errors.append(f"Required hyperparameter '{display_name}' is not set.")
+                    errors.append(f"[AOT-biomaps] Required hyperparameter '{display_name}' is not set.")
                 continue
 
             if constraint == "> 0 or 'auto'":
                 if not (param_value == 'auto' or (isinstance(param_value, (int, float)) and param_value > 0)):
-                    errors.append(f"'{display_name}' must be > 0 or 'auto', got '{param_value}'")
-
-            elif constraint == "in (1.0, 2.0)":
-                if not (isinstance(param_value, (int, float)) and 1.0 < param_value < 2.0):
-                    errors.append(f"'{display_name}' must be strictly inside interval (1.0, 2.0), got '{param_value}'")
+                    errors.append(f"[AOT-biomaps] '{display_name}' must be > 0 or 'auto', got '{param_value}'")
 
             elif constraint == "> 0":
                 if not (isinstance(param_value, (int, float)) and param_value > 0):
-                    errors.append(f"'{display_name}' must be strictly > 0, got '{param_value}'")
+                    errors.append(f"[AOT-biomaps] '{display_name}' must be strictly > 0, got '{param_value}'")
 
             elif constraint == ">= 0":
                 if not (isinstance(param_value, (int, float)) and param_value >= 0):
-                    errors.append(f"'{display_name}' must be >= 0, got '{param_value}'")
+                    errors.append(f"[AOT-biomaps] '{display_name}' must be >= 0, got '{param_value}'")
 
             elif constraint.startswith("in ["):
                 try:
                     low, high = map(float, constraint[4:-1].split(","))
                     if not (low <= param_value <= high):
-                        errors.append(f"'{display_name}' must be in closed interval [{low}, {high}], got '{param_value}'")
+                        errors.append(f"[AOT-biomaps] '{display_name}' must be in closed interval [{low}, {high}], got '{param_value}'")
                 except ValueError:
                     pass
 
@@ -515,11 +523,11 @@ class AlgebraicRecon(Recon):
         elif self.smatrixType == SMatrixType.CSR:
             self.SMatrix = self._fill_SMatrix_CSR(isShowLogs=isShowLogs)
         elif self.smatrixType == SMatrixType.COO:
-            raise NotImplementedError("COO sparse matrix not implemented yet.")
+            raise NotImplementedError(f"[AOT-biomaps] COO sparse matrix not implemented yet.")
         elif self.smatrixType == SMatrixType.SELL:
             self.SMatrix = self._fill_SMatrix_SELL(isShowLogs=isShowLogs)
         else:
-            raise ValueError(f"Unsupported SMatrix type: {self.smatrixType}")
+            raise ValueError(f"[AOT-biomaps] Unsupported SMatrix type: {self.smatrixType}")
     
     def flip_probe(self):
         self.SMatrix.flip_probe()
@@ -527,13 +535,14 @@ class AlgebraicRecon(Recon):
     def apply_apodization(self, window_vector: np.ndarray):
         self.SMatrix.apply_apodization(window_vector)
     
-    def run(self, processType: ProcessType = ProcessType.PYTHON, withTumor: bool = True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs: bool = True):
+    def run(self, y = None, processType: ProcessType = ProcessType.PYTHON, withTumor: bool = True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs: bool = True):
         """
         Run the algebraic reconstruction process.
         
         Dispatches to the appropriate reconstruction method based on processType.
         
         Args:
+            y: The observed data (if provided). else, it will be loaded from the experiment based on withTumor flag.
             processType: Type of processing (PYTHON or CASToR)
             withTumor: If True, reconstruct with tumor data; otherwise without
             stop_criterion: Criterion for stopping the reconstruction
@@ -550,20 +559,22 @@ class AlgebraicRecon(Recon):
         if processType == ProcessType.CASToR:
             self._algebraic_recon_CASToR(withTumor=withTumor, show_logs=show_logs)
         elif processType == ProcessType.PYTHON:
-            self._algebraic_recon_Python(withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
+            self._algebraic_recon_Python(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
         else:
-            raise ValueError(f"Unknown Algebraic reconstruction type: {processType}")
+            raise ValueError(f"[AOT-biomaps] Unknown Algebraic reconstruction type: {processType}")
 
-    def _algebraic_recon_Python(self, withTumor: bool = True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs: bool = True):
+    def _algebraic_recon_Python(self, y=None, withTumor: bool = True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs: bool = True):
         """
         Run algebraic reconstruction using Python implementation.
         
         Dispatches to the appropriate optimizer-specific method based on self.optimizer.
         
         Args:
+            y: The observed data (if provided). else, it will be loaded from the experiment based on withTumor flag.
             withTumor: If True, reconstruct with tumor data; otherwise without
             stop_criterion: Criterion for stopping the reconstruction
             stop_threshold: Threshold for the stopping criterion
+            stop_window_size: Window size (used to avoid early stop due to oscillations)
             show_criterion: If True, display the stopping criterion
             show_logs: If True, display progress logs
             
@@ -571,38 +582,39 @@ class AlgebraicRecon(Recon):
             ValueError: If the optimizer is not supported
         """
         # Check signal availability
-        if withTumor:
-            if self.experiment.AOsignal_withTumor is None:
-                raise ValueError("AO signal with tumor is not available. Please generate AO signal with tumor in the experiment first.")
-            y = self.experiment.AOsignal_withTumor
-        else:
-            if self.experiment.AOsignal_withoutTumor is None:
-                raise ValueError("AO signal without tumor is not available. Please generate AO signal without tumor in the experiment first.")
-            y = self.experiment.AOsignal_withoutTumor
-        
+        if y is None:
+            if withTumor:
+                if self.experiment.AOsignal_withTumor is None:
+                    raise ValueError("[AOT-biomaps] AO signal with tumor is not available. Please generate AO signal with tumor in the experiment first.")
+                y = self.experiment.AOsignal_withTumor if not self.isComplexRecon else np.array([self.experiment.AOsignal_withTumor_demodulated[key] for key in self.experiment.AOsignal_withTumor_demodulated.keys()]).T
+            else:
+                if self.experiment.AOsignal_withoutTumor is None:
+                    raise ValueError("[AOT-biomaps] AO signal without tumor is not available. Please generate AO signal without tumor in the experiment first.")
+                y = self.experiment.AOsignal_withoutTumor if not self.isComplexRecon else np.array([self.experiment.AOsignal_withoutTumor_demodulated[key] for key in self.experiment.AOsignal_withoutTumor_demodulated.keys()]).T
+
         self._validate_hyperparameters()
 
         # Dispatch to optimizer-specific method
         if self.optimizer == OptimizerType.MLEM:
-            self._run_MLEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
-        elif self.optimizer == OptimizerType.LS:
-            self._run_LS(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_MLEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+        elif self.optimizer == OptimizerType.PGD:
+            self._run_PGD(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.MAPEM:
-            self._run_MAPEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_MAPEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.DEPIERRO:
-            self._run_DEPIERRO(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_DEPIERRO(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PPGMLEM:
-            self._run_PPGMLEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
-        elif self.optimizer == OptimizerType.PIGD:
-            self._run_PIGD(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_PPGMLEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+        elif self.optimizer == OptimizerType.FISTA:
+            self._run_FISTA(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PGC:
-            self._run_PGC(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_PGC(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PDHG:
-            self._run_PDHG(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_PDHG(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.LBFGS:
-            self._run_LBFGS(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_LBFGS(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
         else:
-            raise ValueError(f"Unsupported optimizer type: {self.optimizer}")
+            raise ValueError(f"[AOT-biomaps] Unsupported optimizer type: {self.optimizer}")
 
     def _algebraic_recon_CASToR(self, withTumor: bool = True, show_logs: bool = True):
         """
@@ -625,7 +637,7 @@ class AlgebraicRecon(Recon):
         # Check and generate input files if necessary
         if not os.path.isfile(os.path.join(self.saveDir, fileName)):
             if show_logs:
-                print(f"Missing .cdh file. Generating {fileName}...")
+                print(f"[AOT-biomaps] Missing .cdh file. Generating {fileName}...")
             self.experiment.saveAOsignals_Castor(self.saveDir)
 
         # Check/generate system matrix
@@ -633,12 +645,12 @@ class AlgebraicRecon(Recon):
             os.makedirs(smatrix, exist_ok=True)
         if not os.listdir(smatrix):
             if show_logs:
-                print("System matrix missing. Generating...")
+                print(f"[AOT-biomaps] System matrix missing. Generating...")
             self.experiment.saveAcousticFields(self.saveDir)
 
         # Verify that the .cdh file exists
         if not os.path.isfile(os.path.join(self.saveDir, fileName)):
-            raise FileNotFoundError(f".cdh file does not exist: {fileName}")
+            raise FileNotFoundError(f"[AOT-biomaps] .cdh file does not exist: {fileName}")
 
         # Create output directory
         os.makedirs(os.path.join(self.saveDir, 'results', 'recon'), exist_ok=True)
@@ -674,7 +686,7 @@ class AlgebraicRecon(Recon):
         # Add optimizer-specific parameters
         if self.optimizer == OptimizerType.MLEM:
             pass  # No additional parameters needed
-        elif self.optimizer == OptimizerType.LS:
+        elif self.optimizer == OptimizerType.PGD:
             if self.alpha is not None:
                 cmd.extend(["-alpha", str(self.alpha)])
         elif self.optimizer == OptimizerType.MAPEM:
@@ -729,7 +741,7 @@ class AlgebraicRecon(Recon):
         # Make script executable and run it
         subprocess.run(["chmod", "+x", recon_script_path], check=True)
         if show_logs:
-            print(f"Running reconstruction with CASToR...")
+            print(f"[AOT-biomaps] Running reconstruction with CASToR...")
         result = subprocess.run(recon_script_path, env=env, check=True, capture_output=True, text=True)
 
         # Display CASToR output for debugging
@@ -741,10 +753,10 @@ class AlgebraicRecon(Recon):
                 print(result.stderr)
 
         if show_logs:
-            print("Reconstruction completed successfully.")
+            print(f"[AOT-biomaps] Reconstruction completed successfully.")
         self.load_reconCASToR(withTumor=withTumor)
 
-    def _run_MLEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs=True):
+    def _run_MLEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
         """Run MLEM reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = MLEM(
@@ -754,6 +766,7 @@ class AlgebraicRecon(Recon):
                 denominator_threshold=self.denominatorThreshold,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -769,6 +782,7 @@ class AlgebraicRecon(Recon):
                 denominator_threshold=self.denominatorThreshold,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -777,19 +791,19 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_LS(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs=True):
-        """Run Least Squares reconstruction."""
+    def _run_PGD(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+        """Run Projected Gradient Descent reconstruction."""
         if withTumor:
-            self.reconPhantom, self.indices, self.cost_historyPhantom = LS(
+            self.reconPhantom, self.indices, self.cost_historyPhantom = PGD(
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
                 alpha=self.alpha,
-                eta=self.eta,
                 numIterations_stepCalculation=self.numIterations_stepCalculation,
                 preconditioner_type=self.preconditionerType,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -798,16 +812,16 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
         else:
-            self.reconLaser, self.indices, self.cost_historyLaser = LS(
+            self.reconLaser, self.indices, self.cost_historyLaser = PGD(
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
                 alpha=self.alpha,
-                eta=self.eta,
                 numIterations_stepCalculation=self.numIterations_stepCalculation,
                 preconditioner_type=self.preconditionerType,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -816,7 +830,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_LBFGS(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs=True):
+    def _run_LBFGS(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
         """Run LBFGS reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = LBFGS(
@@ -830,6 +844,7 @@ class AlgebraicRecon(Recon):
                 potential_radius=self.PotentialRadius,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -849,6 +864,7 @@ class AlgebraicRecon(Recon):
                 potential_radius=self.PotentialRadius,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -857,7 +873,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_MAPEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs=True):
+    def _run_MAPEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
         """Run MAPEM reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = MAPEM(
@@ -871,6 +887,7 @@ class AlgebraicRecon(Recon):
                 potential_radius=self.PotentialRadius,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -890,6 +907,7 @@ class AlgebraicRecon(Recon):
                 potential_radius=self.PotentialRadius,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -898,7 +916,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_DEPIERRO(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs=True):
+    def _run_DEPIERRO(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
         """Run DEPIERRO reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = DEPIERRO(
@@ -912,6 +930,7 @@ class AlgebraicRecon(Recon):
                 potential_radius=self.PotentialRadius,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -931,6 +950,7 @@ class AlgebraicRecon(Recon):
                 potential_radius=self.PotentialRadius,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -939,24 +959,21 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_PPGMLEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs=True):
+    def _run_PPGMLEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
         """Run PPGMLEM reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = PPGMLEM(
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                alpha=self.alpha,
                 beta=self.beta,
                 delta=self.delta,
-                gamma=self.gamma,
-                eta=self.eta,
-                numIterations_stepCalculation=self.numIterations_stepCalculation,
                 potential_type=self.potentialFunction,
                 potential_shape=self.PotentialShape,
                 potential_radius=self.PotentialRadius,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -969,17 +986,14 @@ class AlgebraicRecon(Recon):
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
-                alpha=self.alpha,
                 beta=self.beta,
                 delta=self.delta,
-                gamma=self.gamma,
-                eta=self.eta,
-                numIterations_stepCalculation=self.numIterations_stepCalculation,
                 potential_type=self.potentialFunction,
                 potential_shape=self.PotentialShape,
                 potential_radius=self.PotentialRadius,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -988,23 +1002,24 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_PIGD(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs=True):
-        """Run PIGD reconstruction."""
+    def _run_FISTA(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+        """Run FISTA reconstruction."""
         if withTumor:
-            self.reconPhantom, self.indices, self.cost_historyPhantom = PIGD(
+            self.reconPhantom, self.indices, self.cost_historyPhantom = FISTA(
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
                 alpha=self.alpha,
                 beta=self.beta,
                 delta=self.delta,
-                eta=self.eta,
                 numIterations_stepCalculation=self.numIterations_stepCalculation,
                 potential_type=self.potentialFunction,
                 potential_shape=self.PotentialShape,
                 potential_radius=self.PotentialRadius,
+                preconditioner_type=self.preconditionerType,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1013,20 +1028,21 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
         else:
-            self.reconLaser, self.indices, self.cost_historyLaser = PIGD(
+            self.reconLaser, self.indices, self.cost_historyLaser = FISTA(
                 SMatrix=self.SMatrix,
                 y=y,
                 numIterations=self.numIterations,
                 alpha=self.alpha,
                 beta=self.beta,
                 delta=self.delta,
-                eta=self.eta,
                 numIterations_stepCalculation=self.numIterations_stepCalculation,
                 potential_type=self.potentialFunction,
                 potential_shape=self.PotentialShape,
                 potential_radius=self.PotentialRadius,
+                preconditioner_type=self.preconditionerType,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1035,7 +1051,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_PGC(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs=True):
+    def _run_PGC(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
         """Run PGC reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = PGC(
@@ -1052,6 +1068,7 @@ class AlgebraicRecon(Recon):
                 potential_radius=self.PotentialRadius,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1074,6 +1091,7 @@ class AlgebraicRecon(Recon):
                 potential_radius=self.PotentialRadius,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1082,7 +1100,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_PDHG(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, show_criterion=True, show_logs=True):
+    def _run_PDHG(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
         """Run PDHG reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = PDHG(
@@ -1090,18 +1108,16 @@ class AlgebraicRecon(Recon):
                 y=y,
                 numIterations=self.numIterations,
                 beta=self.beta,
-                gamma=self.gamma,
                 theta=self.theta,
                 tau=self.tau,
                 sigma=self.sigma,
-                eta=self.eta,
                 numIterations_stepCalculation=self.numIterations_stepCalculation,
                 num_subsets=self.numSubsets,
                 reshuffle_period=self.reshufflePeriod,
-                noise_type=self.noiseType,
                 preconditioner_type=self.preconditionerType,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1115,18 +1131,16 @@ class AlgebraicRecon(Recon):
                 y=y,
                 numIterations=self.numIterations,
                 beta=self.beta,
-                gamma=self.gamma,
                 theta=self.theta,
                 tau=self.tau,
                 sigma=self.sigma,
-                eta=self.eta,
                 numIterations_stepCalculation=self.numIterations_stepCalculation,
                 num_subsets=self.numSubsets,
                 reshuffle_period=self.reshufflePeriod,
-                noise_type=self.noiseType,
                 preconditioner_type=self.preconditionerType,
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
+                stop_window_size=stop_window_size,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1134,6 +1148,56 @@ class AlgebraicRecon(Recon):
                 show_logs=show_logs,
                 show_criterion=show_criterion
             )
+    
+    def plot_cost(self, isSaving=True, log_scale_x=False, log_scale_y=False, figSize=(4,3), show_logs=True):
+        """
+        Plot the cost function values.
+
+        Parameters:
+            isSaving: bool, whether to save the plot.
+            log_scale_x: bool, if True, use logarithmic scale for the x-axis.
+            log_scale_y: bool, if True, use logarithmic scale for the y-axis.
+        Returns:
+            None
+        """
+        if self.cost_historyPhantom is None and self.cost_historyLaser is None:
+            raise ValueError("[AOT-biomaps] Cost function history is empty. Please calculate it first.")
+        if self.cost_historyPhantom is not None and len(self.cost_historyPhantom) < 1 or self.cost_historyLaser is not None and len(self.cost_historyLaser) < 1:
+            raise ValueError("[AOT-biomaps] Plotting cost function requires more than one data point. Please set isSavingEachIteration=True and isCostFunction=True when running the reconstruction to plot cost function history.")
+
+        # Plot cost function curve
+        plt.figure(figsize=figSize)
+        if self.cost_historyPhantom is not None:
+            plt.plot(self.indices, self.cost_historyPhantom/np.max(self.cost_historyPhantom), 'r-', label="Cost (Phantom)")
+        if self.cost_historyLaser is not None:
+            plt.plot(self.indices, self.cost_historyLaser/np.max(self.cost_historyLaser), 'b-', label="Cost (Laser)")
+
+
+        plt.xlabel("Iteration")
+        plt.ylabel("Normalized Cost")
+        plt.title("Cost Function vs. Iteration")
+        if log_scale_x:
+            plt.xscale('log')
+        if log_scale_y:
+            plt.yscale('log')
+        plt.legend()
+        plt.grid(True, which="both", ls="-")
+        plt.tight_layout()
+        if isSaving and self.saveDir is not None:
+            now = datetime.now()
+            date_str = now.strftime("%Y_%d_%m_%y")
+            scale_str = ""
+            if log_scale_x and log_scale_y:
+                scale_str = "_loglog"
+            elif log_scale_x:
+                scale_str = "_logx"
+            elif log_scale_y:
+                scale_str = "_logy"
+            SavingFolder = os.path.join(self.saveDir, f'{len(self.experiment.AcousticFields)}_SCANS_Cost_plot_{self.optimizer.name}_{scale_str}{date_str}.png')
+            plt.savefig(SavingFolder, dpi=300)
+            if show_logs:
+                print(f"[AOT-biomaps] Cost plot saved to {SavingFolder}")
+        plt.show()
     
     def plot_MSE(self, isSaving=True, log_scale_x=False, log_scale_y=False, figSize=(4,3), show_logs=True):
         """
@@ -1147,11 +1211,14 @@ class AlgebraicRecon(Recon):
             None
         """
         if not self.MSE:
-            raise ValueError("MSE is empty. Please calculate MSE first.")
+            raise ValueError("[AOT-biomaps] MSE is empty. Please calculate MSE first.")
+        if self.MSE is not None and len(self.MSE) < 1:
+            raise ValueError("[AOT-biomaps] Plotting MSE function requires more than one data point. Please set isSavingEachIteration=True and isCostFunction=True when running the reconstruction to plot MSE history.")  
+
 
         best_idx = self.indices[np.argmin(self.MSE)]
         if show_logs:
-            print(f"Lowest MSE = {np.min(self.MSE):.4f} at iteration {best_idx+1}")
+            print(f"[AOT-biomaps] Lowest MSE = {np.min(self.MSE):.4f} at iteration {best_idx+1}")
         # Plot MSE curve
         plt.figure(figsize=figSize)
         plt.plot(self.indices, self.MSE, 'r-', label="MSE curve")
@@ -1181,13 +1248,13 @@ class AlgebraicRecon(Recon):
             SavingFolder = os.path.join(self.saveDir, f'{len(self.experiment.AcousticFields)}_SCANS_MSE_plot_{self.optimizer.name}_{scale_str}{date_str}.png')
             plt.savefig(SavingFolder, dpi=300)
             if show_logs:
-                print(f"MSE plot saved to {SavingFolder}")
+                print(f"[AOT-biomaps] MSE plot saved to {SavingFolder}")
 
         plt.show()
 
     def show_MSE_bestRecon(self, isSaving=True, show_logs=True, figSize=(15, 5)):
         if not self.MSE:
-            raise ValueError("MSE is empty. Please calculate MSE first.")
+            raise ValueError("[AOT-biomaps] MSE is empty. Please calculate MSE first.")
 
         best_idx = np.argmin(self.MSE)
         best_recon = self.reconPhantom[best_idx]
@@ -1247,7 +1314,7 @@ class AlgebraicRecon(Recon):
             SavingFolder = os.path.join(self.saveDir, f'{len(self.experiment.AcousticFields)}_SCANS_comparison_MSE_BestANDLastRecon_{self.optimizer.name}_{date_str}.png')
             plt.savefig(SavingFolder, dpi=300, bbox_inches='tight')
             if show_logs:
-                print(f"MSE plot saved to {SavingFolder}")
+                print(f"[AOT-biomaps] MSE plot saved to {SavingFolder}")
 
         plt.show()
 
@@ -1267,10 +1334,10 @@ class AlgebraicRecon(Recon):
         mpl.rcParams['animation.embed_limit'] = 200
 
         if len(self.reconPhantom) == 0 or len(self.reconPhantom) < 2:
-            raise ValueError("Not enough lambda matrices available for animation.")
+            raise ValueError("[AOT-biomaps] Not enough lambda matrices available for animation.")
 
         if isPropMSE and (self.MSE is None or len(self.MSE) == 0):
-            raise ValueError("MSE is empty or not calculated. Please calculate MSE first.")
+            raise ValueError("[AOT-biomaps] MSE is empty or not calculated. Please calculate MSE first.")
 
         frames = np.array(self.reconPhantom)
         mse = np.array(self.MSE)
@@ -1362,11 +1429,11 @@ class AlgebraicRecon(Recon):
 
     def plot_SSIM(self, isSaving=True, log_scale_x=False, log_scale_y=False, figSize=(4,3), show_logs=True):
         if not self.SSIM:
-            raise ValueError("SSIM is empty. Please calculate SSIM first.")
+            raise ValueError("[AOT-biomaps] SSIM is empty. Please calculate SSIM first.")
 
         best_idx = self.indices[np.argmax(self.SSIM)]
         if show_logs:
-            print(f"Highest SSIM = {np.max(self.SSIM):.4f} at iteration {best_idx+1}")
+            print(f"[AOT-biomaps] Highest SSIM = {np.max(self.SSIM):.4f} at iteration {best_idx+1}")
         # Plot SSIM curve
         plt.figure(figsize=figSize)
         plt.plot(self.indices, self.SSIM, 'r-', label="SSIM curve")
@@ -1396,14 +1463,14 @@ class AlgebraicRecon(Recon):
             SavingFolder = os.path.join(self.saveDir, f'{len(self.experiment.AcousticFields)}_SCANS_SSIM_plot_{self.optimizer.name}_{scale_str}{date_str}.png')
             plt.savefig(SavingFolder, dpi=300)
             if show_logs:
-                print(f"SSIM plot saved to {SavingFolder}")
+                print(f"[AOT-biomaps] SSIM plot saved to {SavingFolder}")
 
         plt.show()
 
     def show_SSIM_bestRecon(self, isSaving=True, figSize=(15, 5), show_logs=True):
         
         if not self.SSIM:
-            raise ValueError("SSIM is empty. Please calculate SSIM first.")
+            raise ValueError("[AOT-biomaps] SSIM is empty. Please calculate SSIM first.")
 
         best_idx = np.argmax(self.SSIM)
         best_recon = self.reconPhantom[best_idx]
@@ -1446,7 +1513,7 @@ class AlgebraicRecon(Recon):
             SavingFolder = os.path.join(self.saveDir, f'{len(self.experiment.AcousticFields)}_SCANS_comparison_SSIM_BestANDLastRecon_{self.optimizer.name}_{date_str}.png')
             plt.savefig(SavingFolder, dpi=300)
             if show_logs:
-                print(f"SSIM plot saved to {SavingFolder}")
+                print(f"[AOT-biomaps] SSIM plot saved to {SavingFolder}")
         plt.show()
 
     def plot_CRC_vs_Noise(self, use_ROI=True, fin=None, min_distance=0.01, figSize = (4,3),
@@ -1461,13 +1528,13 @@ class AlgebraicRecon(Recon):
         """
         # Vérifications initiales
         if self.reconLaser is None or self.reconLaser == []:
-            raise ValueError("Reconstructed laser is empty. Run reconstruction first.")
+            raise ValueError("[AOT-biomaps] Reconstructed laser is empty. Run reconstruction first.")
         if isinstance(self.reconLaser, list) and len(self.reconLaser) == 1:
-            raise ValueError("Reconstructed Image without tumor is a single frame. Run with isSavingEachIteration=True.")
+            raise ValueError("[AOT-biomaps] Reconstructed Image without tumor is a single frame. Run with isSavingEachIteration=True.")
         if self.reconPhantom is None or self.reconPhantom == []:
-            raise ValueError("Reconstructed phantom is empty. Run reconstruction first.")
+            raise ValueError("[AOT-biomaps] Reconstructed phantom is empty. Run reconstruction first.")
         if isinstance(self.reconPhantom, list) and len(self.reconPhantom) == 1:
-            raise ValueError("Reconstructed Image with tumor is a single frame. Run with isSavingEachIteration=True.")
+            raise ValueError("[AOT-biomaps] Reconstructed Image with tumor is a single frame. Run with isSavingEachIteration=True.")
 
         if fin is None:
             fin = len(self.reconPhantom) - 1
@@ -1539,7 +1606,7 @@ class AlgebraicRecon(Recon):
         # Sauvegarde
         if isSaving:
             if self.saveDir is None:
-                print("Warning: saveDir is None. Configure saving path to save the figure.")
+                print("[AOT-biomaps] Warning: saveDir is None. Configure saving path to save the figure.")
             else:
                 os.makedirs(self.saveDir, exist_ok=True)
                 now = datetime.now()
@@ -1550,7 +1617,7 @@ class AlgebraicRecon(Recon):
                 save_path = os.path.join(self.saveDir, filename)
                 plt.savefig(save_path, dpi=300, bbox_inches='tight')
                 if show_logs:
-                    print(f"Plot saved to: {save_path}")
+                    print(f"[AOT-biomaps] Plot saved to: {save_path}")
 
         plt.tight_layout()
         plt.show()
@@ -1578,17 +1645,17 @@ class AlgebraicRecon(Recon):
         # Check data availability
         if with_tumor:
             if self.reconPhantom is None or self.reconPhantom == []:
-                raise ValueError("Reconstructed phantom is empty. Run reconstruction first.")
+                raise ValueError("[AOT-biomaps] Reconstructed phantom is empty. Run reconstruction first.")
             if isinstance(self.reconPhantom, list) and len(self.reconPhantom) == 1:
-                raise ValueError("Reconstructed Image with tumor is a single frame. Run reconstruction with isSavingEachIteration=True.")
+                raise ValueError("[AOT-biomaps] Reconstructed Image with tumor is a single frame. Run reconstruction with isSavingEachIteration=True.")
             recon_list = self.reconPhantom
             ground_truth = self.experiment.OpticImage.phantom
             title_suffix = "with_tumor"
         else:
             if self.reconLaser is None or self.reconLaser == []:
-                raise ValueError("Reconstructed laser is empty. Run reconstruction first.")
+                raise ValueError("[AOT-biomaps] Reconstructed laser is empty. Run reconstruction first.")
             if isinstance(self.reconLaser, list) and len(self.reconLaser) == 1:
-                raise ValueError("Reconstructed Image without tumor is a single frame. Run reconstruction with isSavingEachIteration=True.")
+                raise ValueError("[AOT-biomaps] Reconstructed Image without tumor is a single frame. Run reconstruction with isSavingEachIteration=True.")
             recon_list = self.reconLaser
             ground_truth = self.experiment.OpticImage.laser.intensity
             title_suffix = "without_tumor"
@@ -1661,7 +1728,7 @@ class AlgebraicRecon(Recon):
                 save_path = f"{save_path}_{title_suffix}"
             plt.savefig(save_path, dpi=300)
             if show_logs:
-                print(f"Figure saved to: {save_path}")
+                print(f"[AOT-biomaps] Figure saved to: {save_path}")
 
         plt.show()
 
@@ -1678,7 +1745,7 @@ class AlgebraicRecon(Recon):
             tuple: (bool: whether to save, str: the filepath)
         """
         if self.saveDir is None:
-            raise ValueError("Save directory is not specified.")
+            raise ValueError("[AOT-biomaps] Save directory is not specified.")
         if date is None:
             date = datetime.now().strftime("%d%m")
         results_dir = os.path.join(self.saveDir, f'results_{date}_{self.optimizer.value}')
@@ -1697,153 +1764,140 @@ class AlgebraicRecon(Recon):
 
     def load(self, withTumor=True, results_date=None, optimizer=None, filePath=None, show_logs=True):
         """
-        Load the reconstruction results (reconPhantom or reconLaser) and indices as lists of 2D np arrays into self.
-        If the loaded file is a 3D array, it is split into a list of 2D arrays.
-        Args:
-            withTumor: If True, loads reconPhantom (with tumor), else reconLaser (without tumor).
-            results_date: Date string (format "ddmm") to specify which results to load. If None, uses the most recent date in saveDir.
-            optimizer: Optimizer name (as string or enum) to filter results. If None, uses the current optimizer of the instance.
-            filePath: Optional. If provided, loads directly from this path (overrides saveDir and results_date).
+        Load reconstruction results (reconPhantom or reconLaser) and indices.
+        If results_date is None, finds the most recent directory matching the pattern.
         """
+        recon_key = 'reconPhantom' if withTumor else 'reconLaser'
+
         if filePath is not None:
-            # Mode chargement direct depuis un fichier
-            recon_key = 'reconPhantom' if withTumor else 'reconLaser'
+            # Direct load mode from a specified file
+            if not os.path.exists(filePath):
+                raise FileNotFoundError(f"[AOT-biomaps] No reconstruction file found at {filePath}.")
             recon_path = filePath
-            if not os.path.exists(recon_path):
-                raise FileNotFoundError(f"No reconstruction file found at {recon_path}.")
-            # Charge le fichier (3D ou liste de 2D)
-            data = np.load(recon_path, allow_pickle=True)
-            # Découpe en liste de 2D si c'est un tableau 3D
-            if isinstance(data, np.ndarray) and data.ndim == 3:
-                if withTumor:
-                    self.reconPhantom = [data[i, :, :] for i in range(data.shape[0])]
-                else:
-                    self.reconLaser = [data[i, :, :] for i in range(data.shape[0])]
-            else:
-                # Sinon, suppose que c'est déjà une liste de 2D
-                if withTumor:
-                    self.reconPhantom = data
-                else:
-                    self.reconLaser = data
-            # Essayer de charger les indices
-            base_dir, _ = os.path.split(recon_path)
-            indices_path = os.path.join(base_dir, 'indices.npy')
-            if os.path.exists(indices_path):
-                indices_data = np.load(indices_path, allow_pickle=True)
-                if isinstance(indices_data, np.ndarray) and indices_data.ndim == 3:
-                    self.indices = [indices_data[i, :, :] for i in range(indices_data.shape[0])]
-                else:
-                    self.indices = indices_data
-            else:
-                self.indices = None
-                
-            if show_logs:
-                print(f"Loaded reconstruction results and indices from {recon_path}")
         else:
-            # Mode chargement depuis le répertoire de résultats
             if self.saveDir is None:
-                raise ValueError("Save directory is not specified. Please set saveDir before loading.")
-            # Use current optimizer and potential function if not provided
+                raise ValueError("[AOT-biomaps] Save directory is not specified. Please set saveDir before loading.")
+
+            # Determine the optimizer name to use
             opt_name = optimizer.value if optimizer is not None else self.optimizer.value
-            # Build the base directory pattern
+
+            # Build the base directory pattern (e.g., "results_*_PDHG")
             dir_pattern = f'results_*_{opt_name}'
-            # Add parameters to the pattern based on the optimizer
+
+            # Add optimizer-specific parameters to the pattern
             if optimizer is None:
                 optimizer = self.optimizer
             if optimizer == OptimizerType.PPGMLEM:
-                beta_str = f'_Beta_{self.beta}'
-                delta_str = f'_Delta_{self.delta}'
-                gamma_str = f'_Gamma_{self.gamma}'
-                sigma_str = f'_Sigma_{self.sigma}'
-                dir_pattern += f'{beta_str}{delta_str}{gamma_str}{sigma_str}'
+                dir_pattern += f'_Beta_{self.beta}_Delta_{self.delta}_Gamma_{self.gamma}_Sigma_{self.sigma}'
             elif optimizer in (OptimizerType.PGC, OptimizerType.DEPIERRO):
-                beta_str = f'_Beta_{self.beta}'
-                sigma_str = f'_Sigma_{self.sigma}'
-                dir_pattern += f'{beta_str}{sigma_str}'
-            # Find the most recent results directory if no date is specified
-            if results_date is None:
-                dirs = [d for d in os.listdir(self.saveDir) if os.path.isdir(os.path.join(self.saveDir, d)) and dir_pattern in d]
-                if not dirs:
-                    raise FileNotFoundError(f"No matching results directory found for pattern '{dir_pattern}' in {self.saveDir}.")
-                dirs.sort(reverse=True)  # Most recent first
-                results_dir = os.path.join(self.saveDir, dirs[0])
-            else:
-                results_dir = os.path.join(self.saveDir, f'results_{results_date}_{opt_name}')
-                if optimizer == OptimizerType.MLEM:
-                    pass
-                elif optimizer == OptimizerType.LS:
-                    results_dir += f'_Alpha_{self.alpha}'
+                dir_pattern += f'_Beta_{self.beta}_Sigma_{self.sigma}'
+            elif optimizer == OptimizerType.PGD:
+                dir_pattern += f'_Alpha_{self.alpha}'
+
+            # List all directories in self.saveDir
+            all_dirs = [d for d in os.listdir(self.saveDir) if os.path.isdir(os.path.join(self.saveDir, d))]
+
+            # Filter directories matching the pattern (e.g., "results_0906_PDHG")
+            matching_dirs = []
+            for d in all_dirs:
+                if d.startswith('results_') and f'_{opt_name}' in d:
+                    matching_dirs.append(d)
+
+            if not matching_dirs:
+                raise FileNotFoundError(f"[AOT-biomaps] No matching results directory found for pattern 'results_*_{opt_name}' in {self.saveDir}.")
+
+            # If results_date is specified, use it
+            if results_date is not None:
+                target_dir = f'results_{results_date}_{opt_name}'
+                if optimizer == OptimizerType.PPGMLEM:
+                    target_dir += f'_Beta_{self.beta}_Delta_{self.delta}_Gamma_{self.gamma}_Sigma_{self.sigma}'
+                elif optimizer in (OptimizerType.PGC, OptimizerType.DEPIERRO):
+                    target_dir += f'_Beta_{self.beta}_Sigma_{self.sigma}'
+                elif optimizer == OptimizerType.PGD:
+                    target_dir += f'_Alpha_{self.alpha}'
+
+                # Check if the directory exists
+                results_dir = os.path.join(self.saveDir, target_dir)
                 if not os.path.exists(results_dir):
-                    raise FileNotFoundError(f"Directory {results_dir} does not exist.")
-            # Load reconstruction results
-            recon_key = 'reconPhantom' if withTumor else 'reconLaser'
+                    raise FileNotFoundError(f"[AOT-biomaps] Directory {results_dir} does not exist.")
+            else:
+                # Find the most recent directory (sorted by date in ddmm format)
+                matching_dirs.sort(reverse=True)  # Sort alphabetically (ddmm dates are sortable)
+                results_dir = os.path.join(self.saveDir, matching_dirs[0])
+
+            # Path to the reconstruction file
             recon_path = os.path.join(results_dir, f'{recon_key}.npy')
             if not os.path.exists(recon_path):
-                raise FileNotFoundError(f"No reconstruction file found at {recon_path}.")
-            data = np.load(recon_path, allow_pickle=True)
-            if isinstance(data, np.ndarray) and data.ndim == 3:
-                if withTumor:
-                    self.reconPhantom = [data[i, :, :] for i in range(data.shape[0])]
-                else:
-                    self.reconLaser = [data[i, :, :] for i in range(data.shape[0])]
+                raise FileNotFoundError(f"[AOT-biomaps] No {recon_key}.npy file found in {results_dir}.")
+
+        # Load the file (3D array or list of 2D arrays)
+        data = np.load(recon_path, allow_pickle=True)
+        if isinstance(data, np.ndarray) and data.ndim == 3:
+            if withTumor:
+                self.reconPhantom = [data[i, :, :] for i in range(data.shape[0])]
             else:
-                if withTumor:
-                    self.reconPhantom = data
-                else:
-                    self.reconLaser = data
-            # Load saved indices as list of 2D arrays
-            indices_path = os.path.join(results_dir, 'indices.npy')
-            if not os.path.exists(indices_path):
-                raise FileNotFoundError(f"No indices file found at {indices_path}.")
+                self.reconLaser = [data[i, :, :] for i in range(data.shape[0])]
+        else:
+            if withTumor:
+                self.reconPhantom = data
+            else:
+                self.reconLaser = data
+
+        # Load indices if they exist
+        indices_path = os.path.join(os.path.dirname(recon_path), 'indices.npy')
+        if os.path.exists(indices_path):
             indices_data = np.load(indices_path, allow_pickle=True)
             if isinstance(indices_data, np.ndarray) and indices_data.ndim == 3:
                 self.indices = [indices_data[i, :, :] for i in range(indices_data.shape[0])]
             else:
                 self.indices = indices_data
-            if show_logs:
-                print(f"Loaded reconstruction results and indices from {results_dir}")
-        
-    def normalizeSMatrix(self):
-        self.SMatrix = self.SMatrix / (float(self.experiment.params.acoustic['emission']['voltage'])*float(self.experiment.params.acoustic['emission']['sensitivity']))  
+        else:
+            self.indices = None
 
+        if show_logs:
+            print(f"[AOT-biomaps] Loaded reconstruction results and indices from {recon_path}")
+        
     # PRIVATE METHODS
              
     def _fill_SMatrix_DENSE(self, isShowLogs=True):
         """
-        Build a dense matrix using SMatrix_DENSE class.
+        Build a real or complex dense matrix using SMatrix_DENSE class.
         Frees all temporary memory at each step.
         """
-        print("Building DENSE SMatrix") if isShowLogs else None
-        SMatrix = SMatrix_DENSE(experiment=self.experiment, device=self.device)
+        print("[AOT-biomaps] Building DENSE SMatrix") if isShowLogs else None
+        SMatrix = SMatrix_DENSE(experiment=self.experiment, device=self.device, isComplexSMatrix=self.isComplexRecon)
         SMatrix.allocate()
+        SMatrix.normalize_matrix()
         if isShowLogs:
-            print(f"DENSE SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
+            print(f"[AOT-biomaps] DENSE SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
         return SMatrix
     
     def _fill_SMatrix_CSR(self, isShowLogs=True):
         """
-        Built a sparse CSR matrix in chunks without intermediate concatenation.
+        Built a real or complex sparse CSR matrix in chunks without intermediate concatenation.
         Frees all temporary memory at each step.
         """
-        print("Building CSR SMatrix with relative threshold =", self.sparseThreshold) if isShowLogs else None
-        SMatrix = SMatrix_CSR(experiment=self.experiment, device=self.device, block_rows=self.blockRows, relative_threshold=self.sparseThreshold)
+        print("[AOT-biomaps] Building CSR SMatrix with relative threshold =", self.sparseThreshold) if isShowLogs else None
+        SMatrix = SMatrix_CSR(experiment=self.experiment, device=self.device, block_rows=self.blockRows, relative_threshold=self.sparseThreshold, isComplexSMatrix=self.isComplexRecon)
         SMatrix.allocate()
+        SMatrix.normalize_matrix()
         if isShowLogs:
-            print(f"CSR SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
-            print(f"CSR sparse matrix density: {SMatrix.compute_density():.2f}%")
+            print(f"[AOT-biomaps] CSR SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
+            print(f"[AOT-biomaps] CSR sparse matrix density: {SMatrix.compute_density():.2f}%")
         return SMatrix
     
     def _fill_SMatrix_SELL(self, isShowLogs=True):
         """
-        Built a sparse SELL matrix in chunks without intermediate concatenation.
+        Built a real or complex sparse SELL matrix in chunks without intermediate concatenation.
         Frees all temporary memory at each step.
         """
-        print("Building SELL SMatrix with relative threshold =", self.sparseThreshold) if isShowLogs else None
-        SMatrix = SMatrix_SELL(experiment=self.experiment, device=self.device, block_rows=self.blockRows, relative_threshold=self.sparseThreshold, slice_height=self.sliceHeight)
+        print("[AOT-biomaps] Building SELL SMatrix with relative threshold =", self.sparseThreshold) if isShowLogs else None
+        SMatrix = SMatrix_SELL(experiment=self.experiment, device=self.device, block_rows=self.blockRows, relative_threshold=self.sparseThreshold, slice_height=self.sliceHeight, sigma=self.sigma_sell, isComplexSMatrix=self.isComplexRecon)
         SMatrix.allocate()
+        SMatrix.normalize_matrix()
         if isShowLogs:
-            print(f"SELL SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
-            print(f"SELL sparse matrix density: {SMatrix.compute_density():.2f}%")
+            print(f"[AOT-biomaps] SELL SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
+            print(f"[AOT-biomaps] SELL sparse matrix density: {SMatrix.compute_density():.2f}%")
         return SMatrix
         
     # STATIC METHODS
@@ -1861,21 +1915,19 @@ class AlgebraicRecon(Recon):
             labels = [f"Recon {i+1}" for i in range(len(recon_list))]
 
         plt.figure(figsize=figSize)
-        colors = ['red', 'green', 'blue', 'orange', 'purple']  # Ajoute d'autres couleurs si nécessaire
+        colors = ['red', 'green', 'blue', 'orange', 'purple'] 
 
         for i, recon in enumerate(recon_list):
             color = colors[i % len(colors)]
             label = labels[i] if i < len(labels) else f"Recon {i+1}"
 
-            # Trouve l'index et la valeur minimale du MSE
+
             best_idx = recon.indices[np.argmin(recon.MSE)]
             min_mse = np.min(recon.MSE)
 
-            # Trace la courbe de MSE
+
             plt.plot(recon.indices, recon.MSE, f'{color}-', label=label)
-            # Ligne horizontale pour le min MSE
             plt.axhline(min_mse, color=color, linestyle='--', alpha=0.5)
-            # Ligne verticale pour l'itération du min MSE
             plt.axvline(best_idx, color=color, linestyle='--', alpha=0.5)
 
         plt.xlabel("Iteration")
@@ -1885,7 +1937,6 @@ class AlgebraicRecon(Recon):
         plt.yscale('log')
         plt.grid(True, which="both", ls="-")
 
-        # Légende personnalisée
         handles = []
         for i, recon in enumerate(recon_list):
             color = colors[i % len(colors)]
@@ -1900,3 +1951,87 @@ class AlgebraicRecon(Recon):
         plt.tight_layout()
         plt.show()
 
+    def show(self, withTumor=True, savePath=None, scale='same', figsize=(8, 4)):
+        """
+        Display the reconstructed images with a properly positioned colorbar.
+        Args:
+            withTumor (bool): If True, displays reconPhantom. If False, displays reconLaser. Default is True.
+            savePath (str): Path to save the figure. If None, the figure is not saved. Default is None.
+            scale (str): Scale for the aspect ratio of the plots. Default is 'same'. Options are 'same' or 'auto'.
+            figsize (tuple): Figure size (width, height). Default is (8, 4).
+
+        Note:
+            Requires matplotlib to be installed. If matplotlib is not available, this method will raise an ImportError.
+        """
+        extent = [self.experiment.params.general['Xrange'][0] * 1e3, self.experiment.params.general['Xrange'][1] * 1e3, self.experiment.params.general['Zrange'][1] * 1e3, self.experiment.params.general['Zrange'][0] * 1e3]
+
+        # Determine the image to display
+        if withTumor:
+            if self.reconPhantom is None:
+                raise ValueError("[AOT-biomaps] Reconstructed phantom with tumor is empty. Run reconstruction first.")
+            if isinstance(self.reconPhantom, (list, tuple)) and len(self.reconPhantom) == 0:
+                raise ValueError("[AOT-biomaps] Reconstructed phantom with tumor is empty. Run reconstruction first.")
+            image = self.reconPhantom[-1] if isinstance(self.reconPhantom, list) else self.reconPhantom
+            ground_truth = self.experiment.OpticImage.phantom if self.experiment.OpticImage else None
+            title_recon = "Reconstructed phantom with tumor"
+            title_gt = "Phantom with tumor"
+        else:
+            if self.reconLaser is None:
+                raise ValueError("[AOT-biomaps] Reconstructed laser without tumor is empty. Run reconstruction first.")
+            if isinstance(self.reconLaser, (list, tuple)) and len(self.reconLaser) == 0:
+                raise ValueError("[AOT-biomaps] Reconstructed laser without tumor is empty. Run reconstruction first.")
+            image = self.reconLaser[-1] if isinstance(self.reconLaser, list) else self.reconLaser
+            ground_truth = self.experiment.OpticImage.laser.intensity if self.experiment.OpticImage else None
+            title_recon = "Reconstructed laser without tumor"
+            title_gt = "Laser without tumor"
+
+        # Gestion propre des sous-graphes avec squeeze=False pour garantir un tableau 2D
+        n_cols = 2 if ground_truth is not None else 1
+        fig, axs = plt.subplots(1, n_cols, figsize=figsize if n_cols == 2 else (figsize[0]/2, figsize[1]), squeeze=False)
+
+        if ground_truth is not None:
+            vmin, vmax = (0, 1) if scale == 'same' else (np.min(image), np.max(image))
+        else:
+            vmin, vmax = (0, np.max(image))
+
+        im0 = axs[0, 0].imshow(image, cmap='hot', vmin=vmin, vmax=vmax, extent=extent, aspect='equal')
+        axs[0, 0].set_title(title_recon)
+        axs[0, 0].set_xlabel("X (mm)")
+        axs[0, 0].set_ylabel("Z (mm)")
+        axs[0, 0].tick_params(axis='both', which='major')
+
+        # Plot ground truth if available
+        if ground_truth is not None:
+            gt_vmin, gt_vmax = (0, 1) if scale == 'same' else (np.min(ground_truth), np.max(ground_truth))
+
+            im1 = axs[0, 1].imshow(ground_truth, cmap='hot', vmin=gt_vmin, vmax=gt_vmax, extent=extent, aspect='equal')
+            axs[0, 1].set_title(title_gt)
+            axs[0, 1].set_xlabel("X (mm)")
+            axs[0, 1].set_ylabel("Z (mm)")
+            axs[0, 1].tick_params(axis='both', which='major')
+
+        plt.subplots_adjust(bottom=0.15, wspace=0.3)
+
+        # Calculate colorbar position dynamically based on figsize
+        cbar_width = 0.05 * figsize[0] / figsize[1]  # Relative to figure height
+        cbar_height = 0.05
+        cbar_x = 0.25  # Centered horizontally
+        cbar_y = -0.06 # Positioned at the bottom
+
+        # Add colorbar
+        cbar_ax = fig.add_axes([cbar_x, cbar_y, 0.5, cbar_height])
+        cbar = fig.colorbar(im0, cax=cbar_ax, orientation='horizontal')
+        if ground_truth is not None and scale == 'same':
+            cbar.set_label('Normalized Intensity') 
+        else:
+            cbar.set_label('Intensity')
+        cbar.ax.tick_params(labelsize=8)
+
+        # Save figure if path is provided
+        if savePath is not None:
+            if not os.path.exists(savePath):
+                os.makedirs(savePath)
+            filename = 'recon_with_tumor.png' if withTumor else 'recon_without_tumor.png'
+            plt.savefig(os.path.join(savePath, filename), dpi=300, bbox_inches='tight')
+
+        plt.show()

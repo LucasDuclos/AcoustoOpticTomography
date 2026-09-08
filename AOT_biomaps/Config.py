@@ -84,7 +84,7 @@ class Config:
     def set_process(self, process):
         """Set the process to use ('cpu' or 'gpu')."""
         if process not in ['cpu', 'gpu']:
-            raise ValueError("process must be 'cpu' or 'gpu'")
+            raise ValueError("[AOT-biomaps] process must be 'cpu' or 'gpu'")
         self.process = process
 
     def get_process(self):
@@ -113,13 +113,13 @@ class Config:
                         best_gpu = i
 
                 except Exception as e:
-                    print(f"GPU {i} error: {e}. Pass to next GPU")
+                    print(f"[AOT-biomaps] GPU {i} error: {e}. Pass to next GPU")
                     continue
 
             return best_gpu
 
         except Exception as e:
-            print(f"Error : {e}")
+            print(f"[AOT-biomaps] Error: {e}")
             return None
         
     def select_gpu(self, device_id=None):
@@ -150,10 +150,10 @@ class Config:
         else:
             # Validate device_id
             if not isinstance(device_id, int):
-                raise ValueError(f"device_id must be an integer, got {type(device_id)}")
+                raise ValueError(f"[AOT-biomaps] device_id must be an integer, got {type(device_id)}")
             if device_id < 0 or device_id >= self.numGPUs:
                 raise ValueError(
-                    f"device_id {device_id} is out of range. "
+                    f"[AOT-biomaps] device_id {device_id} is out of range. "
                     f"Available GPUs: 0 to {self.numGPUs - 1}"
                 )
         
@@ -165,7 +165,7 @@ class Config:
             self.process = 'gpu'
             return device_id
         except Exception as e:
-            raise RuntimeError(f"Failed to set GPU {device_id}: {e}")
+            raise RuntimeError(f"[AOT-biomaps] Failed to set GPU {device_id}: {e}")
 
     def get_gpu_info(self, device_id=None):
         """
@@ -224,6 +224,7 @@ class Config:
                 'max_grid_dim': (props.maxGridSize[0], props.maxGridSize[1], props.maxGridSize[2]),
             }
         except Exception:
+            print(f"[AOT-biomaps] Error occurred while fetching GPU info for device {device_id}: {e}")
             return None
 
     def list_gpus(self):

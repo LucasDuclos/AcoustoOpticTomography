@@ -1,7 +1,9 @@
+import warnings
+
 from AOT_biomaps.Config import config
-from ._mainAcoustic import AcousticField
+from ._mainAcoustic import KWAVE_AVAILABLE, AcousticField
 from .AcousticEnums import TypeSim, WaveType
-from .AcousticTools import detect_space_0_and_space_1, get_angle, get_frequency, format_angle
+from .AcousticTools import detect_space_0_and_space_1, get_angle, get_frequency, format_angle, compute_field_numba
 
 import os
 import numpy as np
@@ -14,8 +16,12 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
 
-
-    
+try:
+    from kwave.utils.signals import tone_burst
+    KWAVE_AVAILABLE = True
+except ImportError:
+    KWAVE_AVAILABLE = False
+    warnings.warn("kWave is not available. Some acoustic simulation features will be disabled.", UserWarning)   
 
 
 class StructuredWave(AcousticField):
@@ -40,7 +46,7 @@ class StructuredWave(AcousticField):
 
         def __str__(self):
             """Return a string representation of the PatternParams object."""
-            return f"PatternParams(space_0={self.space_0}, space_1={self.space_1}, move_head_0_2tail={self.move_head_0_2tail}, move_tail_1_2head={self.move_tail_1_2head}, len_hex={self.len_hex})"
+            return f"[AOT-biomaps] PatternParams(space_0={self.space_0}, space_1={self.space_1}, move_head_0_2tail={self.move_head_0_2tail}, move_tail_1_2head={self.move_tail_1_2head}, len_hex={self.len_hex})"
 
         def generate_pattern(self):
             """
@@ -71,7 +77,7 @@ class StructuredWave(AcousticField):
 
                 return hex_output
             except Exception as e:
-                print(f"Error generating pattern: {e}")
+                print(f"[AOT-biomaps] Error generating pattern: {e}")
                 return None
         
         def generate_paths(self, base_path):
@@ -130,17 +136,16 @@ class StructuredWave(AcousticField):
                 self.angle = get_angle(fileName)
                 self.pattern.activeList = fileName.split('_')[0]
             else:
-                raise ValueError("Invalid pattern parameters, must provide either fileName or all space/move parameters.")
+                raise ValueError("[AOT-biomaps] Invalid pattern parameters, must provide either fileName or all space/move parameters.")
             
             self.pattern.len_hex = self.params.acoustic['probe']['num_elements'] // 4
             self.f_s = get_frequency(self.pattern.activeList, self.params.acoustic['probe']['num_elements'], self.params.general['dx'])
 
             if len(self.pattern.activeList) != self.params.acoustic['probe']['num_elements'] // 4:
-                raise ValueError(f"Active list string must be {self.params.acoustic['probe']['num_elements'] // 4} characters long.")
-            if self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
-                self.delayedSignal = self._apply_delay()
+                raise ValueError(f"[AOT-biomaps] Active list string must be {self.params.acoustic['probe']['num_elements'] // 4} characters long.")
+            
         except Exception as e:
-            print(f"Error initializing StructuredWave: {e}")
+            print(f"[AOT-biomaps] Error initializing StructuredWave: {e}")
 
     def get_name_field(self):
         """
@@ -154,7 +159,7 @@ class StructuredWave(AcousticField):
             angle_str = format_angle(self.angle)
             return f"field_{pattern_str}_{angle_str}"
         except Exception as e:
-            print(f"Error generating file path: {e}")
+            print(f"[AOT-biomaps] Error generating file path: {e}")
             return None
     
     def plot_delay(self,figsize=(4,3)):
@@ -177,56 +182,106 @@ class StructuredWave(AcousticField):
             plt.grid(True)
             plt.show()
         except Exception as e:
-            print(f"Error plotting max times: {e}")
-
+            print(f"[AOT-biomaps] Error plotting max times: {e}")
 
     ## PRIVATE METHODS ##
 
-
-    def _apply_delay(self,dt=None,dx=None,c0=None):
+    def _set_up_source(self, source, Nx, dt, dx, c0, factorT, burst=None):
         """
-        Apply a temporal delay to the signal for each transducer element.
+        Set up the k-Wave source for the acoustic field simulation.
+        Configures the source mask and applies delayed signals to active elements.
+
+        Parameters:
+            source: k-Wave source object (p_mask and p will be modified).
+            Nx (int): Number of grid points in x.
+            dt (float): Time step (in seconds).
+            dx (float): Spatial step (in meters).
+            c0 (float): Speed of sound (in m/s).
+            factorT (int): Time downsampling factor.
 
         Returns:
-            ndarray: Array of delayed signals.
+            source: Configured k-Wave source object.
         """
-        try:
-            is_positive = self.angle >= 0
-            if dx is None:
-                dx = self.params.general['dx']
-            if c0 is None:
-                c0 = self.params.acoustic['medium']['c0']
-            actual_dt = dt if dt is not None else self.medium.kgrid.dt
-            # Calculate the total number of grid points for all elements
-            total_grid_points = self.params.acoustic['probe']['num_elements'] * int(round(self.params.acoustic['probe']['element_width'] / dx))
+        num_elements = self.params.acoustic['probe']['num_elements']
+        element_width = self.params.acoustic['probe']['element_width']
+        element_kerf = self.params.acoustic['probe']['element_kerf']
+        pitch = element_width + element_kerf
 
-            # Initialize delays array with size total_grid_points
-            delays = np.zeros(total_grid_points)
+        f_US = self.params.acoustic['f_US']
+        num_cycles = self.params.acoustic['emission']['num_cycles']
+        voltage = float(self.params.acoustic['emission']['voltage'])
+        sensitivity = float(self.params.acoustic['emission']['sensitivity'])
 
-            # Calculate the physical positions of the elements starting from Xrange[0]
-            element_positions = np.linspace(0, total_grid_points * dx, total_grid_points)
+        active_list = np.array([int(char) for char in ''.join(f"{int(self.pattern.activeList[i:i+2], 16):08b}" for i in range(0, len(self.pattern.activeList), 2))])
 
-            # Calculate delays based on physical positions
-            for i in range(total_grid_points):
-                delays[i] = (element_positions[i] * np.tan(np.deg2rad(abs(self.angle)))) / c0  # Delay in seconds
+        probe_physical_width = (num_elements - 1) * pitch + element_width
+        grid_center_x = (Nx * dx) / 2.0
+        probe_start_x = grid_center_x - (probe_physical_width / 2.0)
 
-            delay_samples = np.round(delays / actual_dt).astype(int)
-            max_delay = np.max(np.abs(delay_samples))
+        element_indices = np.arange(num_elements) - (num_elements - 1) / 2.0
+        delay_sec = element_indices * pitch * np.sin(np.deg2rad(self.angle)) / c0
+        
+        delay_samples = np.round(delay_sec / dt).astype(int)
+        delay_samples = delay_samples - np.min(delay_samples) + 10 
 
-            delayed_signals = np.zeros((total_grid_points, len(self.burst) + max_delay))
-            for i in range(total_grid_points):
+        if burst is not None:
+            burst_sig = np.asarray(burst)
+            num_time_steps = len(burst_sig) + np.max(delay_samples) + 20
+            element_signals = np.zeros((num_elements, num_time_steps))
+            
+            for i in range(num_elements):
                 shift = delay_samples[i]
+                element_signals[i, shift:shift + len(burst_sig)] = burst_sig
+        else:
+            element_signals = tone_burst(1 / dt, f_US, num_cycles, signal_offset=delay_samples)
+            
+        num_time_steps = element_signals.shape[1]
 
-                if is_positive:
-                    delayed_signals[i, shift:shift + len(self.burst)] = self.burst  # Right shift
-                else:
-                    delayed_signals[i, max_delay - shift:max_delay - shift + len(self.burst)] = self.burst  # Left shift
+        el_width_px = int(np.round(element_width / dx))
+        
+        # Safety: If dx is so large that the element takes 0 pixels, force it to 1 pixel
+        # to avoid discarding the source completely.
+        if el_width_px < 1:
+            el_width_px = 1
+            
+        half_width_px = el_width_px // 2
 
-            return delayed_signals
-        except Exception as e:
-            print(f"Error applying delay: {e}")
-            return None
+        # 1. Create a signal matrix for the ENTIRE x-grid
+        grid_signals = np.zeros((Nx, num_time_steps))
 
+        # --- ARITHMETIC CORRECTION ---
+        # Calculate the theoretical integer ratio of pixels per pitch
+        pixels_per_pitch = int(np.round(pitch / dx))
+        
+        # Anchor the position of the VERY FIRST element of the probe (i=0)
+        # Add +1e-9 to force the rounding behavior and avoid the .5 ambiguity
+        first_element_center_x = probe_start_x + (element_width / 2.0)
+        idx_start_global = int(np.round((first_element_center_x / dx) + 1e-9))
+
+        for i in range(num_elements):
+            if active_list[i] == 1:
+                # 2. Forced continuity: advance using integers only
+                idx_center = idx_start_global + (i * pixels_per_pitch)
+                
+                idx_start = max(0, idx_center - half_width_px)
+                idx_end = min(Nx, idx_start + el_width_px)
+
+                if idx_start < idx_end:
+                    # Activate the spatial mask
+                    source.p_mask[idx_start:idx_end, 0] = True
+                    
+                    # Sum the signal on the corresponding pixels (superposition)
+                    for j in range(idx_start, idx_end):
+                        grid_signals[j, :] += element_signals[i, :]
+
+        # 3. Dynamically extract signals where the mask is active
+        active_indices = np.where(source.p_mask[:, 0])[0]
+        
+        # Apply global amplitude and final formatting for k-Wave
+        source.p = voltage * sensitivity * grid_signals[active_indices, :]
+        
+        return source
+    
     def _save2D_HDR_IMG(self, pathFolder):
         """
         Save the acoustic field to .img and .hdr files.
@@ -303,67 +358,9 @@ class StructuredWave(AcousticField):
 
             with open(os.path.join(pathFolder, "field.hdr"), "w") as f_hdr2:
                 f_hdr2.write(headerFieldGlob)
+
         except Exception as e:
-            print(f"Error saving HDR/IMG files: {e}")
-
-    def _set_up_source(self, source, Nx, dt, dx, c0, factorT):
-        """
-        Set up the k-Wave source for the acoustic field simulation.
-        Configures the source mask and applies delayed signals to active elements.
-
-        Parameters:
-            source: k-Wave source object (p_mask and p will be modified).
-            Nx (int): Number of grid points in x.
-            dt (float): Time step (in seconds).
-            dx (float): Spatial step (in meters).
-            c0 (float): Speed of sound (in m/s).
-            factorT (int): Time downsampling factor.
-
-        Returns:
-            source: Configured k-Wave source object.
-        """
-        # Convert hex activeList to binary array
-        active_list = np.array([int(char) for char in ''.join(f"{int(self.pattern.activeList[i:i+2], 16):08b}" for i in range(0, len(self.pattern.activeList), 2))])
-
-        # Element width in pixels
-        el_width_px = int(round(self.params.acoustic['probe']['element_width'] / dx))
-        # Total probe width in pixels
-        total_probe_px = self.params.acoustic['probe']['num_elements'] * el_width_px
-
-        # Get PVA width in pixels or recalculate
-        pva_nx = int(np.round(self.params.acoustic['medium']['width'] / dx))
-        air_margin = (Nx - pva_nx) // 2
-
-        # Starting position to center the probe on the PHANTOM
-        # Start at the end of the air margin, and center the probe within pva_nx
-        current_position = air_margin + (pva_nx - total_probe_px) // 2
-
-        activeListGrid = np.zeros(total_probe_px, dtype=int)
-
-        for i in range(self.params.acoustic['probe']['num_elements']):
-            if active_list[i] == 1:
-                x_start = current_position
-                x_end = x_start + el_width_px
-
-                # Fill k-Wave mask (z=0)
-                source.p_mask[x_start:x_end, 0] = 1
-
-                # Mark active indices for delayed signal injection
-                idx_start = i * el_width_px
-                idx_end = idx_start + el_width_px
-                activeListGrid[idx_start:idx_end] = 1
-
-            current_position += el_width_px  # No variable "spacing", elements are contiguous
-
-        # Signal injection
-        if factorT != 1:
-            delayedSignal = self._apply_delay(dt=dt, dx=dx, c0=c0)
-        else:
-            delayedSignal = self.delayedSignal
-
-        # Inject only where p_mask == 1
-        source.p = float(self.params.acoustic['emission']['voltage']) * float(self.params.acoustic['emission']['sensitivity']) * delayedSignal[activeListGrid == 1, :]
-        return source
+            print(f"[AOT-biomaps] Error saving HDR/IMG files: {e}")
 
     def _generate_acoustic_field_SIMPLE_SIM(self, show_log=False):
         """
@@ -381,11 +378,11 @@ class StructuredWave(AcousticField):
         Nz = int(self.params.general['Nz'])
         Nt = int(self.params.general['Nt'] * self.params.acoustic['f_saving'] / self.params.acoustic['f_AQ'])
 
-        dx = self.params.general['dx']  # in meters
-        dt = 1 / self.params.acoustic['f_saving']
-        c0 = self.params.acoustic['medium']['c0']
-        f0 = self.params.acoustic['f_US']
-        num_cycles = self.params.acoustic['emission']['num_cycles']
+        dx = float(self.params.general['dx'])  # in meters
+        dt = float(1 / self.params.acoustic['f_saving'])
+        c0 = float(self.params.acoustic['medium']['c0'])
+        f0 = float(self.params.acoustic['f_US'])
+        num_cycles = float(self.params.acoustic['emission']['num_cycles'])
 
         factor = 4
         Nx_fine, Nz_fine = Nx * factor, Nz * factor
@@ -394,18 +391,18 @@ class StructuredWave(AcousticField):
         # Temporal Envelope (Hanning)
         burst_duration = num_cycles / f0
         n_t_burst = int(round(burst_duration / dt))
-        enveloppe_t = np.sin(np.linspace(0, np.pi, n_t_burst))**2
+        enveloppe_t = (np.sin(np.linspace(0, np.pi, n_t_burst))**2).astype(np.float32)
 
-        # ---
-        num_elements = self.params.acoustic['probe']['num_elements']
+        # Probe setup
+        num_elements = int(self.params.acoustic['probe']['num_elements'])
+        
         if self.params.acoustic.get('useApod', False):
             from scipy.signal.windows import tukey
             alpha = np.clip(self.params.acoustic.get('apodStrength', 0.5), 1e-3, 1.0)
-            apod_window = tukey(num_elements, alpha=alpha)
+            apod_window = tukey(num_elements, alpha=alpha).astype(np.float32)
         else:
-            apod_window = np.ones(num_elements)
+            apod_window = np.ones(num_elements, dtype=np.float32)
 
-        # Probe setup (Centered on the Nx grid)
         active_hex = self.pattern.activeList
         active_list = np.array([int(char) for char in ''.join(f"{int(active_hex[i:i+2], 16):08b}" for i in range(0, len(active_hex), 2))])
 
@@ -416,46 +413,122 @@ class StructuredWave(AcousticField):
         x_start_probe_fine = ((Nx_fine - pva_nx_fine) // 2) + (pva_nx_fine - (num_elements * el_width_px_fine)) // 2
         x_pivot_px_fine = x_start_probe_fine if self.angle >= 0 else x_start_probe_fine + (num_elements * el_width_px_fine)
 
-        angle_rad = np.deg2rad(self.angle)
-        cos_a, sin_a = np.cos(angle_rad), np.sin(angle_rad)
+        angle_rad = float(np.deg2rad(self.angle))
+        cos_a, sin_a = float(np.cos(angle_rad)), float(np.sin(angle_rad))
 
-        # 2. Initialization and Simulation
+        # 2. Initialization
         field = np.zeros((Nt, Nz, Nx), dtype=np.float32)
-        t = np.arange(Nt) * dt
-        active_indices = np.where(active_list == 1)[0]
-        weight_base = 1.0 / (factor * factor)
+        t = (np.arange(Nt) * dt).astype(np.float32)
+        
+        # Extraction des indices actifs pour le kernel
+        active_indices = np.where(active_list == 1)[0].astype(np.int32)
+        weight_base = float(1.0 / (factor * factor))
 
-        for i in active_indices:
-            val_i = weight_base * apod_window[i]
+        if show_log:
+            print(f"[SIM] Starting parallel Numba computation for {len(active_indices)} active elements...")
 
-            x_i_px_fine = x_start_probe_fine + (i * el_width_px_fine)
-            dist_to_pivot = (x_i_px_fine - x_pivot_px_fine) * dx_fine
-            delay_i = (abs(dist_to_pivot) * np.sin(abs(angle_rad))) / c0
-
-            t_eff = t - delay_i
-            mask = (t_eff > 0) & (t_eff < t[-1])
-            if not np.any(mask): continue
-
-            dist_travelled = c0 * t_eff[mask]
-            t_indices = np.where(mask)[0]
-
-            z_px_fine = np.floor((dist_travelled * cos_a) / dx_fine).astype(int)
-            x_px_fine_base = np.floor((x_i_px_fine * dx_fine + dist_travelled * sin_a) / dx_fine).astype(int)
-
-            for b_shift in range(n_t_burst):
-                st = t_indices + b_shift
-                v_t = st < Nt
-
-                curr_t, curr_z, curr_xb = st[v_t], z_px_fine[v_t], x_px_fine_base[v_t]
-                val_final = enveloppe_t[b_shift] * val_i
-
-                for offset_x in range(el_width_px_fine):
-                    curr_x = curr_xb + offset_x
-                    m = (curr_z >= 0) & (curr_z < Nz_fine) & (curr_x >= 0) & (curr_x < Nx_fine)
-
-                    if np.any(m):
-                        zf, xf, tf = curr_z[m]//factor, curr_x[m]//factor, curr_t[m]
-                        flat_idx = tf.astype(np.int64) * (Nz * Nx) + zf * Nx + xf
-                        np.add.at(field.ravel(), flat_idx, val_final)
+        # 3. Exécution haute performance via Numba
+        compute_field_numba(
+            field, t, active_indices, apod_window, weight_base, 
+            x_start_probe_fine, x_pivot_px_fine, dx_fine, c0, angle_rad, 
+            n_t_burst, enveloppe_t, el_width_px_fine, cos_a, sin_a, 
+            factor, Nt, Nz, Nx, Nx_fine, Nz_fine
+        )
 
         return field
+
+
+    # def _generate_acoustic_field_SIMPLE_SIM(self, show_log=False):
+    #     """
+    #     Simulate the acoustic field (Nt, Nz, Nx) without internal padding.
+    #     Spatial apodization and temporal envelope are preserved.
+
+    #     Parameters:
+    #         show_log (bool): Whether to display simulation logs. Default is False.
+
+    #     Returns:
+    #         numpy.ndarray: Simulated acoustic field with shape (Nt, Nz, Nx).
+    #     """
+    #     # 1. Base parameters (Initial grid)
+    #     Nx = int(self.params.general['Nx'])
+    #     Nz = int(self.params.general['Nz'])
+    #     Nt = int(self.params.general['Nt'] * self.params.acoustic['f_saving'] / self.params.acoustic['f_AQ'])
+
+    #     dx = self.params.general['dx']  # in meters
+    #     dt = 1 / self.params.acoustic['f_saving']
+    #     c0 = self.params.acoustic['medium']['c0']
+    #     f0 = self.params.acoustic['f_US']
+    #     num_cycles = self.params.acoustic['emission']['num_cycles']
+
+    #     factor = 4
+    #     Nx_fine, Nz_fine = Nx * factor, Nz * factor
+    #     dx_fine = dx / factor
+
+    #     # Temporal Envelope (Hanning)
+    #     burst_duration = num_cycles / f0
+    #     n_t_burst = int(round(burst_duration / dt))
+    #     enveloppe_t = np.sin(np.linspace(0, np.pi, n_t_burst))**2
+
+    #     # ---
+    #     num_elements = self.params.acoustic['probe']['num_elements']
+    #     if self.params.acoustic.get('useApod', False):
+    #         from scipy.signal.windows import tukey
+    #         alpha = np.clip(self.params.acoustic.get('apodStrength', 0.5), 1e-3, 1.0)
+    #         apod_window = tukey(num_elements, alpha=alpha)
+    #     else:
+    #         apod_window = np.ones(num_elements)
+
+    #     # Probe setup (Centered on the Nx grid)
+    #     active_hex = self.pattern.activeList
+    #     active_list = np.array([int(char) for char in ''.join(f"{int(active_hex[i:i+2], 16):08b}" for i in range(0, len(active_hex), 2))])
+
+    #     el_width_px_fine = int(round(self.params.acoustic['probe']['element_width'] / dx_fine))
+    #     pva_nx_fine = int(np.round(self.params.acoustic['medium']['width'] / dx_fine))
+
+    #     # Standard centering
+    #     x_start_probe_fine = ((Nx_fine - pva_nx_fine) // 2) + (pva_nx_fine - (num_elements * el_width_px_fine)) // 2
+    #     x_pivot_px_fine = x_start_probe_fine if self.angle >= 0 else x_start_probe_fine + (num_elements * el_width_px_fine)
+
+    #     angle_rad = np.deg2rad(self.angle)
+    #     cos_a, sin_a = np.cos(angle_rad), np.sin(angle_rad)
+
+    #     # 2. Initialization and Simulation
+    #     field = np.zeros((Nt, Nz, Nx), dtype=np.float32)
+    #     t = np.arange(Nt) * dt
+    #     active_indices = np.where(active_list == 1)[0]
+    #     weight_base = 1.0 / (factor * factor)
+
+    #     for i in active_indices:
+    #         val_i = weight_base * apod_window[i]
+
+    #         x_i_px_fine = x_start_probe_fine + (i * el_width_px_fine)
+    #         dist_to_pivot = (x_i_px_fine - x_pivot_px_fine) * dx_fine
+    #         delay_i = (abs(dist_to_pivot) * np.sin(abs(angle_rad))) / c0
+
+    #         t_eff = t - delay_i
+    #         mask = (t_eff > 0) & (t_eff < t[-1])
+    #         if not np.any(mask): continue
+
+    #         dist_travelled = c0 * t_eff[mask]
+    #         t_indices = np.where(mask)[0]
+
+    #         z_px_fine = np.floor((dist_travelled * cos_a) / dx_fine).astype(int)
+    #         x_px_fine_base = np.floor((x_i_px_fine * dx_fine + dist_travelled * sin_a) / dx_fine).astype(int)
+
+    #         for b_shift in range(n_t_burst):
+    #             st = t_indices + b_shift
+    #             v_t = st < Nt
+
+    #             curr_t, curr_z, curr_xb = st[v_t], z_px_fine[v_t], x_px_fine_base[v_t]
+    #             val_final = enveloppe_t[b_shift] * val_i
+
+    #             for offset_x in range(el_width_px_fine):
+    #                 curr_x = curr_xb + offset_x
+    #                 m = (curr_z >= 0) & (curr_z < Nz_fine) & (curr_x >= 0) & (curr_x < Nx_fine)
+
+    #                 if np.any(m):
+    #                     zf, xf, tf = curr_z[m]//factor, curr_x[m]//factor, curr_t[m]
+    #                     flat_idx = tf.astype(np.int64) * (Nz * Nx) + zf * Nx + xf
+    #                     np.add.at(field.ravel(), flat_idx, val_final)
+
+    #     return field

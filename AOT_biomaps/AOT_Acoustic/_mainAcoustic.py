@@ -1,7 +1,7 @@
 import copy
 import AOT_biomaps
 from AOT_biomaps.Config import config
-from AOT_biomaps.AOT_Acoustic.AcousticTools import calculate_envelope_squared, loadmat, reshape_field
+from AOT_biomaps.AOT_Acoustic.AcousticTools import calculate_envelope, calculate_envelope_squared, loadmat, reshape_field_cpu, reshape_field_gpu
 from AOT_biomaps.AOT_Acoustic.AcousticEnums import TypeSim, Dim, FormatSave, WaveType
 from AOT_biomaps.AOT_Medium import Medium
 
@@ -19,6 +19,15 @@ import logging
 import warnings
 import sys
 import platform
+import uuid
+
+
+# Check for CuPy availability
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
 
 # Optional kwave imports - will be None if kwave is not installed
 KWAVE_AVAILABLE = False
@@ -34,9 +43,22 @@ try:
     from kwave.options.simulation_execution_options import SimulationExecutionOptions
     KWAVE_AVAILABLE = True
     
-    # Check if kwave binaries are available and executable
+    # correct kwave issue with subprocess.Popen on Windows and Linux (encoding)
     import subprocess
     import sys
+
+    _original_popen = subprocess.Popen
+
+    class PatchedPopen(_original_popen):
+        def __init__(self, *args, **kwargs):
+            if kwargs.get('text', False) or kwargs.get('universal_newlines', False):
+                kwargs.setdefault('encoding', 'utf-8')
+                kwargs.setdefault('errors', 'replace') # Remplace les caractères impossibles à lire
+            super().__init__(*args, **kwargs)
+
+    subprocess.Popen = PatchedPopen
+
+    # Check if kwave binaries are available and executable
     try:
         # Try to check if the CUDA binary exists and is executable
         import kwave
@@ -63,7 +85,7 @@ try:
     
     if not KWAVE_BINARIES_AVAILABLE:
         system = platform.system().lower()
-        message = "kWave binaries are not available or cannot be executed. Some acoustic simulation features will be disabled."
+        message = "[AOT-biomaps] Warning: kWave binaries are not available or cannot be executed. Some acoustic simulation features will be disabled."
 
         if system == "linux":
             message += " On Linux, you may need to install: libaec0 libaec-dev libfftw3-dev"
@@ -77,7 +99,7 @@ try:
             
 except ImportError:
     KWAVE_AVAILABLE = False
-    warnings.warn("kWave is not available. Some acoustic simulation features will be disabled.", UserWarning)
+    print("[AOT-biomaps] Warning: kWave is not available. Some acoustic simulation features will be disabled.")
 
 from AOT_biomaps.Settings import Params
 
@@ -115,16 +137,16 @@ class AcousticField(ABC):
         - Zrange (list of float): Range of Z coordinates for the acoustic field, specified in meters (m). Default is from 0 m to 37 mm.
         """
         if type(params) != Params:
-            raise TypeError("params must be an instance of the Params class")
+            raise TypeError(f"[AOT-biomaps] params must be an instance of the Params class")
         if not isinstance(medium, Medium):
-            raise TypeError("medium must be an instance of the Medium class")
+            raise TypeError(f"[AOT-biomaps] medium must be an instance of the Medium class")
 
         self.medium = medium
         self.params = params
         if self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
             self.generate_burst_signal()
         if self.params.acoustic["dim"] == Dim.D3 and self.params.general["Yrange"] is None:
-            raise ValueError("Yrange must be provided for 3D fields.")
+            raise ValueError(f"[AOT-biomaps] Yrange must be provided for 3D fields.")
             
         self.waveType = None
         self.field = None  
@@ -138,37 +160,54 @@ class AcousticField(ABC):
             self.burst = None
             self.delayedSignal = None
         except Exception as e:
-            print(f"Error in __del__ method: {e}")
+            print(f"[AOT-biomaps] Error in __del__ method: {e}")
             raise
 
     ## TOOLS METHODS ##
 
-    def generate_field(self, isGpu=config.get_process() == 'gpu',show_log = True):
+    def generate_field(self, burst=None, isGPU=None, GPUdevice=None,tempFieldName="Kwave", generation_type="envelope_squarred", show_log=False):
         """
         Generate the acoustic field based on the specified simulation type and parameters.
         """
         try:
+            if self.medium.medium_properties is None:
+                raise ValueError("[AOT-biomaps] Medium properties are not defined. Please generate or load a valid Medium object.")
+
             logging.getLogger('root').setLevel(logging.ERROR)
             if self.params.acoustic['typeSim'] == TypeSim.FIELD2.value:
-                raise NotImplementedError("FIELD2 simulation is not implemented yet.")
+                raise NotImplementedError("[AOT-biomaps] FIELD2 simulation is not implemented yet.")
             elif self.params.acoustic['typeSim'] == TypeSim.SIMPLE_SIM.value:
-                self.field = self._generate_acoustic_field_SIMPLE_SIM(show_log)
+                self.field = self._generate_acoustic_field_SIMPLE_SIM(burst=burst, show_log=show_log)
             elif self.params.acoustic['typeSim'] == TypeSim.KWAVE.value:
                 if self.params.acoustic["dim"] == Dim.D2.value:
                     try:
-                        field = self._generate_acoustic_field_KWAVE_2D(isGpu, show_log)
+                        field = self._generate_acoustic_field_KWAVE_2D(burst, isGPU, GPUdevice, tempFieldName=tempFieldName, show_log=show_log)
                     except Exception as e:
-                        raise RuntimeError(f"Failed to generate 2D acoustic field: {e}")
-                    self.field = calculate_envelope_squared(field)
+                        raise RuntimeError(f"[AOT-biomaps] Failed to generate 2D acoustic field: {e}")
+                    if generation_type == "envelope_squarred":
+                        self.field = calculate_envelope_squared(field, isGPU, GPUdevice)
+                    elif generation_type == "envelope":
+                        self.field = calculate_envelope(field, isGPU, GPUdevice)
+                    elif generation_type == "field":
+                        self.field = field
+                    else:  
+                        raise ValueError(f"[AOT-biomaps] Invalid generation_type: {generation_type}. Supported types are: 'envelope_squarred', 'envelope', 'field'.")
                 elif self.params.acoustic["dim"] == Dim.D3.value:
-                    field = self._generate_acoustic_field_KWAVE_3D(isGpu, show_log)
-                    self.field = calculate_envelope_squared(field)
+                    field = self._generate_acoustic_field_KWAVE_3D(isGPU, GPUdevice, tempFieldName=tempFieldName, show_log=show_log)
+                    if generation_type == "envelope_squarred":
+                        self.field = calculate_envelope_squared(field, isGPU, GPUdevice)
+                    elif generation_type == "envelope":
+                        self.field = calculate_envelope(field, isGPU, GPUdevice)
+                    elif generation_type == "field":
+                        self.field = field
+                    else:
+                        raise ValueError(f"[AOT-biomaps] Invalid generation_type: {generation_type}. Supported types are: 'envelope_squarred', 'envelope', 'field'.")
             elif self.params.acoustic['typeSim'] == TypeSim.HYDRO.value:
-                raise ValueError("Cannot generate field for Hydrophone simulation, load exciting acquisitions.")
+                raise ValueError(f"[AOT-biomaps] Cannot generate field for Hydrophone simulation, load exciting acquisitions.")
             else:
-                raise ValueError("Invalid simulation type. Supported types are: FIELD2, KWAVE, HYDRO.")
+                raise ValueError(f"[AOT-biomaps] Invalid simulation type. Supported types are: FIELD2, KWAVE, HYDRO.")
         except Exception as e:
-            print(f"Error in generate_field method: {e}")
+            print(f"[AOT-biomaps] Error in generate_field method: {e}")
             raise
 
     def save_field(self, filePath, formatSave=FormatSave.HDR_IMG):
@@ -186,9 +225,9 @@ class AcousticField(ABC):
             elif formatSave.value == FormatSave.NPY.value:
                 self._save2D_NPY(filePath)
             else:
-                raise ValueError("Unsupported format. Supported formats are: HDR_IMG, H5, NPY.")
+                raise ValueError(f"[AOT-biomaps] Unsupported format. Supported formats are: HDR_IMG, H5, NPY.")
         except Exception as e:
-            print(f"Error in save_field method: {e}")
+            print(f"[AOT-biomaps] Error in save_field method: {e}")
             raise
 
     def load_field(self, folderPath, formatSave=FormatSave.HDR_IMG, nameBlock=None):
@@ -200,30 +239,30 @@ class AcousticField(ABC):
         """
         try:
             if str(type(formatSave)) != str(AOT_biomaps.AOT_Acoustic.FormatSave):
-                    raise ValueError(f"Unsupported file format: {formatSave}. Supported formats are: HDR_IMG, H5, NPY.")
+                    raise ValueError(f"[AOT-biomaps] Unsupported file format: {formatSave}. Supported formats are: HDR_IMG, H5, NPY.")
 
             if self.params.acoustic['typeSim'] == TypeSim.FIELD2.value:
-                raise NotImplementedError("FIELD2 simulation is not implemented yet.")
+                raise NotImplementedError("[AOT-biomaps] FIELD2 simulation is not implemented yet.")
             elif self.params.acoustic['typeSim'] == TypeSim.KWAVE.value or self.params.acoustic['typeSim'] == TypeSim.SIMPLE_SIM.value:
                 if formatSave.value == FormatSave.HDR_IMG.value: 
                     if self.params.acoustic["dim"] == Dim.D2.value:
                         self._load_fieldKWAVE_XZ(os.path.join(folderPath,self.get_name_field()+formatSave.value))
                     elif self.params.acoustic["dim"] == Dim.D3.value:
-                        raise NotImplementedError("3D KWAVE field loading is not implemented yet.")
+                        raise NotImplementedError("[AOT-biomaps] 3D KWAVE field loading is not implemented yet.")
                 elif formatSave.value == FormatSave.H5.value:
                     if self.params.acoustic["dim"] == Dim.D2.value:
                          self._load_field_h5(folderPath,nameBlock)
                     elif self.params.acoustic["dim"] == Dim.D3.value:
-                        raise NotImplementedError("H5 KWAVE field loading is not implemented yet.")
+                        raise NotImplementedError("[AOT-biomaps] H5 KWAVE field loading is not implemented yet.")
                 elif formatSave.value == FormatSave.NPY.value:
                     if self.params.acoustic["dim"] == Dim.D2.value:
                         self.field = np.load(os.path.join(folderPath,self.get_name_field()+formatSave.value))
                     elif self.params.acoustic["dim"] == Dim.D3.value:
-                        raise NotImplementedError("3D NPY KWAVE field loading is not implemented yet.")
+                        raise NotImplementedError("[AOT-biomaps] 3D NPY KWAVE field loading is not implemented yet.")
             elif self.params.acoustic['typeSim'] == TypeSim.HYDRO.value:
-                print("Loading Hydrophone field...")
+                print("[AOT-biomaps] Loading Hydrophone field...")
                 if formatSave.value == FormatSave.HDR_IMG.value:
-                    raise ValueError("HDR_IMG format is not supported for Hydrophone acquisition.")
+                    raise ValueError("[AOT-biomaps] HDR_IMG format is not supported for Hydrophone acquisition.")
                 if formatSave.value == FormatSave.H5.value:
                     if self.params.acoustic["dim"] == Dim.D2.value:
                         self.field, self.params.general['Xrange'], self.params.general['Zrange'] = self._load_fieldHYDRO_XZ(os.path.join(folderPath, self.get_name_field() + '.h5'),  os.path.join(folderPath, "PARAMS_" +self.get_name_field() + '.mat'))
@@ -233,12 +272,12 @@ class AcousticField(ABC):
                     if self.params.acoustic["dim"] == Dim.D2.value:
                         self.field = np.load(folderPath)
                     elif self.params.acoustic["dim"] == Dim.D3.value:
-                        raise NotImplementedError("3D NPY Hydrophone field loading is not implemented yet.")
+                        raise NotImplementedError("[AOT-biomaps] 3D NPY Hydrophone field loading is not implemented yet.")
             else:
-                raise ValueError("Invalid simulation type. Supported types are: FIELD2, KWAVE, HYDRO.")
-           
+                raise ValueError("[AOT-biomaps] Invalid simulation type. Supported types are: FIELD2, KWAVE, HYDRO.")
+
         except Exception as e:
-            print(f"Error in load_field method: {e}")
+            print(f"[AOT-biomaps] Error in load_field method: {e}")
             raise
 
     @abstractmethod
@@ -261,7 +300,7 @@ class AcousticField(ABC):
             plt.grid()
             plt.show()
         except Exception as e:
-            print(f"Error in plot_burst_signal method: {e}")
+            print(f"[AOT-biomaps] Error in plot_burst_signal method: {e}")
             raise
 
     def animated_plot_AcousticField(self, desired_duration_ms = 5000, save_dir=None,figsize=(4,3)):
@@ -338,7 +377,7 @@ class AcousticField(ABC):
                     save_filename = f"Structured_Wave_PatternStructure_{self.pattern.activeList}_{self._format_angle()}.gif"
                 save_path = os.path.join(save_dir, save_filename)
                 ani.save(save_path, writer='pillow', fps=20)
-                print(f"Saved: {save_path}")
+                print(f"[AOT-biomaps] Saved: {save_path}")
 
             plt.close(fig)
 
@@ -346,10 +385,10 @@ class AcousticField(ABC):
                 from IPython.display import HTML
                 return HTML(ani.to_jshtml())
             except ImportError:
-                print("IPython not available. Returning animation object without HTML wrapper.")
+                print("[AOT-biomaps] IPython not available. Returning animation object without HTML wrapper.")
                 return ani
         except Exception as e:
-            print(f"Error creating animation: {e}")
+            print(f"[AOT-biomaps] Error creating animation: {e}")
             return None
 
     def show(self, use_dB=False, reference=1e6,Vmax=None, figsize=(4,3)):
@@ -400,22 +439,22 @@ class AcousticField(ABC):
             plt.ylabel('Z (mm)')
             plt.show()
         except Exception as e:
-            print(f"Error in show method: {e}")
+            print(f"[AOT-biomaps] Error in show method: {e}")
             raise
 
     ## PRIVATE METHODS ##
 
     @abstractmethod
-    def _generate_acoustic_field_SIMPLE_SIM(self, show_log=False):
+    def _generate_acoustic_field_SIMPLE_SIM(self, burst=None, show_log=False):
         pass
 
     def generate_burst_signal(self):
         if self.params.acoustic['typeSim'] == TypeSim.FIELD2.value:
-            raise NotImplementedError("FIELD2 simulation is not implemented yet.")
+            raise NotImplementedError("[AOT-biomaps] FIELD2 simulation is not implemented yet.")
         elif self.params.acoustic['typeSim'] == TypeSim.KWAVE.value:
             self._generate_burst_signalKWAVE()
         elif self.params.acoustic['typeSim'] == TypeSim.HYDRO.value:
-            raise ValueError("Cannot generate burst signal for Hydrophone simulation.")
+            raise ValueError("[AOT-biomaps] Cannot generate burst signal for Hydrophone simulation.")
 
     def _generate_burst_signalKWAVE(self):
         """
@@ -424,67 +463,157 @@ class AcousticField(ABC):
         try:
             self.burst = tone_burst(1/self.medium.kgrid.dt, self.params.acoustic['f_US'], self.params.acoustic['emission']['num_cycles']).squeeze()
         except Exception as e:
-            print(f"Error in __generate_burst_signal method: {e}")
+            print(f"[AOT-biomaps] Error in _generate_burst_signal method: {e}")
             raise
 
-    def _generate_acoustic_field_KWAVE_2D(self, isGPU=True if config.get_process() == 'gpu' else False, show_log=True):
+    def _generate_acoustic_field_KWAVE_2D(self, burst=None, isGPU=None, GPUdevice=None, tempFieldName="Kwave", show_log=True):
         """
         Base function to generate a 2D acoustic field using k-Wave.
         Handles common setup, simulation, and post-processing.
         """
-        source = kSource()
-        source.p_mask = np.zeros(( self.medium.Nx_reshaped, self.medium.Nz_reshaped))
-        # Appel à la méthode spécialisée
-        source = self._set_up_source(source, self.medium.Nx_reshaped, self.medium.kgrid.dt, self.medium.dx_reshaped, self.medium.c_mean,self.medium.factorT)  # factorT=1 pour simplifier
+        try:
+            if isGPU is None:
+                isGPU = True if config.get_process() == 'gpu' else False
+            if GPUdevice is None:
+                GPUdevice = config.select_best_gpu()
 
-        # ---
-        sensor = kSensor()
-        sensor.mask = np.ones((self.medium.Nx_reshaped, self.medium.Nz_reshaped))
-        # ---
-        pml_size = 50 
+            unique_id = uuid.uuid4().hex
+            input_filename = os.path.join(gettempdir(), f"{tempFieldName}_{unique_id}_IN.h5")
+            output_filename = os.path.join(gettempdir(), f"{tempFieldName}_{unique_id}_OUT.h5")
 
-        # ---
-        simulation_options = SimulationOptions(
-        pml_inside=False, # PML ajoutée autour de la grille Air+PVA
-        pml_size=[1, pml_size],
-        use_sg=False,
-        save_to_disk=True,
-        input_filename=os.path.join(gettempdir(), "KwaveIN.h5"),
-        output_filename=os.path.join(gettempdir(), "KwaveOUT.h5"),
-        smooth_c0 = True,
-        smooth_rho0 = True,
-        smooth_p0 = True,
-        scale_source_terms=True,       # INDISPENSABLE pour source.p
-         use_kspace=True,               # Améliore la précision de propagation
+            source = kSource()
+            source.p_mask = np.zeros((self.medium.Nx_reshaped, self.medium.Nz_reshaped), dtype=bool)
+            
+            source = self._set_up_source(source, self.medium.Nx_reshaped, self.medium.kgrid.dt, self.medium.dx_reshaped, self.medium.c_mean, self.medium.factorT, burst=burst)
 
-        )
+            sensor = kSensor()
+            sensor.mask = np.ones((self.medium.Nx_reshaped, self.medium.Nz_reshaped), dtype=bool)
 
-        execution_options = SimulationExecutionOptions(
-            is_gpu_simulation=config.get_process() == 'gpu' and isGPU,
-            device_num=config.bestGPU,
-            show_sim_log=show_log
-        )
 
-        medium_copy = copy.deepcopy(self.medium) # Avoid in-place modifications of the medium properties during simulation, which can affect subsequent simulations if the same medium object is reused.
+            simulation_options = SimulationOptions(
+                pml_inside=False,
+                pml_size=self.params.acoustic['medium']['pml_size'] if 'pml_size' in self.params.acoustic['medium'] else 0,
+                use_sg=False,
+                save_to_disk=True,
+                input_filename=input_filename,
+                output_filename=output_filename,
+                smooth_c0=True,
+                smooth_rho0=True,
+                smooth_p0=True,
+                scale_source_terms=True,
+                use_kspace=True,
+            )
 
-        # ---
-        sensor_data = kspaceFirstOrder2D(
-            kgrid=medium_copy.kgrid,
-            medium=medium_copy.kmedium,
-            source=source,
-            sensor=sensor,
-            simulation_options=simulation_options,
-            execution_options=execution_options,
-        )
+            execution_options = SimulationExecutionOptions(
+                is_gpu_simulation=isGPU,
+                device_num=GPUdevice,
+                show_sim_log=show_log
+            )
 
-        # ---
-        data = sensor_data['p'].reshape(self.medium.kgrid.Nt, self.medium.Nz_reshaped, self.medium.Nx_reshaped    )
-        if self.medium.factorT != 1 or self.medium.factorX != 1 or self.medium.factorZ != 1:
-            data = reshape_field(data, [self.medium.factorT, self.medium.factorX, self.medium.factorZ])
-            xStart = (self.medium.Nx_reshaped//2)//self.medium.factorX - (self.params.general['Nx']//2)
-            return data[:, :self.params.general['Nz'], xStart:xStart+self.params.general['Nx']]
-        else:
-            return data[:, :self.params.general['Nz'], xStart:xStart+self.params.general['Nx']]
+            medium_copy = copy.deepcopy(self.medium)
+
+            sensor_data = kspaceFirstOrder2D(
+                kgrid=medium_copy.kgrid,
+                medium=medium_copy.kmedium,
+                source=source,
+                sensor=sensor,
+                simulation_options=simulation_options,
+                execution_options=execution_options,
+            )
+
+            try:
+                if os.path.exists(input_filename): os.remove(input_filename)
+                if os.path.exists(output_filename): os.remove(output_filename)
+            except Exception:
+                pass
+
+            data = sensor_data['p'].reshape(self.medium.kgrid.Nt, self.medium.Nz_reshaped, self.medium.Nx_reshaped)
+            if isGPU is None:
+                isGPU = True if config.get_process() == 'gpu' else False
+            if GPUdevice is None:
+                GPUdevice = config.select_best_gpu()
+            if self.medium.factorT != 1 or self.medium.factorX != 1 or self.medium.factorZ != 1:
+                if isGPU and CUPY_AVAILABLE:
+                    data = reshape_field_gpu(data, [self.medium.factorT, self.medium.factorZ, self.medium.factorX], GPUdevice=GPUdevice)
+                else:
+                    data = reshape_field_cpu(data, [self.medium.factorT, self.medium.factorZ, self.medium.factorX])
+
+            return data
+        except Exception as e:
+            print(f"[AOT-biomaps] Error in _generate_acoustic_field_KWAVE_2D method: {e}")
+            raise
+    
+    def reshape_field(self, dx=None, dy=None, dz=None, dt=None, Nx=None, Ny=None, Nz=None, Nt=None, factorX=None, factorY=None, factorZ=None, factorT=None, reshape_type='NxNyNzNt', isGPU=None, GPUdevice=None):
+        """
+        Reshape the acoustic field based on the specified spatial resolutions.
+
+        Parameters:
+        - dx (float): Desired spatial resolution in the x-direction (optional).
+        - dy (float): Desired spatial resolution in the y-direction (optional).
+        - dz (float): Desired spatial resolution in the z-direction (optional).
+        - dt (float): Desired temporal resolution (optional).
+        - Nx (int): Desired number of points in the x-direction (optional).
+        - Ny (int): Desired number of points in the y-direction (optional).
+        - Nz (int): Desired number of points in the z-direction (optional).
+        - Nt (int): Desired number of time points (optional).
+        - factorX (int): Reshaping factor in the x-direction (optional).
+        - factorY (int): Reshaping factor in the y-direction (optional).
+        - factorZ (int): Reshaping factor in the z-direction (optional).
+        - factorT (int): Reshaping factor in the time direction (optional).
+        - reshape_type (str): Type of reshaping to perform. Options are 'NxNyNzNt' (default) or 'factor'. 
+          - 'NxNyNzNt': Reshape based on the desired number of points (Nx, Ny, Nz, Nt).
+          - 'dxdydzdt': Reshape based on the desired spatial resolutions (dx, dy, dz, dt).
+          - 'factor': Reshape based on the specified factors (factorX, factorY, factorZ).
+        """
+        try:
+            if self.field is None:
+                raise ValueError("Field data is not available. Please generate or load the field first.")
+
+            if reshape_type == 'NxNyNzNt':
+                if self.params.acoustic["dim"] == Dim.D2.value:
+                    factorX = self.field.shape[2] // Nx if Nx is not None else 1
+                    factorZ = self.field.shape[1] // Nz if Nz is not None else 1
+                    factorT = self.field.shape[0] // Nt if Nt is not None else 1
+                elif self.params.acoustic["dim"] == Dim.D3.value:
+                    factorX = self.field.shape[3] // Nx if Nx is not None else 1
+                    factorY = self.field.shape[2] // Ny if Ny is not None else 1
+                    factorZ = self.field.shape[1] // Nz if Nz is not None else 1
+                    factorT = self.field.shape[0] // Nt if Nt is not None else 1
+            elif reshape_type == 'dxdydzdt':
+                factorX = int(np.round(self.params.general['dx'] / dx)) if dx else 1
+                factorY = int(np.round(self.params.general['dy'] / dy)) if dy else 1
+                factorZ = int(np.round(self.params.general['dz'] / dz)) if dz else 1
+                factorT = int(np.round(self.params.general['dt'] / dt)) if dt else 1
+            elif reshape_type == 'factor':
+                factorX = factorX if factorX is not None else 1
+                factorY = factorY if factorY is not None else 1
+                factorZ = factorZ if factorZ is not None else 1
+                factorT = factorT if factorT is not None else 1
+            else:
+                raise ValueError("Invalid reshape_type. Supported types are: 'NxNyNzNt', 'dxdydzdt', 'factor'.")
+            factorX = max(1, factorX)
+            if self.params.acoustic["dim"] == Dim.D3.value:
+                factorY = max(1, factorY)
+            factorZ = max(1, factorZ)
+            factorT = max(1, factorT)
+
+            if isGPU is None:
+                isGPU = True if config.get_process() == 'gpu' else False
+            if GPUdevice is None:
+                GPUdevice = config.select_best_gpu()
+
+            if self.params.acoustic["dim"] == Dim.D2.value:
+                factor = [factorT, factorZ, factorX]
+            elif self.params.acoustic["dim"] == Dim.D3.value:
+                factor = [factorT, factorZ, factorY, factorX]
+
+            if isGPU and CUPY_AVAILABLE:
+                self.field = reshape_field_gpu(self.field, factor, GPUdevice=GPUdevice)
+            else:
+                self.field = reshape_field_cpu(self.field, factor)
+        except Exception as e:
+            print(f"[AOT-biomaps] Error in reshape_fields method: {e}")
+            raise
 
     # def _generate_acoustic_field_KWAVE_3D(self, isGPU=True, show_log=True):
     #     """
@@ -535,8 +664,8 @@ class AcousticField(ABC):
     #             pml_auto=True,
     #             use_sg=False,
     #             save_to_disk=True,
-    #             input_filename=os.path.join(gettempdir(), "KwaveIN.h5"),
-    #             output_filename=os.path.join(gettempdir(), "KwaveOUT.h5")
+    #             input_filename=os.path.join(gettempdir(), f"{tempFieldName}IN.h5"),
+    #             output_filename=os.path.join(gettempdir(), f"{tempFieldName}OUT.h5")
     #         )
 
     #         execution_options = SimulationExecutionOptions(
@@ -603,7 +732,7 @@ class AcousticField(ABC):
             with h5py.File(os.path.join(filePath, self.get_name_field()+".h5"), 'r') as f:
                 self.field = f[nameBlock][:]
         except Exception as e:
-            print(f"Error in _load_field_h5 method: {e}")
+            print(f"[AOT-biomaps] Error in _load_field_h5 method: {e}")
             raise
 
     def _save2D_H5(self, filePath):
@@ -620,7 +749,7 @@ class AcousticField(ABC):
                         f.create_dataset(key, data=value)
                 f.create_dataset('data', data=self.field, compression='gzip')
         except Exception as e:
-            print(f"Error in _save2D_H5 method: {e}")
+            print(f"[AOT-biomaps] Error in _save2D_H5 method: {e}")
             raise
 
     def _save2D_NPY(self, filePath):
@@ -633,7 +762,7 @@ class AcousticField(ABC):
         try:
             np.save(filePath+self.get_name_field()+"npy", self.field)
         except Exception as e:
-            print(f"Error in _save2D_NPY method: {e}")
+            print(f"[AOT-biomaps] Error in _save2D_NPY method: {e}")
             raise
 
     def _load_fieldKWAVE_XZ(self, hdr_path):
@@ -706,7 +835,7 @@ class AcousticField(ABC):
 
             self.field = field
         except Exception as e:
-            print(f"Error in _load_fieldKWAVE_XZ method: {e}")
+            print(f"[AOT-biomaps] Error in _load_fieldKWAVE_XZ method: {e}")
             raise
 
     def _load_fieldHYDRO_XZ(self, file_path_h5, param_path_mat):
@@ -763,7 +892,7 @@ class AcousticField(ABC):
             self.params.general['Zrange'] = z_range
 
         except Exception as e:
-            print(f"Error in _load_fieldHYDRO_XZ method: {e}")
+            print(f"[AOT-biomaps] Error in _load_fieldHYDRO_XZ method: {e}")
             raise
 
     def _load_fieldHYDRO_YZ(self, file_path_h5, param_path_mat):
@@ -825,7 +954,7 @@ class AcousticField(ABC):
             envelope_transposed = np.transpose(envelope, (2, 0, 1))
             return envelope_transposed, y_range, z_range
         except Exception as e:
-            print(f"Error in _load_fieldHYDRO_YZ method: {e}")
+            print(f"[AOT-biomaps] Error in _load_fieldHYDRO_YZ method: {e}")
             raise
 
     def _load_fieldHYDRO_XYZ(self, file_path_h5, param_path_mat):
@@ -906,5 +1035,5 @@ class AcousticField(ABC):
             self.params.general['Ny'] = Ny
             self.params.general['Nz'] = Nz
         except Exception as e:
-            print(f"Error in _load_fieldHYDRO_XYZ method: {e}")
+            print(f"[AOT-biomaps] Error in _load_fieldHYDRO_XYZ method: {e}")
             raise

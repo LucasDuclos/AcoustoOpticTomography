@@ -7,12 +7,12 @@ Single unified function that works with any SMatrix type (CSR, SELL, DENSE) and 
 
 Supports spatial potential functions: QUADRATIC, HUBER, RELATIVE_DIFFERENCE
 """
-
+import contextlib
 import numpy as np
 from tqdm import trange
 from typing import Optional, Union, Tuple
 
-from AOT_biomaps.AOT_Recon.ReconTools import get_array_module, forward_projection, backward_projection, clamp_positive, get_potential_function, check_stopping_criterion, calculate_step_size
+from AOT_biomaps.AOT_Recon.ReconTools import get_array_module, get_device_context, forward_projection, backward_projection, get_potential_function, check_stopping_criterion
 from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, PotentialShapeType, StopCriterionType
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_CSR import SMatrix_CSR
@@ -25,22 +25,59 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
 
+# =====================================================================
+# CuPy Kernels definition for fusion of operations (Zero-Allocation)
+# =====================================================================
+if CUPY_AVAILABLE:
+    # Kernel for Poisson Ratio: y / max(q, eps)
+    ppgmlem_ratio_kernel = cp.ElementwiseKernel(
+        'float32 y, float32 q, float32 eps',
+        'float32 out',
+        '''
+        float q_safe = q < eps ? eps : q;
+        out = y / q_safe;
+        ''',
+        'ppgmlem_ratio_kernel'
+    )
+
+    # Kernel for Preconditioned Update & Clamp (Multiplicative MLEM update)
+    # Formula: lambda + lambda * (backproj - sens - grad_U) / (sens + lambda * delta * hess_U)
+    ppgmlem_update_kernel = cp.ElementwiseKernel(
+        'float32 lam_in, float32 backproj, float32 sens, float32 grad_u, float32 hess_u, float32 delta, float32 eps',
+        'float32 lam_out, float32 gradient_out',
+        '''
+        float numerator = backproj - sens - grad_u;
+        
+        // Newton-like preconditioner scaled by the current voxel value
+        float denominator = sens + lam_in * delta * hess_u;
+        
+        // Prevent division by zero
+        float denom_safe = denominator < eps ? eps : denominator;
+        
+        // Full preconditioned multiplicative gradient step (alpha = 1.0 implicitly)
+        float step = lam_in * (numerator / denom_safe);
+        
+        float new_val = lam_in + step;
+        lam_out = new_val > 0.0f ? new_val : 0.0f; // Clamp positive
+        
+        // Output the strict mathematical gradient for stopping criteria
+        gradient_out = step;
+        ''',
+        'ppgmlem_update_kernel'
+    )
 
 def PPGMLEM(
     SMatrix: Union['SMatrix_DENSE', 'SMatrix_CSR', 'SMatrix_SELL'],
     y: Union[np.ndarray, 'cp.ndarray'],
-    numIterations: int = 100,
-    alpha: Union[str, float] = "auto",     
+    numIterations: int = 100,    
     beta: float = 1.0,       
-    delta: float = 1.0,      
-    gamma: float = 0.01,     
-    eta: Optional[float] = None,
-    numIterations_stepCalculation: int = 20,
+    delta: float = 1.0,          
     potential_type: PotentialType = PotentialType.QUADRATIC,
     potential_shape: PotentialShapeType = PotentialShapeType.CROSS,
     potential_radius: int = 2,
     stop_criterion: StopCriterionType = StopCriterionType.MAX_ITERATIONS,
     stop_threshold: float = 100.0,
+    stop_window_size: int = 5,
     isSavingEachIteration: bool = True,
     isCostFunction: bool = False,
     withTumor: bool = True,
@@ -66,17 +103,14 @@ def PPGMLEM(
         SMatrix: SMatrix instance (already allocated)
         y: Measurement data (shape: (T, N))
         numIterations: Number of iterations
-        alpha: Step size parameter (float or 'auto' for power method estimation of Lipschitz constant)
         beta: Regularization weight
         delta: Parameter for Huber potential (threshold) or for RELATIVE_DIFFERENCE potential
-        gamma: Preconditioning parameter
-        eta: Parameter for Lipschitz estimation if alpha is "auto"
-        numIterations_stepCalculation: Number of iterations for power method when alpha is "auto"
         potential_type: Type of potential function (QUADRATIC, HUBER, RELATIVE_DIFFERENCE)
         potential_shape: Neighborhood shape (PotentialShapeType enum)
         potential_radius: Neighborhood radius in pixels
         stop_criterion: Criterion for stopping the iterations (StopCriterionType enum)
         stop_threshold: Threshold value for the stopping criterion (for MAX_iterations, this is ignored)
+        stop_window_size: Window size (used to avoid early stop due to oscillations)
         preconditioner_type: Type of preconditioner to use (default: NONE)
         isSavingEachIteration: If True, saves intermediate results
         isCostFunction: If True, computes and saves cost function history
@@ -92,57 +126,85 @@ def PPGMLEM(
         - cost_history: List of cost function values (None if not requested)
     """
     xp = get_array_module(SMatrix)
-    Z, X = SMatrix.Z, SMatrix.X
-    ZX = Z * X
+    is_gpu = (xp.__name__ == 'cupy')
 
-    if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
-        raise ValueError(f"Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
+    with get_device_context(SMatrix):
+        Z, X = SMatrix.Z, SMatrix.X
+        ZX = Z * X
 
-    y_flat = xp.asarray(y.T.flatten().astype(xp.float32))
-    lambda_flat = xp.full(ZX, 0.1, dtype=xp.float32)
+        if SMatrix.T != y.shape[0] or SMatrix.N != y.shape[1]:
+            raise ValueError(f"[AOT-biomaps] Shape of y {y.shape} does not match SMatrix dimensions (T={SMatrix.T}, N={SMatrix.N}).")
 
-    # Pre-compute sensitivity (A^T * 1)
-    sens_img = xp.maximum(backward_projection(SMatrix, xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32)), 1e-10)
+        y_flat = xp.asarray(y.T.flatten().astype(xp.float32))
+        lambda_flat = xp.full(ZX, 0.1, dtype=xp.float32)
+        ratio_buffer = xp.empty_like(y_flat)
+        gradient_buffer = xp.empty_like(lambda_flat)
 
-    alpha = calculate_step_size(SMatrix, eta, numIterations_stepCalculation, show_logs) if alpha == "auto" else alpha
+        # Pre-compute sensitivity (A^T * 1)
+        sens_img = backward_projection(SMatrix, xp.ones(SMatrix.N * SMatrix.T, dtype=xp.float32))
+        xp.maximum(sens_img, 1e-10, out=sens_img)
 
-    # Setup save indices
-    save_indices = np.unique(np.append(np.arange(0, numIterations, max(1, numIterations // max_saves)), numIterations - 1)).tolist()
+        # Setup save indices
+        save_indices = np.unique(np.append(np.arange(0, numIterations, max(1, numIterations // max_saves)), numIterations - 1)).tolist()
 
-    saved_lambda = []
-    saved_indices_list = []
-    cost_history = [] if isCostFunction else None
+        saved_lambda = []
+        saved_indices_list = []
+        cost_history = [] if isCostFunction else None
+        window_history = []
 
-    description = f"AOT-BioMaps -- PPGMLEM ({SMatrix.matrix_type.name}) with {potential_type.name} (shape: {potential_shape.name}, radius: {potential_radius}) β={beta} ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- {SMatrix.device.upper()}"
-    iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
+        description = f"[AOT-biomaps] PPGMLEM ({SMatrix.matrix_type.name}) with {potential_type.name} (shape: {potential_shape.name}, radius: {potential_radius}) β={beta} ---- {'WITH' if withTumor else 'WITHOUT'} TUMOR ---- {SMatrix.device.upper()}"
+        iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
 
-    for it in iterator:
-        prev_lambda = lambda_flat.copy()
-        q_flat = forward_projection(SMatrix, lambda_flat)
+        for it in iterator:
+            prev_lambda = lambda_flat.copy() if stop_criterion != StopCriterionType.MAX_ITERATIONS else None
 
-        # Compute potential Gradient & Hessian dynamically
-        grad_U, hess_U, U_value = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta, delta=delta, shape=potential_shape, radius=potential_radius, compute_grad=True, compute_hess=True, compute_energy=isCostFunction)
+            q_flat = forward_projection(SMatrix, lambda_flat)
 
-        # Track cost function (Negative Log-Likelihood + Penalty)
-        if isCostFunction:
-            cost_history.append(float(xp.sum(xp.maximum(q_flat, 1e-10) - y_flat * xp.log(xp.maximum(q_flat, 1e-10))) + U_value))
+            if is_gpu:
+                ppgmlem_ratio_kernel(y_flat, q_flat, 1e-10, ratio_buffer)
+            else:
+                np.maximum(q_flat, 1e-10, out=q_flat)
+                np.divide(y_flat, q_flat, out=ratio_buffer)
 
-        # PPGMLEM Update: λ = λ + α * (A^T * (y / Ax) - A^T * 1 - grad_U / (A^T * 1 + δ * hess_U + γ))
-        lambda_flat = clamp_positive(SMatrix, lambda_flat + alpha * (backward_projection(SMatrix, y_flat / xp.maximum(q_flat, 1e-10)) - sens_img - grad_U / xp.maximum(sens_img + delta * hess_U + gamma, 1e-10)))
+            backproj_ratio = backward_projection(SMatrix, ratio_buffer)
 
-        # Stopping Criterion
-        if stop_criterion != StopCriterionType.MAX_ITERATIONS:
-            ground_truth = SMatrix.experiment.OpticImage.phantom if withTumor else SMatrix.experiment.OpticImage.laser.intensity
-            isStop, val = check_stopping_criterion(SMatrix, lambda_flat, prev_lambda, stop_criterion, stop_threshold, cost_history, ground_truth)
-            if show_logs and show_criterion:
-                iterator.set_postfix_str(f"{stop_criterion.name}: {val:.2e}")
-            if isStop:
-                if show_logs: print(f"\n[Stopping] Criterion {stop_criterion.name} reached at iteration {it}.")
-                break
-            
-        if isSavingEachIteration and it in save_indices:
-            saved_lambda.append(lambda_flat.reshape(Z, X).get() if hasattr(lambda_flat, 'get') else lambda_flat.reshape(Z, X).copy())
-            saved_indices_list.append(it)
+            # Compute potential Gradient & Hessian dynamically
+            grad_U, hess_U, U_value = get_potential_function(potential_type, SMatrix, lambda_flat, beta=beta, delta=delta, shape=potential_shape, radius=potential_radius, compute_grad=True, compute_hess=True, compute_energy=isCostFunction, use_surrogate_hessian=False)
 
-    final_result = lambda_flat.reshape(Z, X).get() if hasattr(lambda_flat, 'get') else lambda_flat.reshape(Z, X)
-    return (saved_lambda, saved_indices_list, cost_history) if isSavingEachIteration else (final_result, None, cost_history)
+            # Track cost function (Negative Log-Likelihood + Penalty)
+            if isCostFunction:
+                q_safe = xp.maximum(q_flat, 1e-10)
+                cost_history.append(float(xp.sum(q_safe - y_flat * xp.log(q_safe)) + U_value))
+
+            # PPGMLEM Update: λ = λ + α * (A^T * (y / Ax) - A^T * 1 - grad_U / (A^T * 1 + δ * hess_U + γ))
+            if is_gpu:
+                ppgmlem_update_kernel(lambda_flat, backproj_ratio, sens_img, grad_U, hess_U, float(delta), 1e-10, lambda_flat, gradient_buffer)
+            else:
+                numerator = backproj_ratio - sens_img - grad_U
+                denominator = sens_img + (lambda_flat * delta * hess_U)
+                np.maximum(denominator, 1e-10, out=denominator)
+                gradient_buffer = lambda_flat * (numerator / denominator)
+                lambda_flat += gradient_buffer
+                np.maximum(lambda_flat, 0.0, out=lambda_flat)
+
+            # Stopping Criterion
+            if stop_criterion != StopCriterionType.MAX_ITERATIONS:
+                if SMatrix.experiment.OpticImage is None:
+                    ground_truth = None
+                else:
+                    ground_truth = SMatrix.experiment.OpticImage.phantom if withTumor else SMatrix.experiment.OpticImage.laser.intensity
+                gradient_for_stop = gradient_buffer if stop_criterion == StopCriterionType.GRADIENT_NORM else None
+                isStop, val = check_stopping_criterion(SMatrix, lambda_flat, prev_lambda, stop_criterion, stop_threshold, window_size=stop_window_size, history=cost_history, ground_truth=ground_truth, gradient=gradient_for_stop, window_history=window_history)
+                if show_logs and show_criterion:
+                    iterator.set_postfix_str(f"{stop_criterion.name}: {val:.2e}")
+                if isStop:
+                    if show_logs: print(f"\n[AOT-biomaps] Stopping criterion {stop_criterion.name} reached at iteration {it}.")
+                    cost_history.pop() if isCostFunction else None
+                    break
+                
+            if isSavingEachIteration and it in save_indices:
+                saved_lambda.append(lambda_flat.reshape(Z, X).get() if is_gpu else lambda_flat.reshape(Z, X).copy())
+                saved_indices_list.append(it)
+
+        final_result = lambda_flat.reshape(Z, X).get() if is_gpu else lambda_flat.reshape(Z, X)
+        return (saved_lambda, saved_indices_list, cost_history) if isSavingEachIteration else (final_result, None, cost_history)

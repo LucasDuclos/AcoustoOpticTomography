@@ -2,6 +2,7 @@ from AOT_biomaps.Config import config
 from AOT_biomaps.AOT_Experiment.Tomography import Tomography
 from .ReconEnums import ReconType
 from .ReconTools import mse
+from skimage.metrics import structural_similarity as ssim
 
 import os
 import numpy as np
@@ -27,7 +28,7 @@ class Recon(ABC):
         self.isMultiCPU = isMultiCPU
 
         if str(type(self.experiment)) != str(Tomography):
-            raise TypeError(f"Experiment must be of type {Tomography}")
+            raise TypeError(f"[AOT-biomaps] Experiment must be of type {Tomography}")
 
     @abstractmethod
     def run(self,withTumor = True):
@@ -53,11 +54,11 @@ class Recon(ABC):
 
         if withTumor:
             if not self.reconPhantom or len(self.reconPhantom) == 0:
-                raise ValueError("Reconstructed phantom is empty. Run reconstruction first.")
+                raise ValueError("[AOT-biomaps] Reconstructed phantom is empty. Run reconstruction first.")
             np.save(filepathRecon, np.array(self.reconPhantom))
         else:
             if not self.reconLaser or len(self.reconLaser) == 0:
-                raise ValueError("Reconstructed laser is empty. Run reconstruction first.")
+                raise ValueError("[AOT-biomaps] Reconstructed laser is empty. Run reconstruction first.")
             np.save(filepathRecon, np.array(self.reconLaser))
 
         if self.indices is not None and len(self.indices) > 0:
@@ -65,7 +66,7 @@ class Recon(ABC):
             np.save(filepathIndices, np.array(self.indices))
 
         if show_logs:
-            print(f"Reconstruction results saved to {os.path.dirname(filepath)}")
+            print(f"[AOT-biomaps] Reconstruction results saved to {os.path.dirname(filepath)}")
 
     @abstractmethod
     def check_existing_file(self, date=None, withTumor=True):
@@ -83,22 +84,25 @@ class Recon(ABC):
         :return: CRC value or list of CRC values.
         """
         if self.reconType is None:
-            raise ValueError("Run reconstruction first")
+            raise ValueError("[AOT-biomaps] Run reconstruction first")
 
         if self.reconLaser is None or self.reconLaser == []:
-            raise ValueError("Reconstructed laser is empty. Run reconstruction first.")
+            raise ValueError("[AOT-biomaps] Reconstructed laser is empty. Run reconstruction first.")
         if self.reconPhantom is None or self.reconPhantom == []:
-            raise ValueError("Reconstructed phantom is empty. Run reconstruction first.")
+            raise ValueError("[AOT-biomaps] Reconstructed phantom is empty. Run reconstruction first.")
 
         # Handle empty reconstructions
         if self.reconLaser is None or self.reconLaser == []:
-            print("Reconstructed laser is empty. Running reconstruction without tumor...")
+            print("[AOT-biomaps] Reconstructed laser is empty. Running reconstruction without tumor...")
             self.run(withTumor=False, isSavingEachIteration=True)
 
         # Get the ROI mask(s) from the phantom if needed
         if use_ROI:
             self.experiment.OpticImage.find_ROI()
             global_mask = np.logical_or.reduce(self.experiment.OpticImage.maskList)
+        if len(global_mask) == 0:
+            print("[AOT-biomaps] No ROIs found in the phantom. Computing global CRC instead.")
+            use_ROI = False
 
         # Analytic reconstruction case
         if self.reconType is ReconType.Analytic:
@@ -113,7 +117,7 @@ class Recon(ABC):
 
         # Iterative reconstruction case
         else:
-            iterations = range(len(self.reconPhantom))
+            iterations = range(np.min([len(self.reconPhantom), len(self.reconLaser)]))
 
             crc_list = []
             for it in iterations:
@@ -135,28 +139,27 @@ class Recon(ABC):
         Returns:
             mse: float or list of floats, Mean Squared Error of the reconstruction
         """
-                
         if self.reconPhantom is None or self.reconPhantom == []:
-            raise ValueError("Reconstructed phantom is empty. Run reconstruction first.")
+            raise ValueError("[AOT-biomaps] Reconstructed phantom is empty. Run reconstruction first.")
 
         if self.reconType in (ReconType.Analytic, ReconType.DeepLearning):
-            self.MSE = mse(self.experiment.OpticImage.phantom, self.reconPhantom)
+            self.MSE = mse(None, self.experiment.OpticImage.phantom, self.reconPhantom)
 
         elif self.reconType in (ReconType.Algebraic, ReconType.Bayesian, ReconType.Convex):
             self.MSE = []
             if withTumor:
                 for theta in self.reconPhantom:
-                    self.MSE.append(mse(self.experiment.OpticImage.phantom, theta))
+                    self.MSE.append(mse(None, self.experiment.OpticImage.phantom, theta))
             else:
                 for theta in self.reconLaser:
-                    self.MSE.append(mse(self.experiment.OpticImage.laser.intensity, theta))
+                    self.MSE.append(mse(None, self.experiment.OpticImage.laser.intensity, theta))
 
     def calculate_SSIM(self, withTumor=True, show_log=False):
         """
         Calculate SSIM without normalizing images, using original data_range.
         """
         if self.reconPhantom is None or self.reconPhantom == []:
-            raise ValueError("Reconstructed phantom is empty. Run reconstruction first.")
+            raise ValueError("[AOT-biomaps] Reconstructed phantom is empty. Run reconstruction first.")
 
         # Select reference image
         if withTumor:
@@ -187,128 +190,3 @@ class Recon(ABC):
                 theta_min, theta_max = theta.min(), theta.max()
                 current_data_range = max(data_range, theta_max - theta_min)  # Use the larger range
                 self.SSIM.append(ssim(ref_img, theta, data_range=current_data_range))
-
-    def show(self, withTumor=True, savePath=None, scale='same', figsize=(8,4)):
-        """
-        Display the reconstructed images.
-        Args:
-            withTumor (bool): If True, displays reconPhantom. If False, displays reconLaser. Default is True.
-            savePath (str): Path to save the figure. If None, the figure is not saved. Default is None.
-            scale (str): Scale for the aspect ratio of the plots. Default is 'same'. Options are 'same' or 'auto'.
-        
-        Note:
-            Requires matplotlib to be installed. If matplotlib is not available, this method will raise an ImportError.
-        """
-        extent = [self.experiment.params.general['Xrange'][0]*1e3, self.experiment.params.general['Xrange'][1]*1e3, self.experiment.params.general['Zrange'][1]*1e3, self.experiment.params.general['Zrange'][0]*1e3]
-        if withTumor:
-            if self.reconPhantom is None:
-                raise ValueError("Reconstructed phantom with tumor is empty. Run reconstruction first.")
-            if isinstance(self.reconPhantom, (list, tuple)) and len(self.reconPhantom) == 0:
-                raise ValueError("Reconstructed phantom with tumor is empty. Run reconstruction first.")
-            if isinstance(self.reconPhantom, list):
-                image = self.reconPhantom[-1]
-            else:
-                image = self.reconPhantom
-            if self.experiment.OpticImage is None:
-                fig, axs = plt.subplots(1, 1, figsize=(figsize[0]/2, figsize[1]))
-            else:
-                fig, axs = plt.subplots(1, 2, figsize=(figsize))
-                if scale == 'same':
-                    vmin = 0
-                    vmax = 1
-                elif scale == 'auto':
-                    vmin = np.min(self.experiment.OpticImage.phantom)
-                    vmax = np.max(self.experiment.OpticImage.phantom)
-                    
-                # Phantom original
-                im1 = axs[1].imshow(
-                    self.experiment.OpticImage.phantom,
-                    cmap='hot',
-                    vmin=vmin,
-                    vmax=vmax,
-                    extent=extent,
-                    aspect='equal'  
-                )
-                axs[1].set_title("Phantom with tumor")
-                axs[1].set_xlabel("x (mm)", fontsize=12)
-                axs[1].set_ylabel("z (mm)", fontsize=12)
-                axs[1].tick_params(axis='both', which='major', labelsize=8)
-            if scale == 'same':
-                vmin = 0
-                vmax = 1
-            elif scale == 'auto':
-                vmin = np.min(image)
-                vmax = np.max(image)
-            # Phantom reconstruit
-            im0 = axs[0].imshow(
-                image,
-                cmap='hot',
-                vmin=vmin,
-                vmax=vmax,
-                extent=extent,
-                aspect='equal'  
-            )
-            axs[0].set_title("Reconstructed phantom with tumor")
-            axs[0].set_xlabel("x (mm)", fontsize=12)
-            axs[0].set_ylabel("z (mm)", fontsize=12)
-            axs[0].tick_params(axis='both', which='major', labelsize=8)
-            axs[0].tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
-        else:
-            if self.reconLaser is None:
-                raise ValueError("Reconstructed laser without tumor is empty. Run reconstruction first.")
-            if isinstance(self.reconLaser, (list, tuple)) and len(self.reconLaser) == 0:
-                raise ValueError("Reconstructed laser without tumor is empty. Run reconstruction first.")
-            if isinstance(self.reconLaser, list):
-                image = self.reconLaser[-1]
-            else:
-                image = self.reconLaser
-            if self.experiment.OpticImage is None:
-                fig, axs = plt.subplots(1, 1, figsize=(10, 10))
-            else:
-                fig, axs = plt.subplots(1, 2, figsize=(20, 10))
-                # Laser original
-                im1 = axs[1].imshow(
-                    self.experiment.OpticImage.laser.intensity,
-                    cmap='hot',
-                    vmin=0,
-                    vmax=np.max(self.experiment.OpticImage.laser.intensity),
-                    extent=extent,
-                    aspect='equal'  
-                )
-                axs[1].set_title("Laser without tumor")
-                axs[1].set_xlabel("x (mm)", fontsize=12)
-                axs[1].set_ylabel("z (mm)", fontsize=12)
-                axs[1].tick_params(axis='both', which='major', labelsize=8)
-            # Laser reconstruit
-            im0 = axs[0].imshow(
-                image,
-                cmap='hot',
-                vmin=0,
-                vmax=np.max(self.experiment.OpticImage.laser.intensity),
-                extent=extent,
-                aspect='equal'
-            )
-            axs[0].set_title("Reconstructed laser without tumor")
-            axs[0].set_xlabel("x (mm)", fontsize=12)
-            axs[0].set_ylabel("z (mm)", fontsize=12)
-            axs[0].tick_params(axis='both', which='major', labelsize=8)
-            axs[0].tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
-
-        # Colorbar commune
-        fig.subplots_adjust(bottom=0.2)
-        cbar_ax = fig.add_axes([0.25, 0.08, 0.5, 0.03])
-        cbar = fig.colorbar(im0, cax=cbar_ax, orientation='horizontal')
-        cbar.set_label('Normalized Intensity', fontsize=12)
-        cbar.ax.tick_params(labelsize=8)
-
-        plt.subplots_adjust(wspace=0.3)
-
-        if savePath is not None:
-            if not os.path.exists(savePath):
-                os.makedirs(savePath)
-            if withTumor:
-                plt.savefig(os.path.join(savePath, 'recon_with_tumor.png'), dpi=300, bbox_inches='tight')
-            else:
-                plt.savefig(os.path.join(savePath, 'recon_without_tumor.png'), dpi=300, bbox_inches='tight')
-
-        plt.show()

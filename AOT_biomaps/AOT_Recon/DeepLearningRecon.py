@@ -23,7 +23,7 @@ class DeepLearningRecon(Recon):
         elif(processType == ProcessType.PYTHON):
             self._deepLearningReconPython()
         else:
-            raise ValueError(f"Unknown deep learning reconstruction type: {processType}")
+            raise ValueError(f"[AOT-biomaps] Unknown deep learning reconstruction type: {processType}")
 
     def _deepLearningReconCASToR(self):
         pass
@@ -32,4 +32,4 @@ class DeepLearningRecon(Recon):
         pass
 
     def checkExistingFile(self, date=None, withTumor=True):
-        raise NotImplementedError("checkExistingFile method is not implemented yet.")
+        raise NotImplementedError("[AOT-biomaps]checkExistingFile method is not implemented yet.")

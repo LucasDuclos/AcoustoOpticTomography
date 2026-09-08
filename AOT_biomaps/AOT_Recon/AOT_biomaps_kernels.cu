@@ -1,1292 +1,1059 @@
 /**
  * AOT_biomaps_kernels.cu
  * 
- * Centralized CUDA kernels for AOT_biomaps library
+ * Centralized CUDA kernels for sparse matrix operations on GPU.
  * All custom CUDA kernels are organized in this file with:
  * - Clear naming convention: module_operation_purpose
  * - English documentation
  * - Consistent error handling
  * - Optimized for performance
- * 
- * Modules:
- * - SPARSE: Sparse matrix operations (CSR, SELL-C-sigma)
- * - MLEM: Maximum Likelihood Expectation Maximization
- * - LS: Least Squares reconstruction
- * - TV: Total Variation regularization
- * - PDHG: Primal-Dual Hybrid Gradient
- * - LBFGS: Limited-memory BFGS
- * - UTIL: Utility operations
  */
 
 extern "C"{
 
-// ============================================================================
-// DENSE MATRIX KERNELS
-// ============================================================================
+    // ============================================================================
+    // UTILITY FUNCTIONS
+    // ============================================================================
 
-/**
- * Kernel: fill_dense_matrix
- * Purpose: Fill dense matrix from acoustic fields on GPU
- * Used for: DENSE matrix construction
- */
-__global__ void fill_dense_matrix_kernel(
-    float* __restrict__ dense_matrix,
-    const float* __restrict__ field_data,
-    int T,
-    int N,
-    int Z,
-    int X,
-    int n
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= T * Z * X) return;
-
-    int t = idx / (Z * X);
-    int zx = idx % (Z * X);
-    int z = zx / X;
-    int x = zx % X;
-
-    // Position in dense_matrix: [t, n, z, x]
-    int dense_idx = t * (N * Z * X) + n * (Z * X) + z * X + x;
-
-    // Position in field_data: [t, z, x] (1D array of size T * Z * X)
-    int field_idx = t * (Z * X) + z * X + x;
-
-    if (dense_idx < T * N * Z * X && field_idx < T * Z * X) {
-        dense_matrix[dense_idx] = field_data[field_idx];
+    /**
+     * Function: complex_multiply
+     * Purpose: Multiply two complex numbers (a + bi) * (c + di)
+     * Input: a, b - first complex number (as float2)
+     *        c, d - second complex number (as float2)
+     * Output: Result as float2 (real, imag)
+     */
+    __device__ __forceinline__ float2 complex_multiply(float2 a, float2 b) {
+        return make_float2(
+            a.x * b.x - a.y * b.y,  // Real part: (a.x * b.x - a.y * b.y)
+            a.x * b.y + a.y * b.x   // Imag part: (a.x * b.y + a.y * b.x)
+        );
     }
-}
 
-/**
- * Kernel: compute_norm_factor_dense
- * Purpose: Compute normalization factor for dense matrix: 1 / (sum(|A|) + eps)
- * Used for: DENSE matrix normalization
- */
-__global__ void compute_norm_factor_dense_kernel(
-    const float* __restrict__ dense_matrix,
-    float* __restrict__ norm_factor_inv,
-    int T,
-    int N,
-    int Z,
-    int X
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= Z * X) return;
+    /**
+     * Function: complex_abs
+     * Purpose: Compute the absolute value (norm) of a complex number
+     * Input: a - complex number (as float2)
+     * Output: Norm as float
+     */
+    __device__ __forceinline__ float complex_abs(float2 a) {
+        return sqrtf(a.x * a.x + a.y * a.y);
+    }
+
+    /**
+    * Kernel: count_nnz_rows_kernel__REAL
+    * Purpose: Count non-zero elements per row in a dense matrix block for real values, based on a relative threshold.
+    * Used for: CSR and SELL-C-sigma matrix construction
+    */
+    __global__ void count_nnz_rows_kernel__REAL(
+        const float* __restrict__ dense,
+        int* __restrict__ row_nnz,
+        int rows_in_block,
+        int cols,
+        float thr_rel
+    ) {
+        int r = blockIdx.x * blockDim.x + threadIdx.x;
+        if (r >= rows_in_block) return;
+        
+        const float* row = dense + (long long)r * cols;
+        float maxv = 0.0f;
+        for (int c = 0; c < cols; ++c) {
+            float v = fabsf(row[c]);
+            if (v > maxv) maxv = v;
+        }
+        float cut = maxv * thr_rel;
+        int cnt = 0;
+        for (int c = 0; c < cols; ++c) {
+            if (fabsf(row[c]) > cut) ++cnt;
+        }
+        row_nnz[r] = cnt;
+    }
+
+    /**
+     * Kernel: count_nnz_rows_kernel__COMPLEX
+     * Purpose: Count non-zero elements per row in a dense complex matrix block
+     */
+    __global__ void count_nnz_rows_kernel__COMPLEX(
+        const float2* __restrict__ dense,
+        int* __restrict__ row_nnz,
+        int rows_in_block,
+        int cols,
+        float thr_rel
+    ) {
+        int r = blockIdx.x * blockDim.x + threadIdx.x;
+        if (r >= rows_in_block) return;
+
+        const float2* row = dense + (long long)r * cols;
+        float maxv = 0.0f;
+        for (int c = 0; c < cols; ++c) {
+            float norm = complex_abs(row[c]);
+            if (norm > maxv) maxv = norm;
+        }
+        float cut = maxv * thr_rel;
+        int cnt = 0;
+        for (int c = 0; c < cols; ++c) {
+            if (complex_abs(row[c]) > cut) ++cnt;
+        }
+        row_nnz[r] = cnt;
+    }
+
+    // ============================================================================
+    // DENSE MATRIX KERNELS
+    // ============================================================================
+
+    /**
+    * Kernel: fill_kernel__DENSE__REAL
+    * Purpose: Fill dense real matrix from acoustic fields on GPU
+    * Used for: Basic real DENSE matrix construction
+    */
+    __global__ void fill_kernel__DENSE__REAL(
+        float* __restrict__ dense_matrix,
+        const float* __restrict__ field_data,
+        int T,
+        int N,
+        int Z,
+        int X,
+        int n
+    ) {
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx >= T * Z * X) return;
+
+        int t = idx / (Z * X);
+        int zx = idx % (Z * X);
+        int z = zx / X;
+        int x = zx % X;
+
+        // Position in dense_matrix: [t, n, z, x]
+        int dense_idx = t * (N * Z * X) + n * (Z * X) + z * X + x;
+
+        // Position in field_data: [t, z, x] (1D array of size T * Z * X)
+        int field_idx = t * (Z * X) + z * X + x;
+
+        if (dense_idx < T * N * Z * X && field_idx < T * Z * X) {
+            dense_matrix[dense_idx] = field_data[field_idx];
+        }
+    }
+
+    /**
+     * Kernel: fill_kernel__DENSE__COMPLEX
+     * Purpose: Fill dense complex matrix from acoustic fields on GPU
+     */
+    __global__ void fill_kernel__DENSE__COMPLEX(
+        float2* __restrict__ dense_matrix,
+        const float2* __restrict__ field_data,
+        int T,
+        int N,
+        int Z,
+        int X,
+        int n
+    ) {
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx >= T * Z * X) return;
+
+        int t = idx / (Z * X);
+        int zx = idx % (Z * X);
+        int z = zx / X;
+        int x = zx % X;
+
+        int dense_idx = t * (N * Z * X) + n * (Z * X) + z * X + x;
+        int field_idx = t * (Z * X) + z * X + x;
+
+        if (dense_idx < T * N * Z * X && field_idx < T * Z * X) {
+            dense_matrix[dense_idx] = field_data[field_idx];
+        }
+    }
+
+    /**
+    * Kernel: forward_projection_kernel__DENSE
+    * Purpose: Forward projection using DENSE format for real values: q = A * theta
+    * Layout expectation: row = n * T + t
+    */
+    __global__ void forward_projection_kernel__DENSE__REAL(
+        float* __restrict__ q_out,
+        const float* __restrict__ dense_matrix,
+        const float* __restrict__ theta,
+        int T,
+        int N,
+        int Z,
+        int X
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= N * T) return;
+
+        int n = row / T;
+        int t = row % T;
+
+        float sum = 0.0f;
+        for (int z = 0; z < Z; z++) {
+            for (int x = 0; x < X; x++) {
+                long long pos = (((long long)t * N + n) * Z + z) * X + x;
+                long long theta_idx = (long long)z * X + x;
+                
+                sum += dense_matrix[pos] * theta[theta_idx];
+            }
+        }
+        q_out[row] = sum;
+    }
+
+    /**
+     * Kernel: forward_projection_kernel__DENSE__COMPLEX
+     * Purpose: Forward projection using DENSE format for complex values: q = A * theta
+     */
+    __global__ void forward_projection_kernel__DENSE__COMPLEX(
+        float2* __restrict__ q_out,
+        const float2* __restrict__ dense_matrix,
+        const float2* __restrict__ theta,
+        int T, int N, int Z, int X
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= N * T) return;
+
+        int n = row / T;
+        int t = row % T;
+
+        float2 sum = make_float2(0.0f, 0.0f);
+        for (int z = 0; z < Z; z++) {
+            for (int x = 0; x < X; x++) {
+                long long pos = (((long long)t * N + n) * Z + z) * X + x;
+                long long theta_idx = (long long)z * X + x;
     
-    // Each thread computes sum of absolute values for one column
-    float sum_abs = 0.0f;
-    for (int t = 0; t < T; t++) {
+                float2 prod = complex_multiply(dense_matrix[pos], theta[theta_idx]);
+                sum.x += prod.x;
+                sum.y += prod.y;
+            }
+        }
+        q_out[row] = sum;
+    }
+
+    /**
+    * Kernel: backward_projection_kernel__DENSE__REAL
+    * Purpose: Backward projection using DENSE format for real values: c = A^T * e
+    * Layout expectation: col = z * X + x
+    */
+    __global__ void backward_projection_kernel__DENSE__REAL(
+        float* __restrict__ c_out,
+        const float* __restrict__ dense_matrix,
+        const float* __restrict__ e,
+        int T,
+        int N,
+        int Z,
+        int X
+    ) {
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        if (col >= Z * X) return;
+
+        int z = col / X;
+        int x = col % X;
+
+        float sum = 0.0f;
         for (int n = 0; n < N; n++) {
-            int pos = t * N * Z * X + n * Z * X + idx;
-            sum_abs += fabsf(dense_matrix[pos]);
+            for (int t = 0; t < T; t++) {
+                long long e_idx = (long long)n * T + t;
+                long long pos = (((long long)t * N + n) * Z + z) * X + x;
+                
+                sum += dense_matrix[pos] * e[e_idx];
+            }
         }
+        c_out[col] = sum;
     }
-    
-    // Store sum for this column
-    float* sum_buffer = norm_factor_inv; // Reuse buffer for sum
-    sum_buffer[idx] = sum_abs;
-    
-    __syncthreads();
-    
-    // Reduction in shared memory (simplified - actual reduction would need more work)
-    // For now, we'll do this in Python after kernel execution
-}
 
-/**
- * Kernel: forward_projection_kernel__DENSE
- * Purpose: Forward projection using DENSE format: q = A * theta
- * Layout expectation: row = n * T + t
- */
-__global__ void forward_projection_kernel__DENSE(
-    float* __restrict__ q_out,
-    const float* __restrict__ dense_matrix,
-    const float* __restrict__ theta,
-    int T,
-    int N,
-    int Z,
-    int X
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= N * T) return;
+    /**
+     * Kernel: backward_projection_kernel__DENSE__COMPLEX
+     * Purpose: Backward projection using DENSE format for complex values: c = A^H * e
+     */
+    __global__ void backward_projection_kernel__DENSE__COMPLEX(
+        float2* __restrict__ c_out,
+        const float2* __restrict__ dense_matrix,
+        const float2* __restrict__ e,
+        int T, int N, int Z, int X
+    ) {
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        if (col >= Z * X) return;
 
-    int n = row / T;
-    int t = row % T;
+        int z = col / X;
+        int x = col % X;
 
-    float sum = 0.0f;
-    for (int z = 0; z < Z; z++) {
-        for (int x = 0; x < X; x++) {
-            long long pos = (((long long)t * N + n) * Z + z) * X + x;
-            long long theta_idx = (long long)z * X + x;
-            
-            sum += dense_matrix[pos] * theta[theta_idx];
+        float2 sum = make_float2(0.0f, 0.0f);
+        for (int n = 0; n < N; n++) {
+            for (int t = 0; t < T; t++) {
+                long long e_idx = (long long)n * T + t;
+                long long pos = (((long long)t * N + n) * Z + z) * X + x;
+                
+                float2 dense_val = dense_matrix[pos];
+                float2 dense_conj = make_float2(dense_val.x, -dense_val.y); 
+                
+                float2 prod = complex_multiply(dense_conj, e[e_idx]);
+                sum.x += prod.x;
+                sum.y += prod.y;
+            }
         }
+        c_out[col] = sum;
     }
-    q_out[row] = sum;
-}
 
-/**
- * Kernel: backward_projection_kernel__DENSE
- * Purpose: Backward projection using DENSE format: c = A^T * e
- * Layout expectation: col = z * X + x
- */
-__global__ void backward_projection_kernel__DENSE(
-    float* __restrict__ c_out,
-    const float* __restrict__ dense_matrix,
-    const float* __restrict__ e,
-    int T,
-    int N,
-    int Z,
-    int X
-) {
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if (col >= Z * X) return;
+    // ============================================================================
+    // SELL MATRIX KERNELS
+    // ============================================================================  
 
-    int z = col / X;
-    int x = col % X;
-
-    float sum = 0.0f;
-    for (int n = 0; n < N; n++) {
-        for (int t = 0; t < T; t++) {
-            long long e_idx = (long long)n * T + t;
-            long long pos = (((long long)t * N + n) * Z + z) * X + x;
-            
-            sum += dense_matrix[pos] * e[e_idx];
+    /**
+    * Kernel: fill_kernel__SELL__REAL
+    * Purpose: Fill real SELL-C-sigma format from dense matrix block
+    * Used for: Basic real SELL-C-sigma sparse matrix construction using block streaming
+    */
+    __global__ void fill_kernel__SELL__REAL(
+        const float* __restrict__ dense,
+        const int* __restrict__ row_nnz,
+        const long long* __restrict__ slice_ptr,
+        const int* __restrict__ slice_len,
+        unsigned int* __restrict__ col_ind,
+        float* __restrict__ values_out,
+        int rows_in_block,
+        int cols,
+        int rows_global_offset,
+        int slice_height,
+        float thr_rel
+    ) {
+        int r_local = blockIdx.x * blockDim.x + threadIdx.x;
+        if (r_local >= rows_in_block) return;
+        
+        int r_global = rows_global_offset + r_local;
+        int slice_id = r_global / slice_height;
+        int row_in_slice = r_global % slice_height;
+        
+        const float* row = dense + (long long)r_local * cols;
+        float maxv = 0.0f;
+        
+        // Find max absolute value in the row to compute local threshold
+        for (int c = 0; c < cols; ++c) {
+            float v = fabsf(row[c]);
+            if (v > maxv) maxv = v;
         }
-    }
-    c_out[col] = sum;
-}
-
-//============================================================================
-// UTILITY KERNELS
-// ============================================================================
-
-// /**
-//  * Kernel: fill_array_value
-//  * Purpose: Fill an array with a constant value
-//  */
-// __global__ void fill_array_value(float* ptr, float value, int size) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx < size) ptr[idx] = value;
-// }
-
-// /**
-//  * Kernel: fill_array_zero
-//  * Purpose: Fill an array with zeros
-//  */
-// __global__ void fill_array_zero(float* ptr, int size) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx < size) ptr[idx] = 0.0f;
-// }
-
-// /**
-//  * Kernel: array_copy
-//  * Purpose: Copy elements from source to destination
-//  */
-// __global__ void array_copy(float* dst, const float* src, int size) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx < size) dst[idx] = src[idx];
-// }
-
-/**
- * Kernel: clamp_positive
- * Purpose: Clamp all values to be non-negative (max with 0)
- */
-__global__ void clamp_positive_kernel(float* data, int N) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < N) data[idx] = fmaxf(data[idx], 0.0f);
-}
-
-/**
- * Kernel: vector_axpby
- * Purpose: Compute z = alpha * x + beta * y (element-wise)
- */
-__global__ void vector_axpby_kernel(
-    float* __restrict__ z_out,
-    const float* __restrict__ x_in,
-    const float* __restrict__ y_in,
-    float alpha,
-    float beta,
-    int N
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
-    float x_val = x_in[idx];
-    float y_val = y_in[idx];
-    float result = alpha * x_val + beta * y_val;
-    if (!isfinite(result)) result = 0.0f;
-    z_out[idx] = result;
-}
-
-/**
- * Kernel: vector_plus_axpy
- * Purpose: Compute r = r + alpha * z (in-place axpy)
- */
-__global__ void vector_axpy_kernel(
-    float* __restrict__ r_in_out,
-    const float* __restrict__ z_in,
-    float alpha,
-    int N
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
-    float r_val = r_in_out[idx];
-    float z_val = z_in[idx];
-    float result = r_val + alpha * z_val;
-    if (!isfinite(result)) result = 0.0f;
-    r_in_out[idx] = result;
-}
-
-
-/**
- * Kernel: invert_vector
- * Purpose: Compute output = 1 / input with clipping to avoid division by zero
- */
-__global__ void invert_vector_kernel(
-    float* __restrict__ vec_out,
-    const float* __restrict__ vec_in,
-    float clip_min,
-    int N
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= N) return;
-    float val = vec_in[idx];
-    if (val < clip_min) val = clip_min;
-    vec_out[idx] = 1.0f / val;
-}
-
-// ============================================================================
-// SPARSE MATRIX KERNELS (CSR and SELL-C-sigma)
-// ============================================================================
-
-/**
- * Kernel: count_nnz_rows
- * Purpose: Count non-zero elements per row in a dense matrix block
- * Used for: CSR and SELL-C-sigma matrix construction
- */
-__global__ void count_nnz_rows_kernel(
-    const float* __restrict__ dense,
-    int* __restrict__ row_nnz,
-    int rows_in_block,
-    int cols,
-    float thr_rel
-) {
-    int r = blockIdx.x * blockDim.x + threadIdx.x;
-    if (r >= rows_in_block) return;
-    
-    const float* row = dense + (long long)r * cols;
-    float maxv = 0.0f;
-    for (int c = 0; c < cols; ++c) {
-        float v = fabsf(row[c]);
-        if (v > maxv) maxv = v;
-    }
-    float cut = maxv * thr_rel;
-    int cnt = 0;
-    for (int c = 0; c < cols; ++c) {
-        if (fabsf(row[c]) > cut) ++cnt;
-    }
-    row_nnz[r] = cnt;
-}
-
-/**
- * Kernel: fill_sell
- * Purpose: Fill SELL-C-sigma format from dense matrix block
- * Used for: SELL-C-sigma sparse matrix construction
- */
-__global__ void fill_kernel__SELL(
-    const float* __restrict__ dense,
-    const int* __restrict__ row_nnz,
-    const long long* __restrict__ slice_ptr,
-    const int* __restrict__ slice_len,
-    unsigned int* __restrict__ col_ind,
-    float* __restrict__ values_out,
-    int rows_in_block,
-    int cols,
-    int rows_global_offset,
-    int slice_height,
-    float thr_rel
-) {
-    int r_local = blockIdx.x * blockDim.x + threadIdx.x;
-    if (r_local >= rows_in_block) return;
-    int r_global = rows_global_offset + r_local;
-    int slice_id = r_global / slice_height;
-    int row_in_slice = r_global % slice_height;
-    
-    const float* row = dense + (long long)r_local * cols;
-    float maxv = 0.0f;
-    for (int c = 0; c < cols; ++c) {
-        float v = fabsf(row[c]);
-        if (v > maxv) maxv = v;
-    }
-    float cut = maxv * thr_rel;
-    
-    long long base = slice_ptr[slice_id];
-    int len = slice_len[slice_id];
-    long long out_base = base + (long long)row_in_slice;
-    
-    int k = 0;
-    for (int c = 0; c < cols; ++c) {
-        float v = row[c];
-        if (fabsf(v) > cut) {
-            long long pos = out_base + (long long)k * slice_height;
-            values_out[pos] = v;
-            col_ind[pos] = (unsigned int)c;
-            ++k;
-        }
-    }
-    for (; k < len; ++k) {
-        long long pos = out_base + (long long)k * slice_height;
-        values_out[pos] = 0.0f;
-        col_ind[pos] = 0u;
-    }
-}
-
-/**
- * Kernel: fill_csr
- * Purpose: Fill CSR format from dense matrix block
- * Used for: CSR sparse matrix construction
- */
-__global__ void fill_kernel__CSR(
-    const float* __restrict__ dense_block,
-    const long long* __restrict__ row_ptr,
-    unsigned int* __restrict__ col_ind,
-    float* __restrict__ values,
-    int block_start_row,
-    int current_rows,
-    int num_cols,
-    float relative_threshold,
-    long long total_nnz
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= current_rows) return;
-    int global_row = block_start_row + row;
-    
-    const float* row_ptr_local = dense_block + (long long)row * num_cols;
-    
-    float row_max = 0.f;
-    for (int c = 0; c < num_cols; ++c) {
-        float v = fabsf(row_ptr_local[c]);
-        if (v > row_max) row_max = v;
-    }
-    float thr = row_max * relative_threshold;
-    
-    long long base = row_ptr[global_row];
-    int nnz = 0;
-    for (int c = 0; c < num_cols; ++c) {
-        float v = row_ptr_local[c];
-        if (fabsf(v) > thr) {
-            long long pos = base + nnz;
-            if (pos < total_nnz) {
+        float cut = maxv * thr_rel;
+        
+        long long base = slice_ptr[slice_id];
+        int len = slice_len[slice_id];
+        long long out_base = base + (long long)row_in_slice;
+        
+        int k = 0;
+        // Populate non-zero values above the threshold
+        for (int c = 0; c < cols; ++c) {
+            float v = row[c];
+            if (fabsf(v) > cut) {
+                long long pos = out_base + (long long)k * slice_height;
+                values_out[pos] = v;
                 col_ind[pos] = (unsigned int)c;
-                values[pos] = v;
-            }
-            nnz++;
-        }
-    }
-}
-
-/**
- * Kernel: accumulate_columns_atomic
- * Purpose: Accumulate column sums from CSR matrix using atomic operations
- * Used for: Matrix analysis, normalization
- */
-__global__ void accumulate_columns_atomic(
-    const float* __restrict__ values,
-    const unsigned int* __restrict__ col_ind,
-    long long total_nnz,
-    float* __restrict__ col_sum
-) {
-    const unsigned full_mask = 0xffffffffu;
-    long long gid = (long long)blockIdx.x * blockDim.x + threadIdx.x;
-    long long stride = (long long)blockDim.x * gridDim.x;
-    int lane = threadIdx.x & 31;
-    
-    for (long long idx = gid; idx < total_nnz; idx += stride) {
-        unsigned int col = col_ind[idx];
-        float v = values[idx];
-        if (v == 0.0f) continue;
-        
-        float sum = v;
-        for (int offset = 1; offset <= 16; offset <<= 1) {
-            unsigned int col_down = __shfl_down_sync(full_mask, col, offset);
-            float sum_down = __shfl_down_sync(full_mask, sum, offset);
-            if (col_down == col) {
-                sum += sum_down;
+                ++k;
             }
         }
         
-        unsigned int col_up = __shfl_up_sync(full_mask, col, 1);
-        bool is_head = (lane == 0) || (col_up != col);
+        // Explicitly pad the remaining elements in the slice with zeros
+        for (; k < len; ++k) {
+            long long pos = out_base + (long long)k * slice_height;
+            values_out[pos] = 0.0f;
+            col_ind[pos] = 0u;
+        }
+    }
+
+    /**
+     * Kernel: fill_kernel__SELL__COMPLEX
+     * Purpose: Fill SELL-C-sigma format from dense complex matrix block
+     */
+    __global__ void fill_kernel__SELL__COMPLEX(
+        const float2* __restrict__ dense,
+        const int* __restrict__ row_nnz,
+        const long long* __restrict__ slice_ptr,
+        const int* __restrict__ slice_len,
+        unsigned int* __restrict__ col_ind,
+        float2* __restrict__ values_out,
+        int rows_in_block,
+        int cols,
+        int rows_global_offset,
+        int slice_height,
+        float thr_rel
+    ) {
+        int r_local = blockIdx.x * blockDim.x + threadIdx.x;
+        if (r_local >= rows_in_block) return;
+
+        int r_global = rows_global_offset + r_local;
+        int slice_id = r_global / slice_height;
+        int row_in_slice = r_global % slice_height;
+
+        const float2* row = dense + (long long)r_local * cols;
+        float maxv = 0.0f;
+
+        // Find max norm in the row to compute local threshold
+        for (int c = 0; c < cols; ++c) {
+            float norm = complex_abs(row[c]);
+            if (norm > maxv) maxv = norm;
+        }
+        float cut = maxv * thr_rel;
+
+        long long base = slice_ptr[slice_id];
+        int len = slice_len[slice_id];
+        long long out_base = base + (long long)row_in_slice;
+
+        int k = 0;
+        for (int c = 0; c < cols; ++c) {
+            float2 v = row[c];
+            if (complex_abs(v) > cut) {
+                long long pos = out_base + (long long)k * slice_height;
+                values_out[pos] = v;
+                col_ind[pos] = (unsigned int)c;
+                ++k;
+            }
+        }
+
+        // Pad remaining elements with zeros
+        for (; k < len; ++k) {
+            long long pos = out_base + (long long)k * slice_height;
+            values_out[pos] = make_float2(0.0f, 0.0f);
+            col_ind[pos] = 0u;
+        }
+    }
+
+    /**
+    * Kernel: forward_projection_kernel__SELL__REAL
+    * Purpose: Forward projection using SELL format for real values: q = A * theta
+    * Optimized for coalesced memory access (1 thread = 1 row)
+    */
+    __global__ void forward_projection_kernel__SELL__REAL(
+        float* __restrict__ q_out,
+        const float* __restrict__ sell_values,
+        const unsigned int* __restrict__ sell_colinds,
+        const long long* __restrict__ slice_ptr,
+        const int* __restrict__ slice_len,
+        const float* __restrict__ theta,
+        int num_rows,
+        int slice_height
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= num_rows) return;
+
+        int slice_id = row / slice_height;
+        int row_in_slice = row % slice_height;
+        long long base = slice_ptr[slice_id];
+        int len = slice_len[slice_id];
+
+        float acc = 0.0f;
+        long long pos = base + (long long)row_in_slice;
+
+        // Sequential loop for the thread ensures coalesced memory access for the warp
+        for (int j = 0; j < len; ++j) {
+            float v = sell_values[pos + (long long)j * slice_height];
+            if (v != 0.0f) {
+                unsigned int col = sell_colinds[pos + (long long)j * slice_height];
+                // __ldg is highly recommended for read-only data caching
+                acc += v * __ldg(&theta[col]);
+            }
+        }
         
-        if (is_head) {
-            atomicAdd(&col_sum[col], sum);
+        // Direct write without warp reduction
+        q_out[row] = acc;
+    }
+
+    /**
+     * Kernel: forward_projection_kernel__SELL__COMPLEX
+     * Purpose: Forward projection using SELL format for complex values: q = A * theta
+     */
+    __global__ void forward_projection_kernel__SELL__COMPLEX(
+        float2* __restrict__ q_out,
+        const float2* __restrict__ sell_values,
+        const unsigned int* __restrict__ sell_colinds,
+        const long long* __restrict__ slice_ptr,
+        const int* __restrict__ slice_len,
+        const float2* __restrict__ theta,
+        int num_rows, int slice_height
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= num_rows) return;
+
+        int slice_id = row / slice_height;
+        int row_in_slice = row % slice_height;
+        long long base = slice_ptr[slice_id];
+        int len = slice_len[slice_id];
+
+        float2 acc = make_float2(0.0f, 0.0f);
+        long long pos = base + (long long)row_in_slice;
+
+        for (int j = 0; j < len; ++j) {
+            float2 v = sell_values[pos + (long long)j * slice_height];
+            if (v.x != 0.0f || v.y != 0.0f) {
+                unsigned int col = sell_colinds[pos + (long long)j * slice_height];
+                float2 theta_val = __ldg(&theta[col]);
+                
+                float2 prod = complex_multiply(v, theta_val);
+                acc.x += prod.x;
+                acc.y += prod.y;
+            }
+        }
+        q_out[row] = acc;
+    }
+
+    /**
+    * Kernel: backward_projection_kernel__SELL__REAL
+    * Purpose: Backward projection using SELL format for real values: c += A^T * e
+    * Optimized: 1 thread reads 1 error value and scatters it to the volume
+    */
+    __global__ void backward_projection_kernel__SELL__REAL(
+        const float* __restrict__ sell_values,
+        const unsigned int* __restrict__ sell_colinds,
+        const long long* __restrict__ slice_ptr,
+        const int* __restrict__ slice_len,
+        const float* __restrict__ e_flat,
+        float* __restrict__ c_flat,
+        int num_rows,
+        int slice_height
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= num_rows) return;
+
+        float e = e_flat[row];
+        if (e == 0.0f) return; // Skip empty error contributions
+
+        int slice_id = row / slice_height;
+        int row_in_slice = row % slice_height;
+        long long base = slice_ptr[slice_id];
+        int len = slice_len[slice_id];
+        
+        long long pos = base + (long long)row_in_slice;
+
+        for (int j = 0; j < len; ++j) {
+            float v = sell_values[pos + (long long)j * slice_height];
+            if (v != 0.0f) {
+                unsigned int col = sell_colinds[pos + (long long)j * slice_height];
+                // Scatter operation: each element contributes to its specific voxel
+                atomicAdd(&c_flat[col], v * e);
+            }
         }
     }
-}
 
-/**
- * Kernel: apply_apodization_sell
- * Purpose: Apply apodization window to SELL matrix values
- * Used for: Acoustic field correction
- */
-__global__ void apply_apodization_kernel__SELL(
-    float* sell_values,
-    const unsigned int* sell_colinds,
-    const float* window_vector,
-    long long num_elements,
-    unsigned int ZX
-) {
-    long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < num_elements) {
-        unsigned int pixel_index = sell_colinds[i];
-        if (pixel_index < ZX) {
-            sell_values[i] *= window_vector[pixel_index];
+    /**
+     * Kernel: backward_projection_kernel__SELL__COMPLEX
+     * Purpose: Backward projection using SELL format for complex values: 
+     * c += Re(A^H * e). Result is written to a REAL array.
+     */
+    __global__ void backward_projection_kernel__SELL__COMPLEX(
+        const float2* __restrict__ sell_values,
+        const unsigned int* __restrict__ sell_colinds,
+        const long long* __restrict__ slice_ptr,
+        const int* __restrict__ slice_len,
+        const float2* __restrict__ e_flat,
+        float2* __restrict__ c_flat, 
+        int num_rows, int slice_height
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= num_rows) return;
+
+        float2 e = e_flat[row];
+        if (e.x == 0.0f && e.y == 0.0f) return;
+
+        int slice_id = row / slice_height;
+        int row_in_slice = row % slice_height;
+        long long base = slice_ptr[slice_id];
+        int len = slice_len[slice_id];
+        long long pos = base + (long long)row_in_slice;
+
+        for (int j = 0; j < len; ++j) {
+            float2 v = sell_values[pos + (long long)j * slice_height];
+            if (v.x != 0.0f || v.y != 0.0f) {
+                unsigned int col = sell_colinds[pos + (long long)j * slice_height];
+                float2 v_conj = make_float2(v.x, -v.y);  
+                float2 prod = complex_multiply(v_conj, e); 
+                atomicAdd(&c_flat[col].x, prod.x);  
+                atomicAdd(&c_flat[col].y, prod.y); 
+            }
         }
     }
-}
 
-// ============================================================================
-// SPARSE MATRIX-VECTOR OPERATIONS KERNELS
-// ============================================================================
-
-// /**
-//  * Kernel: sparse_matrix_vector_product_csr
-//  * Purpose: Compute y = A * x for CSR sparse matrix
-//  */
-// __global__ void sparse_matrix_vector_product_csr(
-//     float* y,
-//     const float* data,
-//     const int* indices,
-//     const int* indptr,
-//     const float* x,
-//     int num_rows
-// ) {
-//     int row = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (row < num_rows) {
-//         float sum = 0.0f;
-//         int start = indptr[row];
-//         int end = indptr[row + 1];
-//         for (int i = start; i < end; i++) {
-//             sum += data[i] * x[indices[i]];
-//         }
-//         y[row] = sum;
-//     }
-// }
-
-/**
- * Kernel: forward_projection_sell
- * Purpose: Forward projection using SELL format: q = A * theta
- */
-__global__ void forward_projection_kernel__SELL(
-    float* __restrict__ q_out,
-    const float* __restrict__ sell_values,
-    const unsigned int* __restrict__ sell_colinds,
-    const long long* __restrict__ slice_ptr,
-    const int* __restrict__ slice_len,
-    const float* __restrict__ theta,
-    int num_rows,
-    int slice_height
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= num_rows) return;
-    
-    int slice_id = row / slice_height;
-    int row_in_slice = row % slice_height;
-    long long base = slice_ptr[slice_id];
-    int len = slice_len[slice_id];
-    
-    float acc = 0.0f;
-    long long pos = base + (long long)row_in_slice;
-    for (int j = 0; j < len; ++j) {
-        float v = sell_values[pos];
-        if (v != 0.0f) {
-            unsigned int col = sell_colinds[pos];
-            float t = __ldg(&theta[col]);
-            acc += v * t;
+    /**
+    * Kernel: apply_apodization_kernel__SELL__REAL
+    * Purpose: Apply apodization window to SELL matrix real values
+    * Used for: Acoustic field correction
+    */
+    __global__ void apply_apodization_kernel__SELL__REAL(
+        float* sell_values,
+        const unsigned int* sell_colinds,
+        const float* window_vector,
+        long long num_elements,
+        unsigned int ZX
+    ) {
+        long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+        if (i < num_elements) {
+            unsigned int pixel_index = sell_colinds[i];
+            if (pixel_index < ZX) {
+                sell_values[i] *= window_vector[pixel_index];
+            }
         }
-        pos += (long long)slice_height;
     }
-    q_out[row] = acc;
-}
 
-/**
- * Kernel: backward_projection_sell
- * Purpose: backward projection using SELL format: c += A^T * e
- */
-__global__ void backward_projection_kernel__SELL(
-    const float* __restrict__ sell_values,
-    const unsigned int* __restrict__ sell_colinds,
-    const long long* __restrict__ slice_ptr,
-    const int* __restrict__ slice_len,
-    const float* __restrict__ e_flat,
-    float* __restrict__ c_flat,
-    int num_rows,
-    int slice_height
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= num_rows) return;
-    
-    float e = e_flat[row];
-    if (e == 0.0f) return;
-    
-    int slice_id = row / slice_height;
-    int row_in_slice = row % slice_height;
-    long long base = slice_ptr[slice_id];
-    int len = slice_len[slice_id];
-    
-    long long pos = base + (long long)row_in_slice;
-    for (int j = 0; j < len; ++j) {
-        float v = sell_values[pos];
-        if (v != 0.0f) {
-            unsigned int col = sell_colinds[pos];
-            float contrib = v * e;
+    /**
+     * Kernel: apply_apodization_kernel__SELL__COMPLEX
+     * Purpose: Apply apodization window to SELL matrix values (complex)
+     */
+    __global__ void apply_apodization_kernel__SELL__COMPLEX(
+        float2* sell_values,
+        const unsigned int* sell_colinds,
+        const float* window_vector,
+        long long num_elements,
+        unsigned int ZX
+    ) {
+        long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+        if (i < num_elements) {
+            unsigned int pixel_index = sell_colinds[i];
+            if (pixel_index < ZX) {
+                float window_val = window_vector[pixel_index];
+                sell_values[i].x *= window_val;
+                sell_values[i].y *= window_val;
+            }
+        }
+    }
+
+    // ============================================================================
+    // CSR MATRIX KERNELS
+    // ============================================================================     
+
+    /**
+    * Kernel: fill_kernel__CSR__REAL
+    * Purpose: Fill local CSR arrays from a dense matrix block (1-Pass Algorithm)
+    */
+    __global__ void fill_kernel__CSR__REAL(
+        const float* __restrict__ dense_block,
+        const long long* __restrict__ local_row_ptr,
+        unsigned int* __restrict__ col_ind,
+        float* __restrict__ values,
+        int current_rows,
+        int num_cols,
+        float relative_threshold,
+        long long local_total_nnz
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= current_rows) return;
+        
+        const float* row_dense = dense_block + (long long)row * num_cols;
+        
+        float row_max = 0.f;
+        for (int c = 0; c < num_cols; ++c) {
+            float v = fabsf(row_dense[c]);
+            if (v > row_max) row_max = v;
+        }
+        float thr = row_max * relative_threshold;
+        
+        long long base = local_row_ptr[row];
+        int nnz = 0;
+        for (int c = 0; c < num_cols; ++c) {
+            float v = row_dense[c];
+            if (fabsf(v) > thr) {
+                long long pos = base + nnz;
+                if (pos < local_total_nnz) {
+                    col_ind[pos] = (unsigned int)c;
+                    values[pos] = v;
+                }
+                nnz++;
+            }
+        }
+    }
+
+    /**
+     * Kernel: fill_kernel__CSR__COMPLEX
+     * Purpose: Fill local CSR arrays from a dense complex matrix block
+     */
+    __global__ void fill_kernel__CSR__COMPLEX(
+        const float2* __restrict__ dense_block,
+        const long long* __restrict__ local_row_ptr,
+        unsigned int* __restrict__ col_ind,
+        float2* __restrict__ values,
+        int current_rows,
+        int num_cols,
+        float relative_threshold,
+        long long local_total_nnz
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= current_rows) return;
+
+        const float2* row_dense = dense_block + (long long)row * num_cols;
+
+        float row_max = 0.f;
+        for (int c = 0; c < num_cols; ++c) {
+            float norm = complex_abs(row_dense[c]);
+            if (norm > row_max) row_max = norm;
+        }
+        float thr = row_max * relative_threshold;
+
+        long long base = local_row_ptr[row];
+        int nnz = 0;
+        for (int c = 0; c < num_cols; ++c) {
+            float2 v = row_dense[c];
+            if (complex_abs(v) > thr) {
+                long long pos = base + nnz;
+                if (pos < local_total_nnz) {
+                    col_ind[pos] = (unsigned int)c;
+                    values[pos] = v;
+                }
+                nnz++;
+            }
+        }
+    }
+
+    /**
+    * Kernel: forward_projection_kernel__CSR__REAL
+    * Purpose: Forward projection using CSR format for real values: q = A * theta
+    */
+    __global__ void forward_projection_kernel__CSR__REAL(
+        float* __restrict__ q_flat,
+        const float* __restrict__ values,
+        const long long* __restrict__ row_ptr,
+        const unsigned int* __restrict__ col_ind,
+        const float* __restrict__ theta_flat,
+        int TN
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= TN) return;
+        
+        long long start = row_ptr[row];
+        long long end = row_ptr[row + 1];
+        
+        float sum = 0.f;
+        for (long long i = start; i < end; ++i) {
+            sum += values[i] * theta_flat[col_ind[i]];
+        }
+        q_flat[row] = sum;
+    }
+
+    /**
+     * Kernel: forward_projection_kernel__CSR__COMPLEX
+     * Purpose: Forward projection using CSR format for complex values: q = A * theta
+     */
+    __global__ void forward_projection_kernel__CSR__COMPLEX(
+        float2* __restrict__ q_flat,
+        const float2* __restrict__ values,
+        const long long* __restrict__ row_ptr,
+        const unsigned int* __restrict__ col_ind,
+        const float2* __restrict__ theta_flat,
+        int TN
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= TN) return;
+
+        long long start = row_ptr[row];
+        long long end = row_ptr[row + 1];
+
+        float2 sum = make_float2(0.0f, 0.0f);
+        for (long long i = start; i < end; ++i) {
+            float2 v = values[i];
+            float2 theta_val = theta_flat[col_ind[i]];
+            
+            float2 prod = complex_multiply(v, theta_val);
+            sum.x += prod.x;
+            sum.y += prod.y;
+        }
+        q_flat[row] = sum;
+    }
+
+    /**
+    * Kernel: backward_projection_kernel__CSR__REAL
+    * Purpose: backward projection using CSR format for real values: c += A^T * e
+    */
+    __global__ void backward_projection_kernel__CSR__REAL(
+        float* __restrict__ c_flat,
+        const float* __restrict__ values,
+        const long long* __restrict__ row_ptr,
+        const unsigned int* __restrict__ col_ind,
+        const float* __restrict__ e_flat,
+        int TN
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= TN) return;
+        
+        float e = e_flat[row];
+        long long start = row_ptr[row];
+        long long end = row_ptr[row + 1];
+        
+        for (long long i = start; i < end; ++i) {
+            unsigned int col = col_ind[i];
+            float contrib = values[i] * e;
             atomicAdd(&c_flat[col], contrib);
         }
-        pos += (long long)slice_height;
     }
-}
 
-/**
- * Kernel: forward_projection_csr
- * Purpose: Forward projection using CSR format: q = A * theta
- */
-__global__ void forward_projection_kernel__CSR(
-    float* __restrict__ q_flat,
-    const float* __restrict__ values,
-    const long long* __restrict__ row_ptr,
-    const unsigned int* __restrict__ col_ind,
-    const float* __restrict__ theta_flat,
-    int TN
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= TN) return;
-    
-    long long start = row_ptr[row];
-    long long end = row_ptr[row + 1];
-    
-    float sum = 0.f;
-    for (long long i = start; i < end; ++i) {
-        sum += values[i] * theta_flat[col_ind[i]];
+    /**
+     * Kernel: backward_projection_kernel__CSR__COMPLEX
+     * Purpose: Backward projection using CSR format for complex values: c += A^H * e
+     */
+    __global__ void backward_projection_kernel__CSR__COMPLEX(
+        float2* __restrict__ c_flat,
+        const float2* __restrict__ values,
+        const long long* __restrict__ row_ptr,
+        const unsigned int* __restrict__ col_ind,
+        const float2* __restrict__ e_flat,
+        int TN
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row >= TN) return;
+
+        float2 e = e_flat[row];
+        long long start = row_ptr[row];
+        long long end = row_ptr[row + 1];
+
+        for (long long i = start; i < end; ++i) {
+            unsigned int col = col_ind[i];
+            float2 v = values[i];
+            
+            float2 v_conj = make_float2(v.x, -v.y);
+            float2 prod = complex_multiply(v_conj, e);
+            
+            atomicAdd(&c_flat[col].x, prod.x);
+            atomicAdd(&c_flat[col].y, prod.y);
+        }
     }
-    q_flat[row] = sum;
-}
 
-/**
- * Kernel: backward_projection_csr
- * Purpose: backward projection using CSR format: c += A^T * e
- */
-__global__ void backward_projection_kernel__CSR(
-    float* __restrict__ c_flat,
-    const float* __restrict__ values,
-    const long long* __restrict__ row_ptr,
-    const unsigned int* __restrict__ col_ind,
-    const float* __restrict__ e_flat,
-    int TN
-) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= TN) return;
-    
-    float e = e_flat[row];
-    long long start = row_ptr[row];
-    long long end = row_ptr[row + 1];
-    
-    for (long long i = start; i < end; ++i) {
-        unsigned int col = col_ind[i];
-        float contrib = values[i] * e;
-        atomicAdd(&c_flat[col], contrib);
+    /**
+    * Kernel: accumulate_columns_atomic__REAL
+    * Purpose: Accumulate column sums from CSR matrix using atomic operations for real values.
+    * Optimized: Uses warp-level reduction with __shfl_down_sync for efficiency.
+    */
+    __global__ void accumulate_columns_atomic__REAL(
+        const float* __restrict__ values,
+        const unsigned int* __restrict__ col_ind,
+        long long total_nnz,
+        float* __restrict__ col_sum
+    ) {
+        const unsigned full_mask = 0xffffffffu;
+        long long gid = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+        long long stride = (long long)blockDim.x * gridDim.x;
+        int lane = threadIdx.x & 31;  // Lane ID within the warp (0-31)
+
+        for (long long idx = gid; idx < total_nnz; idx += stride) {
+            unsigned int col = col_ind[idx];
+            float v = values[idx];
+            if (v == 0.0f) continue;
+
+            // Warp-level reduction for the same column
+            float sum = v;
+            for (int offset = 1; offset <= 16; offset <<= 1) {
+                unsigned int col_down = __shfl_down_sync(full_mask, col, offset);
+                float v_down = __shfl_down_sync(full_mask, v, offset);
+                // Only add if the column is the same
+                if (col_down == col) {
+                    sum += v_down;
+                }
+            }
+
+            // Check if this thread is the "head" of the column group
+            unsigned int col_up = __shfl_up_sync(full_mask, col, 1);
+            bool is_head = (lane == 0) || (col != col_up);
+
+            if (is_head) {
+                atomicAdd(&col_sum[col], sum);
+            }
+        }
     }
-}
 
-// ============================================================================
-// MLEM KERNELS
-// ============================================================================
+    /**
+    * Kernel: accumulate_columns_atomic__COMPLEX
+    * Purpose: Accumulate column sums from CSR matrix using atomic operations for complex values.
+    * Optimized: Uses warp-level reduction with separate real/imaginary parts.
+    */
+    __global__ void accumulate_columns_atomic__COMPLEX(
+        const float2* __restrict__ values,
+        const unsigned int* __restrict__ col_ind,
+        long long total_nnz,
+        float2* __restrict__ col_sum
+    ) {
+        const unsigned full_mask = 0xffffffffu;
+        long long gid = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+        long long stride = (long long)blockDim.x * gridDim.x;
+        int lane = threadIdx.x & 31;  // Lane ID within the warp (0-31)
 
-// /**
-//  * Kernel: ratio_kernel
-//  * Purpose: Compute element-wise ratio e = y / max(q, threshold) for MLEM
-//  */
-// __global__ void ratio_kernel(
-//     float* __restrict__ e_out,
-//     const float* __restrict__ y_in,
-//     const float* __restrict__ q_in,
-//     float threshold,
-//     int N
-// ) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx >= N) return;
-//     float denom = q_in[idx];
-//     if (!(denom > threshold)) denom = threshold;
-//     float r = y_in[idx] / denom;
-//     if (!isfinite(r)) r = 0.0f;
-//     e_out[idx] = r;
-// }
+        for (long long idx = gid; idx < total_nnz; idx += stride) {
+            unsigned int col = col_ind[idx];
+            float2 v = values[idx];
+            // Skip if both real and imaginary parts are zero
+            if (v.x == 0.0f && v.y == 0.0f) continue;
 
-// /**
-//  * Kernel: update_theta_kernel
-//  * Purpose: Update theta values in MLEM: theta *= norm_inv * c_flat
-//  */
-// __global__ void update_theta_kernel(
-//     float* __restrict__ theta_flat,
-//     const float* __restrict__ c_flat,
-//     const float* __restrict__ norm_factor_inv,
-//     int ZX
-// ) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx >= ZX) return;
-//     float v = theta_flat[idx] * (norm_factor_inv[idx] * c_flat[idx]);
-//     if (!isfinite(v)) v = 0.0f;
-//     theta_flat[idx] = fmaxf(v, 0.0f);
-// }
+            // Separate real and imaginary parts for warp reduction
+            float sum_real = v.x;
+            float sum_imag = v.y;
 
-// ============================================================================
-// TOTAL VARIATION (TV) KERNELS
-// ============================================================================
+            for (int offset = 1; offset <= 16; offset <<= 1) {
+                unsigned int col_down = __shfl_down_sync(full_mask, col, offset);
+                float v_real_down = __shfl_down_sync(full_mask, sum_real, offset);
+                float v_imag_down = __shfl_down_sync(full_mask, sum_imag, offset);
+                if (col_down == col) {
+                    sum_real += v_real_down;
+                    sum_imag += v_imag_down;
+                }
+            }
 
-// /**
-//  * Kernel: gradient_2d
-//  * Purpose: Compute 2D gradient (forward differences) for TV regularization
-//  * Output: p[0:N] = gradient in x direction, p[N:2N] = gradient in z direction
-//  */
-// __global__ void gradient_kernel(
-//     float* __restrict__ p_out,
-//     const float* __restrict__ x_in,
-//     int Z,
-//     int X,
-//     int ZX
-// ) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx >= ZX) return;
-    
-//     int z_idx = idx / X;
-//     int x_idx = idx % X;
-    
-//     float v_curr = x_in[idx];
-//     float dx = 0.0f;
-//     float dz = 0.0f;
-    
-//     if (x_idx < X - 1) dx = x_in[idx + 1] - v_curr;
-//     if (z_idx < Z - 1) dz = x_in[idx + X] - v_curr;
-    
-//     p_out[idx] = dx;
-//     p_out[ZX + idx] = dz;
-// }
+            // Check if this thread is the "head" of the column group
+            unsigned int col_up = __shfl_up_sync(full_mask, col, 1);
+            bool is_head = (lane == 0) || (col != col_up);
 
-// /**
-//  * Kernel: divergence_2d
-//  * Purpose: Compute 2D divergence (adjoint of gradient) for TV regularization
-//  */
-// __global__ void divergence_kernel(
-//     float* __restrict__ div_out,
-//     const float* __restrict__ p_in,
-//     int Z,
-//     int X,
-//     int ZX
-// ) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx >= ZX) return;
-    
-//     int z_idx = idx / X;
-//     int x_idx = idx % X;
-    
-//     float val_x = 0.0f;
-//     float val_z = 0.0f;
-    
-//     if (x_idx < X - 1) val_x -= p_in[idx];
-//     if (x_idx > 0) val_x += p_in[idx - 1];
-//     if (z_idx < Z - 1) val_z -= p_in[ZX + idx];
-//     if (z_idx > 0 && idx >= X) val_z += p_in[ZX + idx - X];
-    
-//     div_out[idx] = val_x + val_z;
-// }
+            if (is_head) {
+                atomicAdd(&col_sum[col].x, sum_real);
+                atomicAdd(&col_sum[col].y, sum_imag);
+            }
+        }
+    }
 
-// /**
-//  * Kernel: proj_tv_kernel
-//  * Purpose: Project vector field p = (p_x, p_z) onto the L_infinity ball of radius alpha.
-//  *       
-//  */
-// __global__ void proj_tv_kernel(
-//     float* __restrict__ p,
-//     float alpha,            
-//     int ZX                  
-// ) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx >= ZX) return;  
+    /**
+    * Kernel: accumulate_abs_columns_atomic__REAL
+    *
+    * Purpose:
+    * Compute the column-wise absolute sums
+    *
+    *      c_j = sum_i |A_ij|
+    *
+    * from the sparse matrix coefficients.
+    *
+    * This quantity is required for the diagonal PDHG preconditioner of Ehrhardt et al. (2019, Theorem 2).
+    *
+    * Notes:
+    * - Operates directly on the sparse coefficient arrays (values, col_ind), independently of the sparse storage format (CSR, SELL, ...).
+    * - Each thread processes one non-zero coefficient.
+    * - Atomic additions ensure correct accumulation into the column sums.
+    */
+    __global__ void accumulate_abs_columns_atomic__REAL(
+        const float* __restrict__ values,
+        const unsigned int* __restrict__ col_ind,
+        long long total_nnz,
+        float* __restrict__ col_sum
+    ) {
+            long long idx = (long long)blockIdx.x * blockDim.x + threadIdx.x;
 
-//     float px = p[idx];          // p_x[idx]
-//     float pz = p[ZX + idx];    // p_z[idx]
+            if(idx >= total_nnz) return;
 
-//     float norm = sqrtf(px * px + pz * pz + 1e-12); 
-//     if (norm > alpha) {
-//         float scale = alpha / norm; 
-//         p[idx] = px * scale;         // p_x[idx] = p_x[idx] * (alpha / norm)
-//         p[ZX + idx] = pz * scale;    // p_z[idx] = p_z[idx] * (alpha / norm)
-//     }
-// }
+            float v = fabsf(values[idx]);
 
-// /**
-//  * Kernel: laplacian_2d
-//  * Purpose: Compute 2D Laplacian with Neumann boundary conditions
-//  */
-// __global__ void laplacian_kernel(
-//     float* out,
-//     const float* in,
-//     int Z,
-//     int X,
-//     int ZX
-// ) {
-//     int x = blockIdx.x * blockDim.x + threadIdx.x;
-//     int y = blockIdx.y * blockDim.y + threadIdx.y;
-    
-//     if (x >= X || y >= Z) return;
-    
-//     int idx = y * X + x;
-//     float val = 0.0f;
-//     float center = in[idx];
-    
-//     val += (x > 0) ? in[idx - 1] : center;
-//     val += (x < X - 1) ? in[idx + 1] : center;
-//     val += (y > 0) ? in[idx - X] : center;
-//     val += (y < Z - 1) ? in[idx + X] : center;
-//     val -= 4.0f * center;
-    
-//     out[idx] = val;
-// }
+            if(v==0.0f) return;
 
-// // ============================================================================
-// // PDHG KERNELS (Primal-Dual Hybrid Gradient)
-// // ============================================================================
+            atomicAdd(&col_sum[col_ind[idx]], v);
+    }
 
-// /**
-//  * Kernel: pdhg_primal_update
-//  * Purpose: Update primal variable with positivity constraint
-//  */
-// __global__ void dpdhg_primal_update_kernel(
-//     float* x,
-//     const float* delta_z,
-//     const float* tau,
-//     int N
-// ) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i < N) {
-//         x[i] = fmaxf(0.0f, x[i] - tau[i] * delta_z[i]);
-//     }
-// }
+    /**
+    * Kernel: accumulate_abs_columns_atomic__COMPLEX
+    *
+    * Purpose:
+    * Compute the column-wise sums of coefficient magnitudes
+    *
+    *      c_j = sum_i |A_ij|
+    *
+    * where |A_ij| denotes the complex modulus.
+    *
+    * This kernel is used to construct the diagonal primal step sizes of the
+    * Ehrhardt PDHG preconditioner.
+    */
+    __global__ void accumulate_abs_rows__SELL__COMPLEX(
+        const float2* __restrict__ sell_values,
+        const long long* __restrict__ slice_ptr,
+        const int* __restrict__ slice_len,
+        float* __restrict__ row_sum,
+        int num_rows,
+        int slice_height
+    ) {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
 
-// /**
-//  * Kernel: pdhg_extrapolation
-//  * Purpose: Extrapolation step in PDHG
-//  */
-// __global__ void dpdhg_extrapolation_kernel(
-//     float* z_bar,
-//     const float* x_new,
-//     const float* x_old,
-//     float theta,
-//     int N
-// ) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i < N) {
-//         z_bar[i] = x_new[i] + theta * (x_new[i] - x_old[i]);
-//     }
-// }
+        if(row>=num_rows) return;
 
-// /**
-//  * Kernel: pdhg_gradient
-//  * Purpose: Compute gradient for PDHG TV regularization
-//  */
-// __global__ void dpdhg_gradient_kernel(
-//     float* grad,
-//     const float* x,
-//     int Nz,
-//     int Nx,
-//     int N
-// ) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i >= N) return;
-    
-//     int z = i / Nx;
-//     int x_id = i % Nx;
-//     int right = (x_id < Nx - 1) ? i + 1 : i;
-//     int down = (z < Nz - 1) ? i + Nx : i;
-    
-//     grad[i] = x[right] - x[i];
-//     grad[i + N] = x[down] - x[i];
-// }
+        int slice=row/slice_height;
+        int row_in_slice=row%slice_height;
 
-// /**
-//  * Kernel: pdhg_divergence
-//  * Purpose: Compute divergence for PDHG
-//  */
-// __global__ void dpdhg_divergence_kernel(
-//     float* div,
-//     const float* p,
-//     int Nz,
-//     int Nx,
-//     int N
-// ) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i >= N) return;
-    
-//     int z = i / Nx;
-//     int x_id = i % Nx;
-    
-//     float val_x = 0.0f;
-//     float val_z = 0.0f;
-    
-//     if (x_id < Nx - 1) val_x -= p[i];
-//     if (x_id > 0) val_x += p[i - 1];
-//     if (z < Nz - 1) val_z -= p[N + i];
-//     if (z > 0 && i >= Nx) val_z += p[N + i - Nx];
-    
-//     div[i] = val_x + val_z;
-// }
+        long long base=slice_ptr[slice];
+        int len=slice_len[slice];
 
-// /**
-//  * Kernel: pdhg_prox_tv
-//  * Purpose: Proximal operator for TV in PDHG
-//  */
-// __global__ void dpdhg_prox_tv_kernel(
-//     float* p,
-//     const float* grad,
-//     const float* sigma,
-//     float lambda,
-//     int N
-// ) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i >= N) return;
-    
-//     float vx = p[i] + sigma[i] * grad[i];
-//     float vz = p[i + N] + sigma[i + N] * grad[i + N];
-    
-//     float norm = sqrtf(vx * vx + vz * vz + 1e-12f);
-//     float factor = fminf(1.0f, lambda / norm);
-    
-//     p[i] = vx * factor;
-//     p[i + N] = vz * factor;
-// }
+        float s=0.f;
 
-// /**
-//  * Kernel: pdhg_prox_data
-//  * Purpose: Proximal operator for data fidelity (L2) in PDHG
-//  */
-// __global__ void dpdhg_prox_data_kernel(
-//     float* q,
-//     const float* Ax,
-//     const float* y,
-//     const float* sigma,
-//     int N
-// ) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i < N) {
-//         q[i] = (q[i] + sigma[i] * (Ax[i] - y[i])) / (1.0f + sigma[i]);
-//     }
-// }
+        long long pos=base+row_in_slice;
 
-// /**
-//  * Kernel: pdhg_backward_projection_sell
-//  * Purpose: backward projection for PDHG using SELL format
-//  */
-// __global__ void dpdhg_backward_projection_kernel(
-//     const float* __restrict__ sell_values,
-//     const unsigned int* __restrict__ sell_colinds,
-//     const long long* __restrict__ slice_ptr,
-//     const int* __restrict__ slice_len,
-//     const float* __restrict__ q,
-//     float* __restrict__ delta_z,
-//     int TN,
-//     int slice_height
-// ) {
-//     int row = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (row >= TN) return;
-    
-//     float q_val = q[row];
-//     if (q_val == 0.0f) return;
-    
-//     int slice_id = row / slice_height;
-//     int row_in_slice = row % slice_height;
-//     long long base = slice_ptr[slice_id];
-//     int len = slice_len[slice_id];
-    
-//     long long pos = base + (long long)row_in_slice;
-//     for (int j = 0; j < len; ++j) {
-//         float v = sell_values[pos];
-//         if (v != 0.0f) {
-//             unsigned int col = sell_colinds[pos];
-//             atomicAdd(&delta_z[col], v * q_val);
-//         }
-//         pos += (long long)slice_height;
-//     }
-// }
+        for(int j=0;j<len;j++)
+        {
+            float2 v=sell_values[pos+(long long)j*slice_height];
+            s+=hypotf(v.x,v.y);
+        }
 
-// /**
-//  * Kernel: pdhg_sell_sums
-//  * Purpose: Compute row and column sums for PDHG preconditioning
-//  */
-// __global__ void dpdhg_sell_sums_kernel(
-//     float* s_row,
-//     float* s_col,
-//     const float* sell_values,
-//     const unsigned int* sell_colinds,
-//     const long long* slice_ptr,
-//     const int* slice_len,
-//     int num_rows,
-//     int slice_height
-// ) {
-//     int row = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (row >= num_rows) return;
-    
-//     int slice_idx = row / slice_height;
-//     int row_in_slice = row % slice_height;
-//     long long offset = slice_ptr[slice_idx];
-//     int length = slice_len[slice_idx];
-    
-//     float sum_r = 0.0f;
-//     for (int k = 0; k < length; ++k) {
-//         long long data_idx = offset + (long long)k * slice_height + row_in_slice;
-//         float val = fabsf(sell_values[data_idx]);
-//         unsigned int col = sell_colinds[data_idx];
-        
-//         if (val != 0.0f) {
-//             sum_r += val;
-//             atomicAdd(&s_col[col], val);
-//         }
-//     }
-//     s_row[row] = sum_r;
-// }
+        row_sum[row]=s;
+    }
 
-// // ============================================================================
-// // LBFGS KERNELS
-// // ============================================================================
+    /**
+    * Kernel: accumulate_abs_columns_atomic__REAL
+    *
+    * Purpose:
+    * Compute the column-wise absolute sums
+    *
+    *      c_j = sum_i |A_ij|
+    *
+    * from the sparse matrix coefficients.
+    *
+    * This quantity is required to build the diagonal primal preconditioner of Ehrhardt et al. (2019, Theorem 2).
+    *
+    * Notes:
+    * - One thread processes one non-zero coefficient.
+    * - The matrix storage format is irrelevant since only the value array and column indices are accessed.
+    * - Atomic additions guarantee correct accumulation when multiple coefficients contribute to the same column.
+    */
+    __global__
+    void accumulate_abs_rows__SELL__REAL(
+        const float* __restrict__ sell_values,
+        const long long* __restrict__ slice_ptr,
+        const int* __restrict__ slice_len,
+        float* __restrict__ row_sum,
+        int num_rows,
+        int slice_height)
+    {
+        int row = blockIdx.x * blockDim.x + threadIdx.x;
 
-// /**
-//  * Kernel: lbfgs_calc_q
-//  * Purpose: Compute residual q = Ax - y for LBFGS
-//  */
-// __global__ void lbfgs_calc_q_kernel(
-//     float* q,
-//     const float* Ax,
-//     const float* y,
-//     int N
-// ) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i < N) q[i] = Ax[i] - y[i];
-// }
+        if(row >= num_rows)
+            return;
 
-// /**
-//  * Kernel: lbfgs_backward_projection_sell
-//  * Purpose: backward projection for LBFGS using SELL format
-//  */
-// __global__ void lbfgs_backward_projection_kernel(
-//     const float* __restrict__ sell_values,
-//     const unsigned int* __restrict__ sell_colinds,
-//     const long long* __restrict__ slice_ptr,
-//     const int* __restrict__ slice_len,
-//     const float* __restrict__ q,
-//     float* __restrict__ grad_data,
-//     int TN,
-//     int slice_height
-// ) {
-//     int row = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (row >= TN) return;
-    
-//     float q_val = q[row];
-//     if (q_val == 0.0f) return;
-    
-//     int slice_id = row / slice_height;
-//     int row_in_slice = row % slice_height;
-//     long long base = slice_ptr[slice_id];
-//     int len = slice_len[slice_id];
-    
-//     long long pos = base + (long long)row_in_slice;
-//     for (int j = 0; j < len; ++j) {
-//         float v = sell_values[pos];
-//         if (v != 0.0f) {
-//             unsigned int col = sell_colinds[pos];
-//             atomicAdd(&grad_data[col], v * q_val);
-//         }
-//         pos += (long long)slice_height;
-//     }
-// }
+        int slice = row / slice_height;
+        int row_in_slice = row % slice_height;
 
-// /**
-//  * Kernel: lbfgs_aniso_tv_eval
-//  * Purpose: Evaluate anisotropic TV for LBFGS
-//  */
-// __global__ void lbfgs_aniso_tv_eval_kernel(
-//     float* p,
-//     float* cost_val,
-//     const float* x,
-//     float alpha_x,
-//     float alpha_z,
-//     float eps,
-//     int Nz,
-//     int Nx,
-//     int N
-// ) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i >= N) return;
-    
-//     int z = i / Nx;
-//     int x_id = i % Nx;
-    
-//     float val = x[i];
-//     float dx = (x_id < Nx - 1) ? (x[i + 1] - val) : 0.0f;
-//     float dz = (z < Nz - 1) ? (x[i + Nx] - val) : 0.0f;
-    
-//     float norm_x = sqrtf(dx * dx + eps * eps);
-//     float norm_z = sqrtf(dz * dz + eps * eps);
-    
-//     p[i] = alpha_x * (dx / norm_x);
-//     p[i + N] = alpha_z * (dz / norm_z);
-    
-//     cost_val[i] = alpha_x * norm_x + alpha_z * norm_z;
-// }
+        long long base = slice_ptr[slice];
+        int len = slice_len[slice];
 
-// /**
-//  * Kernel: lbfgs_divergence
-//  * Purpose: Compute divergence for LBFGS TV
-//  */
-// __global__ void lbfgs_divergence_kernel(
-//     float* grad_reg,
-//     const float* p,
-//     int Nz,
-//     int Nx,
-//     int N
-// ) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i >= N) return;
-    
-//     int z = i / Nx;
-//     int x_id = i % Nx;
-    
-//     float val_x = 0.0f;
-//     float val_z = 0.0f;
-    
-//     if (x_id < Nx - 1) val_x -= p[i];
-//     if (x_id > 0) val_x += p[i - 1];
-//     if (z < Nz - 1) val_z -= p[N + i];
-//     if (z > 0 && i >= Nx) val_z += p[N + i - Nx];
-    
-//     grad_reg[i] = val_x + val_z;
-// }
+        float s = 0.f;
 
-// // ============================================================================
-// // PRECONDITIONING KERNELS (Pock & Chambolle)
-// // ============================================================================
+        long long pos = base + row_in_slice;
 
-// /**
-//  * Kernel: update_dual_data_precond
-//  * Purpose: Update dual variable with vector preconditioning for data term
-//  */
-// __global__ void update_dual_data_precond_kernel(
-//     float* __restrict__ q_out,
-//     const float* __restrict__ Ax,
-//     const float* __restrict__ y,
-//     const float* __restrict__ sigma_vec,
-//     int N
-// ) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx >= N) return;
-    
-//     float sig = sigma_vec[idx];
-//     float ax_val = Ax[idx];
-//     float y_val = y[idx];
-//     float q_val = q_out[idx];
-    
-//     float num = q_val + sig * (ax_val - y_val);
-//     float denom = 1.0f + sig;
-    
-//     q_out[idx] = num / denom;
-// }
+        for(int j=0;j<len;j++)
+            s += fabsf(sell_values[pos + (long long)j*slice_height]);
 
-// /**
-//  * Kernel: update_primal_precond
-//  * Purpose: Update primal variable with vector preconditioning
-//  */
-// __global__ void update_primal_precond_kernel(
-//     float* __restrict__ x_out,
-//     const float* __restrict__ gradient_combined,
-//     const float* __restrict__ tau_vec,
-//     int ZX
-// ) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx >= ZX) return;
-    
-//     float t = tau_vec[idx];
-//     float grad = gradient_combined[idx];
-//     float x_val = x_out[idx];
-    
-//     x_out[idx] = x_val - t * grad;
-// }
+        row_sum[row] = s;
+    }
 
-// // ============================================================================
-// // SUBSET OPERATIONS KERNELS (for Stochastic Methods)
-// // ============================================================================
+    /**
+    * Kernel: accumulate_abs_columns_atomic__COMPLEX
+    *
+    * Purpose:
+    * Compute the column-wise sums of coefficient magnitudes
+    *
+    *      c_j = sum_i |A_ij|
+    *
+    * where |A_ij| denotes the complex modulus.
+    *
+    * This quantity is required to build the diagonal primal preconditioner of Ehrhardt et al. (2019, Theorem 2).
+    *
+    * Notes:
+    * - One thread processes one complex non-zero coefficient.
+    * - The complex modulus is computed as hypotf(real, imag).
+    * - Atomic additions guarantee correct accumulation into the column sums.
+    */
+    __global__
+    void accumulate_abs_columns_atomic__COMPLEX(
+        const float2* __restrict__ values,
+        const unsigned int* __restrict__ col_ind,
+        long long total_nnz,
+        float* __restrict__ col_sum)
+    {
+        long long idx = (long long)blockIdx.x * blockDim.x + threadIdx.x;
 
-// /**
-//  * Kernel: proj_tv_inplace_and_diff
-//  * Purpose: TV projection with in-place difference computation
-//  */
-// __global__ void proj_tv_inplace_and_diff_kernel(
-//     float* p,
-//     float* grad,
-//     const float* sigma,
-//     float lambda,
-//     int N
-// ) {
-//     int i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i >= N) return;
-    
-//     float p_old_x = p[i];
-//     float p_old_z = p[i + N];
-    
-//     float val_x = p_old_x + sigma[i] * grad[i];
-//     float val_z = p_old_z + sigma[i + N] * grad[i + N];
-    
-//     float norm = sqrtf(val_x * val_x + val_z * val_z + 1e-12f);
-//     float factor = fminf(1.0f, lambda / norm);
-    
-//     float p_new_x = val_x * factor;
-//     float p_new_z = val_z * factor;
-    
-//     p[i] = p_new_x;
-//     p[i + N] = p_new_z;
-    
-//     grad[i] = p_new_x - p_old_x;
-//     grad[i + N] = p_new_z - p_old_z;
-// }
+        if(idx >= total_nnz)
+            return;
 
-// /**
-//  * Kernel: prox_and_diff_subset
-//  * Purpose: Proximal operator with in-place difference for subset
-//  */
-// __global__ void prox_and_diff_subset_kernel(
-//     float* q,
-//     float* Ax,
-//     const float* y,
-//     const float* sigma,
-//     int start_idx,
-//     int end_idx
-// ) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     int i = start_idx + idx;
-//     if (i >= end_idx) return;
-    
-//     float q_old = q[i];
-//     float q_new = (q_old + sigma[i] * (Ax[i] - y[i])) / (1.0f + sigma[i]);
-    
-//     q[i] = q_new;
-//     Ax[i] = q_new - q_old;
-// }
+        float v = hypotf(values[idx].x, values[idx].y);
 
-// /**
-//  * Kernel: projection_subset_sell
-//  * Purpose: Forward projection on subset using SELL format
-//  */
-// __global__ void projection_subset_kernel(
-//     float* __restrict__ q_out,
-//     const float* __restrict__ sell_values,
-//     const unsigned int* __restrict__ sell_colinds,
-//     const long long* __restrict__ slice_ptr,
-//     const int* __restrict__ slice_len,
-//     const float* __restrict__ theta,
-//     int start_row,
-//     int end_row,
-//     int slice_height
-// ) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     int row = start_row + idx;
-//     if (row >= end_row) return;
-    
-//     int slice_id = row / slice_height;
-//     int row_in_slice = row % slice_height;
-//     long long base = slice_ptr[slice_id];
-//     int len = slice_len[slice_id];
-    
-//     float acc = 0.0f;
-//     long long pos = base + (long long)row_in_slice;
-//     for (int j = 0; j < len; ++j) {
-//         float v = sell_values[pos];
-//         if (v != 0.0f) {
-//             unsigned int col = sell_colinds[pos];
-//             float t = __ldg(&theta[col]);
-//             acc += v * t;
-//         }
-//         pos += (long long)slice_height;
-//     }
-//     q_out[row] = acc;
-// }
+        if(v == 0.f)
+            return;
 
-// /**
-//  * Kernel: backward_projection_subset_sell
-//  * Purpose: backward projection on subset using SELL format
-//  */
-// __global__ void backward_projection_subset_kernel(
-//     const float* __restrict__ sell_values,
-//     const unsigned int* __restrict__ sell_colinds,
-//     const long long* __restrict__ slice_ptr,
-//     const int* __restrict__ slice_len,
-//     const float* __restrict__ e_flat,
-//     float* __restrict__ c_flat,
-//     int start_row,
-//     int end_row,
-//     int slice_height
-// ) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     int row = start_row + idx;
-//     if (row >= end_row) return;
-    
-//     float e = e_flat[row];
-//     if (e == 0.0f) return;
-    
-//     int slice_id = row / slice_height;
-//     int row_in_slice = row % slice_height;
-//     long long base = slice_ptr[slice_id];
-//     int len = slice_len[slice_id];
-    
-//     long long pos = base + (long long)row_in_slice;
-//     for (int j = 0; j < len; ++j) {
-//         float v = sell_values[pos];
-//         if (v != 0.0f) {
-//             unsigned int col = sell_colinds[pos];
-//             float contrib = v * e;
-//             atomicAdd(&c_flat[col], contrib);
-//         }
-//         pos += (long long)slice_height;
-//     }
-// }
+        atomicAdd(&col_sum[col_ind[idx]], v);
+    }
 
-// /**
-//  * Kernel: sell_sums
-//  * Purpose: Compute row and column sums for SELL matrix
-//  */
-// __global__ void sell_sums_kernel(
-//     float* s_row,
-//     float* s_col,
-//     const float* sell_values,
-//     const unsigned int* sell_colinds,
-//     const long long* slice_ptr,
-//     const int* slice_len,
-//     int num_rows,
-//     int slice_height
-// ) {
-//     int row = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (row >= num_rows) return;
-    
-//     int slice_idx = row / slice_height;
-//     int row_in_slice = row % slice_height;
-//     long long offset = slice_ptr[slice_idx];
-//     int length = slice_len[slice_idx];
-    
-//     float sum_r = 0.0f;
-//     for (int k = 0; k < length; ++k) {
-//         long long data_idx = offset + (long long)k * slice_height + row_in_slice;
-//         float val = sell_values[data_idx];
-//         unsigned int col = sell_colinds[data_idx];
-        
-//         if (val != 0.0f) {
-//             sum_r += val;
-//             atomicAdd(&s_col[col], val);
-//         }
-//     }
-//     s_row[row] = sum_r;
-// }
+
 }

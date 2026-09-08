@@ -22,16 +22,13 @@ elif sys.version_info > (3, 12):
     )
 
 # --- 3. Load CuPy BEFORE k-wave imports ---
+import os
+os.environ.setdefault('KWAVE_CPU_ONLY', '1')
+
 try:
     import cupy as cp
-    if not cp.cuda.is_available():
-        os.environ['KWAVE_CPU_ONLY'] = '1'
 except ImportError:
     warnings.warn("CuPy not available. Falling back to CPU.", UserWarning)
-    os.environ['KWAVE_CPU_ONLY'] = '1'
-except Exception:
-    # Silently fall back to CPU - detailed error will be shown by Config._init_gpu() if needed
-    os.environ['KWAVE_CPU_ONLY'] = '1'
 
 # --- Then import modules (k-wave will load AFTER CuPy and szip) ---
 from .AOT_Medium._mainMedium import *
@@ -67,7 +64,7 @@ from .AOT_Recon.AOT_Optimizers.DEPIERRO import *
 from .AOT_Recon.AOT_Optimizers.MAPEM import *
 from .AOT_Recon.AOT_Optimizers.MLEM import *
 from .AOT_Recon.AOT_Optimizers.PDHG import *
-from .AOT_Recon.AOT_Optimizers.LS import *
+from .AOT_Recon.AOT_Optimizers.PGD import *
 from .AOT_Recon.AOT_Optimizers.LBFGS import *
 from .AOT_Recon.AOT_Optimizers.PPGMLEM import *
 from .AOT_Recon.AOT_Optimizers.PGC import *
@@ -80,7 +77,7 @@ from .AOT_Recon.AOT_SMatrix._mainSMatrix import *
 from .Config import config
 from .Settings import *
 
-__version__ = '2.9.713'
+__version__ = '2.9.918'
 __process__ = config.get_process()
 
 # Reference to the config object
@@ -144,20 +141,6 @@ def initialize(process=None, gpu_id=None):
     __config__._update()
     
     return __process__
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

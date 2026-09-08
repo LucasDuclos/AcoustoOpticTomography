@@ -16,7 +16,7 @@ class PlaneWave(StructuredWave):
             self.waveType = WaveType.PlaneWave
             self._check_angle()
         except Exception as e:
-            print(f"Error initializing PlaneWave: {e}")
+            print(f"[AOT-biomaps] Error initializing PlaneWave: {e}")
             raise 
 
     def _check_angle(self):
@@ -27,7 +27,7 @@ class PlaneWave(StructuredWave):
             ValueError: If the angle is not between -20 and 20 degrees.
         """
         if self.angle < -20 or self.angle > 20:
-            raise ValueError("Angle must be between -20 and 20 degrees.")
+            raise ValueError("[AOT-biomaps] Angle must be between -20 and 20 degrees.")
 
     def get_name_field(self):
         """
@@ -40,5 +40,5 @@ class PlaneWave(StructuredWave):
             angle_str = format_angle(self.angle)
             return f"field_{self.pattern.activeList}_{angle_str}"
         except Exception as e:
-            print(f"Error generating file path: {e}")
+            print(f"[AOT-biomaps] Error generating file path: {e}")
             return None

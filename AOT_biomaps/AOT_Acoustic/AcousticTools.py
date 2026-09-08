@@ -4,10 +4,12 @@ from scipy.io import loadmat as scipy_loadmat
 import os
 import numpy as np
 from scipy.stats import linregress
+from numba import njit, prange
 
 # Optional cupy import for GPU acceleration
 try:
     import cupy as cp
+    import cupyx.scipy.ndimage
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
@@ -26,39 +28,70 @@ def loadmat(param_path_mat):
     try:
         return scipy_loadmat(param_path_mat)
     except Exception:
-        raise ValueError(f"Could not load {param_path_mat}. Consider using scipy.io.loadmat or h5py for HDF5 files.")
+        raise ValueError(f"[AOT-biomaps] Could not load {param_path_mat}. Consider using scipy.io.loadmat or h5py for HDF5 files.")
 
-def reshape_field(field, factor, device=None):
+def reshape_field_gpu(field, factor, GPUdevice):
     """
-    Downsample a 3D or 4D field using scipy interpolation.
+    Downsample a 3D or 4D field on GPU using PyTorch or CuPy.
+    Args:
+        field: Input field (numpy array or torch/cupy array).
+        factor: Downsampling factor (tuple of ints).
+        GPUdevice: GPU device (e.g., "cuda:0").
+    Returns:
+        Downsampled field (numpy array).
+    """
+    cp.cuda.Device(GPUdevice).use()  # Set the GPU device
+    
+    if field is None:
+        raise ValueError(f"[AOT-biomaps] Acoustic field is not generated.")
+
+    if not isinstance(field, cp.ndarray):
+        field = cp.asarray(field, dtype=cp.float32)
+
+    if len(factor) == 3:
+        if field.ndim != 3:
+            raise ValueError(f"[AOT-biomaps] Expected a 3D field (T, Z, X).")
+    elif len(factor) == 4:
+        if field.ndim != 4:
+            raise ValueError(f"[AOT-biomaps] Expected a 4D field (T, Y, Z, X).")
+    else:
+        raise ValueError(f"[AOT-biomaps] Unsupported dimensions. Only 3D and 4D fields are supported.")
+
+    if not all(isinstance(f, int) and f >= 1 for f in factor):
+        raise ValueError(f"[AOT-biomaps] Downsampling factors must be integers >= 1.")
+
+    new_shape = tuple(s // f for s, f in zip(field.shape, factor))
+    zoom_factors = tuple(new_s / old_s for new_s, old_s in zip(new_shape, field.shape))
+    downsampled = cupyx.scipy.ndimage.zoom(field, zoom_factors, order=1)
+
+    return cp.asnumpy(downsampled).astype(np.float32)
+
+
+def reshape_field_cpu(field, factor):
+    """
+    Downsample a 3D or 4D field on CPU using scipy (optimized).
     Args:
         field: Input field (numpy array).
         factor: Downsampling factor (tuple of ints).
-        device: Ignored (kept for backward compatibility).
     Returns:
         Downsampled field (numpy array).
     """
     if field is None:
-        raise ValueError("Acoustic field is not generated. Please generate the field first.")
+        raise ValueError(f"[AOT-biomaps] Acoustic field is not generated.")
 
     if not isinstance(field, np.ndarray):
         field = np.asarray(field, dtype=np.float32)
 
-    if len(factor) == 3:
-        if field.ndim != 3:
-            raise ValueError("Expected 3D field.")
-        # Use scipy.ndimage.zoom for downsampling
-        zoom_factors = [1.0 / f for f in factor]
-        downsampled = zoom(field, zoom_factors, order=1)  # order=1 for linear interpolation
+    # Validate factor (must be integers >= 1)
+    if not all(isinstance(f, int) and f >= 1 for f in factor):
+        raise ValueError(f"[AOT-biomaps] Downsampling factors must be integers >= 1.")
 
-    elif len(factor) == 4:
-        if field.ndim != 4:
-            raise ValueError("Expected 4D field.")
-        zoom_factors = [1.0 / f for f in factor]
-        downsampled = zoom(field, zoom_factors, order=1)
+    # Calculate new shape
+    new_shape = [s // f for s, f in zip(field.shape, factor)]
 
-    else:
-        raise ValueError("Unsupported dimension. Only 3D and 4D fields are supported.")
+    # Use zoom with order=1 (linear) for downsampling
+    zoom_factors = [s_new / s_orig for s_new, s_orig in zip(new_shape, field.shape)]
+    downsampled = zoom(field, zoom_factors, order=1)
 
     return downsampled.astype(np.float32)
 
@@ -75,13 +108,13 @@ def calculate_envelope_squared_cpu(field):
     """
     try:
         if field is None:
-            raise ValueError("Acoustic field is not generated.")
+            raise ValueError(f"[AOT-biomaps] Acoustic field is not generated.")
 
         if not isinstance(field, np.ndarray):
             field = np.asarray(field, dtype=np.float32)
 
         if len(field.shape) not in [3, 4]:
-            raise ValueError("Field must be 3D (T, X, Z) or 4D (T, X, Y, Z).")
+            raise ValueError(f"[AOT-biomaps] Field must be 3D (T, X, Z) or 4D (T, X, Y, Z).")
 
         # Vectorized Hilbert transform along the time axis (axis=0)
         analytic_signal = hilbert(field, axis=0)
@@ -90,32 +123,33 @@ def calculate_envelope_squared_cpu(field):
         return envelope_sq.astype(np.float32)
 
     except Exception as e:
-        print(f"Error in calculate_envelope_squared_cpu: {e}")
+        print(f"[AOT-biomaps] Error in calculate_envelope_squared_cpu: {e}")
         raise
 
-def calculate_envelope_squared_gpu(field, chunk_size=100):
+def calculate_envelope_squared_gpu(field, GPUdevice, chunk_size=100):
     """
     Compute the squared envelope of the acoustic field on GPU using CuPy.
     Returns the result on CPU (numpy.ndarray) and frees GPU memory.
 
     Args:
         field: Acoustic field (numpy.ndarray or cupy.ndarray) with shape (T, X, Z) or (T, X, Y, Z).
+        GPUdevice: The GPU device to use.
         chunk_size: Number of spatial elements to process at once (to avoid OOM).
 
     Returns:
         envelope_sq (numpy.ndarray): Squared envelope on CPU.
     """
     if not CUPY_AVAILABLE:
-        print("CuPy not available. Falling back to CPU.")
+        print("[AOT-biomaps] Warning: CuPy not available. Falling back to CPU.")
         return calculate_envelope_squared_cpu(field)
     
     try:
-        # 1. Dimensions
-        T = field.shape[0]
-        spatial_dims = field.shape[1:]
-        total_spatial_size = int(cp.prod(cp.array(spatial_dims)))
+        cp.cuda.Device(GPUdevice).use()
+        field_gpu = cp.asarray(field, dtype=cp.float32) 
 
-        # Prepare Hilbert filter (once)
+        T = field_gpu.shape[0]
+        field_flat = field_gpu.reshape(T, -1)
+
         n_fft = T
         h = cp.zeros(n_fft, dtype=cp.float32)
         if n_fft % 2 == 0:
@@ -124,57 +158,136 @@ def calculate_envelope_squared_gpu(field, chunk_size=100):
         else:
             h[0] = 1
             h[1:(n_fft + 1) // 2] = 2
-        h = h[:, cp.newaxis]  # For broadcasting
+        h = h[:, cp.newaxis]  # (T, 1)
 
-        # Flatten spatial dimensions for easy iteration
-        field_flat = field.reshape(T, -1)
-        n_spatial = field_flat.shape[1]
+        field_fft = cp.fft.fft(field_flat, axis=0)  
+        analytic_signal = cp.fft.ifft(field_fft * h, axis=0)
+        envelope_sq = cp.abs(analytic_signal) ** 2
 
-        envelope_sq = cp.empty((T, n_spatial), dtype=cp.float32)
-
-        # 2. Process in chunks
-        for i in range(0, n_spatial, chunk_size):
-            end = min(i + chunk_size, n_spatial)
-
-            # Transfer only the current chunk
-            chunk = cp.asarray(field_flat[:, i:end], dtype=cp.float32)
-
-            # FFT, filter, IFFT
-            chunk_fft = cp.fft.fft(chunk, axis=0)
-            chunk_analytic = cp.fft.ifft(chunk_fft * h, axis=0)
-
-            # Store squared envelope directly
-            envelope_sq[:, i:end] = cp.abs(chunk_analytic) ** 2
-
-            # Free chunk memory immediately
-            del chunk, chunk_fft, chunk_analytic
-
-        # 3. Reshape and return to CPU
-        return cp.asnumpy(envelope_sq.reshape(T, *spatial_dims))
+        return cp.asnumpy(envelope_sq.reshape(T, *field.shape[1:]))
 
     except cp.cuda.memory.OutOfMemoryError:
-        print("⚠️ Insufficient GPU memory. Falling back to CPU.")
+        print(f"[AOT-biomaps] Insufficient GPU memory. Falling back to CPU.")
         return calculate_envelope_squared_cpu(field)
     except Exception as e:
-        print(f"Error in calculate_envelope_squared_gpu: {e}")
+        print(f"[AOT-biomaps] Error in calculate_envelope_squared_gpu: {e}")
         raise
 
-def calculate_envelope_squared(field, device=None):
+def calculate_envelope_cpu(field):
+    """
+    Compute the envelope of the acoustic field on CPU in a vectorized way.
+    Optimized for 3D (T, X, Z) or 4D (T, X, Y, Z) arrays.
+
+    Args:
+        field: Acoustic field (numpy.ndarray). Expected shape: (T, X, Z) or (T, X, Y, Z).
+
+    Returns:
+        envelope (numpy.ndarray): Envelope of the acoustic field.
+    """
+    try:
+        if field is None:
+            raise ValueError(f"[AOT-biomaps] Acoustic field is not generated.")
+
+        if not isinstance(field, np.ndarray):
+            field = np.asarray(field, dtype=np.float32)
+
+        if len(field.shape) not in [3, 4]:
+            raise ValueError(f"[AOT-biomaps] Field must be 3D (T, X, Z) or 4D (T, X, Y, Z).")
+
+        # Vectorized Hilbert transform along the time axis (axis=0)
+        analytic_signal = hilbert(field, axis=0)
+        envelope = np.abs(analytic_signal)
+
+        return envelope.astype(np.float32)
+
+    except Exception as e:
+        print(f"[AOT-biomaps] Error in calculate_envelope_cpu: {e}")
+        raise
+
+def calculate_envelope_gpu(field, GPUdevice, chunk_size=100):
+    """
+    Compute the envelope of the acoustic field on GPU using CuPy.
+    Returns the result on CPU (numpy.ndarray) and frees GPU memory.
+
+    Args:
+        field: Acoustic field (numpy.ndarray or cupy.ndarray) with shape (T, X, Z) or (T, X, Y, Z).
+        GPUdevice: The GPU device to use.
+        chunk_size: Number of spatial elements to process at once (to avoid OOM).
+
+    Returns:
+        envelope (numpy.ndarray): Envelope on CPU.
+    """
+    if not CUPY_AVAILABLE:
+        print(f"[AOT-biomaps] Warning: CuPy not available. Falling back to CPU.")
+        return calculate_envelope_cpu(field)
+    
+    try:
+        cp.cuda.Device(GPUdevice).use()
+        field_gpu = cp.asarray(field, dtype=cp.float32) 
+
+        T = field_gpu.shape[0]
+        field_flat = field_gpu.reshape(T, -1)
+
+        n_fft = T
+        h = cp.zeros(n_fft, dtype=cp.float32)
+        if n_fft % 2 == 0:
+            h[0] = h[n_fft // 2] = 1
+            h[1:n_fft // 2] = 2
+        else:
+            h[0] = 1
+            h[1:(n_fft + 1) // 2] = 2
+        h = h[:, cp.newaxis]  # (T, 1)
+
+        field_fft = cp.fft.fft(field_flat, axis=0)  
+        analytic_signal = cp.fft.ifft(field_fft * h, axis=0)
+        envelope = cp.abs(analytic_signal)
+
+        return cp.asnumpy(envelope.reshape(T, *field.shape[1:]))
+
+    except cp.cuda.memory.OutOfMemoryError:
+        print(f"[AOT-biomaps] Insufficient GPU memory. Falling back to CPU.")
+        return calculate_envelope_cpu(field)
+    except Exception as e:
+        print(f"[AOT-biomaps] Error in calculate_envelope_gpu: {e}")
+        raise
+
+def calculate_envelope_squared(field, isGPU=None, GPUdevice=None, chunk_size=100):
     """
     Compute the squared envelope of the acoustic field.
     Automatically uses GPU if available and requested, otherwise falls back to CPU.
 
     Args:
         field: Acoustic field (numpy.ndarray or cupy.ndarray) with shape (T, X, Z) or (T, X, Y, Z).
-        device: 'gpu' to use GPU (if available), 'cpu' to force CPU, None for auto-detection.
+        isGPU: Whether to use GPU for computation. (Default is None, which uses CPU.)
+        GPUdevice: The GPU device to use. (Default is None, which uses the default GPU.)
+        chunk_size: Number of spatial elements to process at once (to avoid OOM).
 
     Returns:
         envelope_sq (numpy.ndarray): Squared envelope of the acoustic field.
     """
-    if device == 'gpu' and CUPY_AVAILABLE:
-        return calculate_envelope_squared_gpu(field)
+    if isGPU is True and CUPY_AVAILABLE:
+        return calculate_envelope_squared_gpu(field=field, GPUdevice = GPUdevice, chunk_size=chunk_size)
     else:
-        return calculate_envelope_squared_cpu(field)
+        return calculate_envelope_squared_cpu(field=field)
+
+def calculate_envelope(field, isGPU=None, GPUdevice=None, chunk_size=100):
+    """
+    Compute the envelope of the acoustic field.
+    Automatically uses GPU if available and requested, otherwise falls back to CPU.
+
+    Args:
+        field: Acoustic field (numpy.ndarray or cupy.ndarray) with shape (T, X, Z) or (T, X, Y, Z).
+        isGPU: Whether to use GPU for computation. (Default is None, which uses CPU.)
+        GPUdevice: The GPU device to use. (Default is None, which uses the default GPU.)
+        chunk_size: Number of spatial elements to process at once (to avoid OOM).
+
+    Returns:
+        envelope (numpy.ndarray): Envelope of the acoustic field.
+    """
+    if isGPU is True and CUPY_AVAILABLE:
+        return calculate_envelope_gpu(field=field, GPUdevice = GPUdevice, chunk_size=chunk_size)
+    else:
+        return calculate_envelope_cpu(field=field)
 
 def get_pattern(pathFile):
     """
@@ -192,7 +305,7 @@ def get_pattern(pathFile):
         pattern_str = ''.join(pattern)
         return pattern_str
     except Exception as e:
-        print(f"Error reading pattern from file: {e}")
+        print(f"[AOT-biomaps] Error reading pattern from file: {e}")
         return None
 
 def detect_space_0_and_space_1(hex_string):
@@ -236,10 +349,10 @@ def get_angle(pathFile):
         elif angle_str.startswith('1'):
             angle_str = '-' + angle_str[1:]
         else:
-            raise ValueError("Invalid angle format in file name.")
+            raise ValueError(f"[AOT-biomaps] Invalid angle format in file name: {pathFile}")
         return int(angle_str)
     except Exception as e:
-        print(f"Error reading angle from file: {e}")
+        print(f"[AOT-biomaps] Error reading angle from file: {e}")
         return None
 
 def get_frequency(fileName, num_elements, dx):
@@ -352,3 +465,44 @@ def calculate_angle_from_delays(delays, c=1540):
         theta = 0.0
 
     return int(np.round(theta, 0))
+
+@njit(parallel=True, fastmath=True)
+def compute_field_numba(field, t, active_indices, apod_window, weight_base, 
+                        x_start_probe_fine, x_pivot_px_fine, dx_fine, c0, angle_rad, 
+                        n_t_burst, enveloppe_t, el_width_px_fine, cos_a, sin_a, 
+                        factor, Nt, Nz, Nx, Nx_fine, Nz_fine):
+    """
+    Kernel compilé en C pour le calcul intensif de la propagation acoustique.
+    """
+    for idx in prange(len(active_indices)):
+        i = active_indices[idx]
+        val_i = weight_base * apod_window[i]
+
+        x_i_px_fine = x_start_probe_fine + (i * el_width_px_fine)
+        dist_to_pivot = (x_i_px_fine - x_pivot_px_fine) * dx_fine
+        delay_i = (abs(dist_to_pivot) * np.sin(abs(angle_rad))) / c0
+
+        for t_idx in range(Nt):
+            t_eff = t[t_idx] - delay_i
+            if t_eff <= 0 or t_eff >= t[-1]:
+                continue
+                
+            dist_travelled = c0 * t_eff
+            z_px_fine = int((dist_travelled * cos_a) / dx_fine)
+            x_px_fine_base = int((x_i_px_fine * dx_fine + dist_travelled * sin_a) / dx_fine)
+
+            for b_shift in range(n_t_burst):
+                st = t_idx + b_shift
+                if st >= Nt:
+                    continue
+                    
+                val_final = enveloppe_t[b_shift] * val_i
+
+                for offset_x in range(el_width_px_fine):
+                    curr_x = x_px_fine_base + offset_x
+                    
+                    if 0 <= z_px_fine < Nz_fine and 0 <= curr_x < Nx_fine:
+                        zf = z_px_fine // factor
+                        xf = curr_x // factor
+                        
+                        field[st, zf, xf] += val_final

@@ -10,3 +10,5 @@ class PhantomType(Enum):
     """Polyvinyl Alcohol phantom.""" 
     Homogeneous = 'Homogeneous'   
     """Homogeneous phantom (water or uniform medium)."""
+    Bubble = 'Bubble'
+    """Phantom with bubbles."""

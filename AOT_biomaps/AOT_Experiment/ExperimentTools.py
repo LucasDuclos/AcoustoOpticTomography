@@ -3,6 +3,44 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from itertools import groupby
 from tqdm import trange
+import os
+import random
+from typing import List, Tuple
+
+def select_random_activeList(input_file, output_file, N):
+    if not os.path.exists(input_file):
+        raise FileNotFoundError(f"Input file {input_file} does not exist.")
+    with open(input_file, 'r') as f:
+        total_lines = sum(1 for _ in f)
+
+    if N > total_lines:
+        raise ValueError(f"[AOT-biomaps] N ({N}) cannot be greater than the total number of lines in the file ({total_lines}).")
+
+    selected_indices = random.sample(range(total_lines), N)
+    with open(input_file, 'r') as f_in, open(output_file, 'w') as f_out:
+        for i, line in enumerate(f_in):
+            if i in selected_indices:
+                f_out.write(line)
+
+def get_selected_indices(input_file, output_file):
+    if not os.path.exists(input_file):
+        raise FileNotFoundError(f"[AOT-biomaps] Input file {input_file} does not exist.")
+    if not os.path.exists(output_file):
+        raise FileNotFoundError(f"[AOT-biomaps] File {output_file} does not exist. Run select_random_activeList first.")
+
+    with open(output_file, 'r') as f_out:
+        output_lines = f_out.readlines()
+
+    selected_indices = []
+    with open(input_file, 'r') as f_in:
+        for i, line in enumerate(f_in):
+            if line in output_lines:
+                selected_indices.append(i)
+                output_lines.remove(line)
+    if len(output_lines) !=0:
+        raise ValueError(f"[AOT-biomaps] File {output_file} contains lines not in {input_file}. Ensure it was created with select_random_activeList.")
+
+    return selected_indices
 
 def calc_mat_os(xm, fx, bool_active_list, signal_type):
     """
@@ -228,7 +266,7 @@ def load_AOsignal(AOsignalPath):
 
         # Read binary file
         with open(cdf_path, "rb") as file:
-            for j in trange(n_scans, desc="Reading events"):
+            for j in trange(n_scans, desc="[AOT-biomaps] Reading events"):
                 # Read activeList: 48 hex chars = 24 bytes
                 active_list_bytes = file.read(24)
                 active_list_hex = active_list_bytes.hex()
@@ -242,15 +280,15 @@ def load_AOsignal(AOsignalPath):
                 # Read AO signal (float32)
                 data = np.frombuffer(file.read(n_acquisitions_per_event * 4), dtype=np.float32)
                 if len(data) != n_acquisitions_per_event:
-                    raise ValueError(f"Error at event {j}: expected {n_acquisitions_per_event}, got {len(data)}")
+                    raise ValueError(f"[AOT-biomaps] Error at event {j}: expected {n_acquisitions_per_event}, got {len(data)}")
                 AO_signal[:, j] = data
 
         return AO_signal
     elif AOsignalPath.endswith(".npy"):
         return np.load(AOsignalPath)  # Assumed to be in the correct format
     else:
-        raise ValueError("Unsupported file format. Use .cdh/.cdf or .npy.")
-    
+        raise ValueError("[AOT-biomaps] Unsupported file format. Use .cdh/.cdf or .npy.")
+
 def create_dark_transparent_hot_cmap(vmin=0.0, opacity=1.0):
     n_colors = 256
     hot_cmap = plt.cm.get_cmap('hot', n_colors)
@@ -260,3 +298,114 @@ def create_dark_transparent_hot_cmap(vmin=0.0, opacity=1.0):
         for i in range(n_colors)
     ]
     return LinearSegmentedColormap.from_list('dark_transparent_hot', colors)
+
+def flip_probe(active_list_lines: List[str], y: np.ndarray) -> Tuple[np.ndarray, List[int], List[tuple]]:
+    """
+    Rearranges the columns of the Acousto-Optic (AO) measurement matrix y (dimension: Times x N) 
+    to match a full geometric flip of the probe (inverting both the piezoelectric activation 
+    patterns and the acoustic steering angles) by performing all inline transformations.
+    """
+    config_to_idx = {line.strip(): i for i, line in enumerate(active_list_lines) if line.strip()}
+    
+    new_indices = []
+    missing_configs = []
+    
+    for i, line in enumerate(active_list_lines):
+        line = line.strip()
+        if not line:
+            continue
+            
+        pattern, angle = line.split('_')
+        
+        # Inline 1: Spatial mirror inversion of the 192-bit piezoelectric pattern
+        bin_str = bin(int(pattern, 16))[2:].zfill(192)
+        flipped_pattern = hex(int(bin_str[::-1], 2))[2:].zfill(48)
+        
+        # Inline 2: Sign inversion of the acoustic beam angle
+        if angle == "000":
+            flipped_angle = "000"
+        elif angle.startswith("0"):
+            flipped_angle = "1" + angle[1:]
+        elif angle.startswith("1"):
+            flipped_angle = "0" + angle[1:]
+        else:
+            raise ValueError(f"Unknown angle format: {angle}")
+            
+        flipped_config = f"{flipped_pattern}_{flipped_angle}"
+        
+        if flipped_config in config_to_idx:
+            new_indices.append(config_to_idx[flipped_config])
+        else:
+            new_indices.append(i)
+            missing_configs.append((i, line, flipped_config))
+            
+    y_flipped = y[:, new_indices]
+    return y_flipped, new_indices, missing_configs
+
+def flip_only_angles(active_list_lines: List[str], y: np.ndarray) -> Tuple[np.ndarray, List[int], List[tuple]]:
+    """
+    Rearranges the columns of the Acousto-Optic (AO) measurement matrix y by re-indexing 
+    and routing the signals to invert ONLY the acoustic angles while keeping the 
+    piezoelectric activation patterns unchanged, with inline angle inversion logic.
+    """
+    config_to_idx = {line.strip(): i for i, line in enumerate(active_list_lines) if line.strip()}
+    new_indices = []
+    missing_configs = []
+    
+    for i, line in enumerate(active_list_lines):
+        line = line.strip()
+        if not line:
+            continue
+            
+        pattern, angle = line.split('_')
+        
+        # Inline: Sign inversion of the acoustic beam angle
+        if angle == "000":
+            flipped_angle = "000"
+        elif angle.startswith("0"):
+            flipped_angle = "1" + angle[1:]
+        elif angle.startswith("1"):
+            flipped_angle = "0" + angle[1:]
+        else:
+            raise ValueError(f"Unknown angle format: {angle}")
+            
+        target_config = f"{pattern}_{flipped_angle}"
+        
+        if target_config in config_to_idx:
+            new_indices.append(config_to_idx[target_config])
+        else:
+            new_indices.append(i)
+            missing_configs.append((i, line, target_config))
+            
+    return y[:, new_indices], new_indices, missing_configs
+
+def flip_only_piezos(active_list_lines: List[str], y: np.ndarray) -> Tuple[np.ndarray, List[int], List[tuple]]:
+    """
+    Rearranges the columns of the Acousto-Optic (AO) measurement matrix y by re-indexing 
+    and routing the signals to invert ONLY the piezoelectric activations (spatial mirror) 
+    while keeping the acoustic angles unchanged, with inline bit-reversal logic.
+    """
+    config_to_idx = {line.strip(): i for i, line in enumerate(active_list_lines) if line.strip()}
+    new_indices = []
+    missing_configs = []
+    
+    for i, line in enumerate(active_list_lines):
+        line = line.strip()
+        if not line:
+            continue
+            
+        pattern, angle = line.split('_')
+        
+        # Inline: Spatial mirror inversion of the 192-bit piezoelectric pattern
+        bin_str = bin(int(pattern, 16))[2:].zfill(192)
+        flipped_pattern = hex(int(bin_str[::-1], 2))[2:].zfill(48)
+        
+        target_config = f"{flipped_pattern}_{angle}"
+        
+        if target_config in config_to_idx:
+            new_indices.append(config_to_idx[target_config])
+        else:
+            new_indices.append(i)
+            missing_configs.append((i, line, target_config))
+            
+    return y[:, new_indices], new_indices, missing_configs

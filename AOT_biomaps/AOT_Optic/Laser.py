@@ -31,13 +31,13 @@ class Laser:
             if self.shape == OpticFieldType.GAUSSIAN:
                 self.intensity = self._gaussian_beam()
             elif self.shape == OpticFieldType.UNIFORM:
-                raise NotImplementedError("Uniform beam not implemented yet.")
+                raise NotImplementedError("[AOT-biomaps] Uniform beam not implemented yet.")
             elif self.shape == OpticFieldType.SPHERICAL:
-                raise NotImplementedError("Spherical beam not implemented yet.")
+                raise NotImplementedError("[AOT-biomaps] Spherical beam not implemented yet.")
             else:
-                raise ValueError("Unknown beam shape.")
+                raise ValueError("[AOT-biomaps] Unknown beam shape.")
         except Exception as e:
-            raise RuntimeError(f"Error setting intensity: {e}")
+            raise RuntimeError(f"[AOT-biomaps] Error setting intensity: {e}")
 
     def _gaussian_beam(self):
         """
@@ -54,7 +54,7 @@ class Laser:
             X, Z = np.meshgrid(self.x, self.z, indexing='ij')
             return np.exp(-2 * ((X - x0)**2 + (Z - z0)**2) / self.w0**2)
         except Exception as e:
-            raise RuntimeError(f"Error generating Gaussian beam: {e}")
+            raise RuntimeError(f"[AOT-biomaps] Error generating Gaussian beam: {e}")
 
     def show_laser(self, figsize=(4,3)):
         """
@@ -69,4 +69,4 @@ class Laser:
             plt.title('Laser Intensity Distribution')
             plt.show()
         except Exception as e:
-            raise RuntimeError(f"Error plotting laser intensity: {e}")
+            raise RuntimeError(f"[AOT-biomaps] Error plotting laser intensity: {e}")

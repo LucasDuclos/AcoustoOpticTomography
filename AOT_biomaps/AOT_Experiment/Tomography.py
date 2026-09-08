@@ -5,8 +5,10 @@ from AOT_biomaps.Config import config
 from AOT_biomaps.AOT_Experiment.ExperimentTools import calc_mat_os, convert_to_hex_list, get_phase_deterministic, hex_to_binary_profile, binary_to_hex_profile, load_AOsignal
 from AOT_biomaps.AOT_Experiment._mainExperiment import Experiment
 import os
-import numpy as np
+import concurrent.futures
+from tqdm import tqdm
 from tqdm import trange
+import numpy as np
 from scipy.io import loadmat, savemat
 import matplotlib.pyplot as plt
 import h5py
@@ -30,71 +32,72 @@ class Tomography(Experiment):
     def check(self):
         """
         Check if the experiment is correctly initialized.
-
-        Returns:
-            tuple: (bool, str) - (True, "success message") if valid, (False, "error message") otherwise
         """
         if self.TypeAcoustic is None or self.TypeAcoustic.value == WaveType.FocusedWave.value:
-            return False, "acousticType must be provided and cannot be FocusedWave for Tomography experiment"
+           raise ValueError("[AOT-biomaps] acousticType must be provided and cannot be FocusedWave for Tomography experiment")
         if self.AcousticFields is None:
-            return False, "AcousticFields is not initialized. Please generate the system matrix first."
+            raise ValueError("[AOT-biomaps] AcousticFields is not initialized. Please generate the system matrix first.")
         if self.AOsignal_withTumor is None:
-            return False, "AOsignal with tumor is not initialized. Please generate the AO signal with tumor first."
+            raise ValueError("[AOT-biomaps] AOsignal with tumor is not initialized. Please generate the AO signal with tumor first.")
         if self.AOsignal_withoutTumor is None:
-            return False, "AOsignal without tumor is not initialized. Please generate the AO signal without tumor first."
+            raise ValueError("[AOT-biomaps] AOsignal without tumor is not initialized. Please generate the AO signal without tumor first.")
         if self.OpticImage is None:
-            return False, "OpticImage is not initialized. Please generate the optic image first."
+            raise ValueError("[AOT-biomaps] OpticImage is not initialized. Please generate the optic image first.")
         if self.AOsignal_withoutTumor.shape != self.AOsignal_withTumor.shape:
-            return False, "AOsignal with and without tumor must have the same shape."
+            raise ValueError("[AOT-biomaps] AOsignal with and without tumor must have the same shape.")
         for field in self.AcousticFields:
             if field.field.shape[0] != self.AOsignal_withTumor.shape[0]:
-                return False, f"Field {field.get_name_field()} has an invalid Time shape: {field.field.shape[0]}. Expected time shape to be {self.AOsignal_withTumor.shape[0]}."
+                raise ValueError(f"[AOT-biomaps] Field {field.get_name_field()} has an invalid Time shape: {field.field.shape[0]}. Expected time shape to be {self.AOsignal_withTumor.shape[0]}.")
         if not all(field.field.shape == self.AcousticFields[0].field.shape for field in self.AcousticFields):
-            return False, "All AcousticFields must have the same shape."
+            raise ValueError("[AOT-biomaps] All AcousticFields must have the same shape.")
         if self.OpticImage is None:
-            return False, "OpticImage is not initialized. Please generate the optic image first."
+            raise ValueError("[AOT-biomaps] OpticImage is not initialized. Please generate the optic image first.")
         if self.OpticImage.phantom is None:
-            return False, "OpticImage phantom is not initialized. Please generate the phantom first."
+            raise ValueError("[AOT-biomaps] OpticImage phantom is not initialized. Please generate the phantom first.")
         if self.OpticImage.laser is None:
-            return False, "OpticImage laser is not initialized. Please generate the laser first."
+            raise ValueError("[AOT-biomaps] OpticImage laser is not initialized. Please generate the laser first.")
         if self.OpticImage.laser.shape != self.OpticImage.phantom.shape:
-            return False, "OpticImage laser and phantom must have the same shape."
+            raise ValueError("[AOT-biomaps] OpticImage laser and phantom must have the same shape.")
         if self.OpticImage.phantom.shape[0] != self.AcousticFields[0].field.shape[1] or self.OpticImage.phantom.shape[1] != self.AcousticFields[0].field.shape[2]:
-            return False, f"OpticImage phantom shape {self.OpticImage.phantom.shape} does not match AcousticFields shape {self.AcousticFields[0].field.shape[1:]}."
+            raise ValueError(f"[AOT-biomaps] OpticImage phantom shape {self.OpticImage.phantom.shape} does not match AcousticFields shape {self.AcousticFields[0].field.shape[1:]}.")
 
-        return True, "Experiment is correctly initialized."
+        print("[AOT-biomaps] Experiment is correctly initialized.")
 
-    def generate_acoustic_fields(self, fieldDataPath=None, show_log=True, nameBlock=None):
+    def generate_acoustic_fields(self, isGPU=None, GPUdevice=None, fieldDataPath=None, tempFieldName="Kwave", nameBlock=None, generation_type="envelope_squarred", show_log=True):
         """
         Generate the acoustic fields for simulation.
 
         Parameters:
+            isGPU (bool): Whether to use GPU for simulation. (If None, the default setting will be used.)
+            GPUdevice (int): The GPU device to use. (If None, the default GPU will be used.)
             fieldDataPath (str): Path to save the generated fields.
+            tempFieldName (str): Name for the temporary field files. Mainly used for multithreading to avoid multiple threads writing to the same file.
+            nameBlock (str): Optional name for h5 file.
+            generation_type (str): The type of field generation to perform. Must be one of "envelope_squarred", "envelope", or "field".
             show_log (bool): Whether to show progress logs.
-            nameBlock (str): Optional name for the block when saving.
 
         Returns:
             list: List of generated FocusedWave objects.
         """
         if self.medium is None:
-            raise ValueError("Medium is not initialized. Please generate the medium first.")
+            raise ValueError("[AOT-biomaps] Medium is not initialized. Please generate the medium first.")
         if self.TypeAcoustic.value == WaveType.StructuredWave.value:
-            self.AcousticFields = self._generate_acousticFields_STRUCT_CPU(fieldDataPath, show_log, nameBlock)
+            self.AcousticFields = self._generate_acousticFields_STRUCT(isGPU=isGPU, GPUdevice=GPUdevice, fieldDataPath=fieldDataPath, tempFieldName=tempFieldName, nameBlock=nameBlock, generation_type=generation_type, show_log=show_log)
         else:
-            raise ValueError("Unsupported wave type.")
+            raise ValueError("[AOT-biomaps] Unsupported wave type.")
 
     def show_pattern(self,figsize=(5, 4)):
         """
         Display the transducer activation patterns.
         """
         if self.AcousticFields is None:
-            raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
+            raise ValueError("[AOT-biomaps] AcousticFields is not initialized. Please generate the system matrix first.")
 
         # Collect and sort entries
         entries = []
         for field in self.AcousticFields:
             if field.waveType != WaveType.StructuredWave:
-                raise TypeError("AcousticFields must be of type StructuredWave to plot pattern.")
+                raise TypeError("[AOT-biomaps] AcousticFields must be of type StructuredWave to plot pattern.")
             pattern = field.pattern
             entries.append((
                 (pattern.space_0, pattern.space_1, pattern.move_head_0_2tail, pattern.move_tail_1_2head),
@@ -176,7 +179,7 @@ class Tomography(Experiment):
         Plot the distribution of angles and spatial frequencies in the patterns.
         """
         if self.patterns is None:
-            raise ValueError("patterns is not initialized. Please load or generate the active list first.")
+            raise ValueError("[AOT-biomaps] patterns is not initialized. Please load or generate the active list first.")
 
         num_elements = self.params.acoustic['probe']['num_elements']
         # Find all even divisors of num_elements (including num_elements itself)
@@ -254,7 +257,7 @@ class Tomography(Experiment):
             FileNotFoundError: If the file does not exist.
         """
         if not os.path.exists(fieldParamPath):
-            raise FileNotFoundError(f"Field parameter file {fieldParamPath} not found.")
+            raise FileNotFoundError(f"[AOT-biomaps] Field parameter file {fieldParamPath} not found.")
         patterns = []
         with open(fieldParamPath, 'r') as file:
             lines = file.readlines()
@@ -284,9 +287,9 @@ class Tomography(Experiment):
                                 "angle": angle
                             })
                     else:
-                        raise ValueError("Unexpected line (not a tuple of two elements)")
+                        raise ValueError("[AOT-biomaps] Unexpected line (not a tuple of two elements)")
                 except Exception as e:
-                    print(f"Parsing error on line: {line}\n{e}")
+                    print(f"[AOT-biomaps] Parsing error on line: {line}\n{e}")
         self.patterns = patterns
 
     def save_activeList(self, filePath):
@@ -330,9 +333,34 @@ class Tomography(Experiment):
         elif N is not None and N > 1:
             self.patterns = self._generate_patterns(N)
             if not self._check_patterns(self.patterns):
-                raise ValueError("Generated patterns failed validation.")
+                raise ValueError("[AOT-biomaps] Generated patterns failed validation.")
         else:
-            raise ValueError("Either N (>=2) or both decimations and angles must be provided for pattern generation.")
+            raise ValueError("[AOT-biomaps] Either N (>=2) or both decimations and angles must be provided for pattern generation.")
+
+    def generate_activeList_from_exp(self):
+        if self.expParams is None:
+            raise ValueError("[AOT-biomaps] expParams is not initialized. Please load the experiment data first.")
+        active_elements = convert_to_hex_list(self.expParams['ActiveListMatrix'])
+        self.DelayLaw = []
+        self.theta = []
+        self.decimations = []
+        self.ActiveList = []
+        self.patterns = []
+        for i in range(len(active_elements)):
+            self.patterns.append({"fileName": f"{active_elements[i]}_{format_angle(self.expParams['AngleMatrix'][i])}"})
+            self.theta.append(self.expParams['AngleMatrix'][i])
+            self.ActiveList = active_elements
+            new_Delay = 1000 * (1/self.params.acoustic['medium']['c0']) * np.sin(np.deg2rad(self.theta[-1])) * np.arange(1, self.params.acoustic['probe']['num_elements'] + 1) * self.params.acoustic['probe']['element_width']
+            self.DelayLaw.append(new_Delay - np.min(new_Delay))
+            self.decimations.append(get_frequency(active_elements[i], self.params.acoustic['probe']['num_elements'], self.params.acoustic['probe']['element_width']))
+
+    def check_ActiveList(self, activeList_path):
+        with open(activeList_path, 'r') as f:
+            for i,line in enumerate(f):
+                if line.strip() != self.patterns[i]["fileName"]:
+                    print(f"[AOT-biomaps] Mismatch at line {i+1}: file has '{line.strip()}', but generated list has '{self.patterns[i]['fileName']}'")
+                    return False    
+        return True
 
     def save_AOsignals_matlab(self, filePath):
         """
@@ -355,14 +383,7 @@ class Tomography(Experiment):
 
         Parameters:
             angles (list): List of angles to select.
-
-        Raises:
-            ValueError: If AO signals or AcousticFields are not initialized.
         """
-        if self.AOsignal_withTumor is None and self.AOsignal_withoutTumor is None:
-            raise ValueError("AO signals are not initialized. Please load or generate the AO signals first.")
-        if self.AcousticFields is None or len(self.AcousticFields) == 0:
-            raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
         newAcousticFields = []
         index = []
         for i, field in enumerate(self.AcousticFields):
@@ -386,15 +407,7 @@ class Tomography(Experiment):
 
         Parameters:
             shifts (list): List of shift values to select.
-
-        Raises:
-            ValueError: If AO signals or AcousticFields are not initialized.
         """
-        if self.AOsignal_withTumor is None and self.AOsignal_withoutTumor is None:
-            raise ValueError("AO signals are not initialized. Please load or generate the AO signals first.")
-        if self.AcousticFields is None or len(self.AcousticFields) == 0:
-            raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
-
         # Convert shifts to radians if needed
         shift_rads = []
         for shift in shifts:
@@ -404,7 +417,7 @@ class Tomography(Experiment):
                 elif shift in ["0", "pi/2", "pi", "3pi/2"]:
                     shift_rads.append(float(shift.split('/')[0])/2 if '/' in shift else float(shift))
                 else:
-                    raise ValueError(f"Invalid shift value: {shift}")
+                    raise ValueError(f"[AOT-biomaps] Invalid shift value: {shift}")
             else:
                 shift_rads.append(shift)
 
@@ -433,14 +446,7 @@ class Tomography(Experiment):
 
         Parameters:
             decimations (list): List of decimation factors to select.
-
-        Raises:
-            ValueError: If AO signals or AcousticFields are not initialized.
         """
-        if self.AOsignal_withTumor is None and self.AOsignal_withoutTumor is None:
-            raise ValueError("AO signals are not initialized. Please load or generate the AO signals first.")
-        if self.AcousticFields is None or len(self.AcousticFields) == 0:
-            raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
         newAcousticFields = []
         index = []
         for i, field in enumerate(self.AcousticFields):
@@ -463,14 +469,7 @@ class Tomography(Experiment):
 
         Parameters:
             pattern_names (list): List of pattern names to select.
-
-        Raises:
-            ValueError: If AO signals or AcousticFields are not initialized.
         """
-        if self.AOsignal_withTumor is None and self.AOsignal_withoutTumor is None:
-            raise ValueError("AO signals are not initialized. Please load or generate the AO signals first.")
-        if self.AcousticFields is None or len(self.AcousticFields) == 0:
-            raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
         newAcousticFields = []
         index = []
         for i, field in enumerate(self.AcousticFields):
@@ -495,14 +494,10 @@ class Tomography(Experiment):
             N (int): Number of fields to select.
 
         Raises:
-            ValueError: If AO signals or AcousticFields are not initialized, or if N > number of available fields.
+            ValueError: If N > number of available fields.
         """
-        if self.AOsignal_withTumor is None and self.AOsignal_withoutTumor is None:
-            raise ValueError("AO signals are not initialized. Please load or generate the AO signals first.")
-        if self.AcousticFields is None or len(self.AcousticFields) == 0:
-            raise ValueError("AcousticFields is not initialized. Please generate the system matrix first.")
         if N > len(self.AcousticFields):
-            raise ValueError("N is larger than the number of available AcousticFields.")
+            raise ValueError("[AOT-biomaps] N is larger than the number of available AcousticFields.")
         indices = np.random.choice(len(self.AcousticFields), size=N, replace=False)
         newAcousticFields = [self.AcousticFields[i] for i in indices]
         if self.AOsignal_withTumor is not None:
@@ -591,7 +586,7 @@ class Tomography(Experiment):
         hexa_list = convert_to_hex_list(ActiveLIST)
 
         patterns = []
-        print(f"Generating {Nscans} patterns...")
+        print(f"[AOT-biomaps] Generating {Nscans} patterns...")
         for i in range(Nscans):
             angle_val = angles[i % len(angles)]
             hex_pattern = hexa_list[i]
@@ -634,7 +629,7 @@ class Tomography(Experiment):
         # 1. Find ALL even divisors of num_elements (including num_elements itself)
         divs = [d for d in range(2, num_elements + 1) if num_elements % d == 0 and d % 2 == 0]
         if not divs:
-            print(f"No even divisors found for num_elements = {num_elements}")
+            print(f"[AOT-biomaps] No even divisors found for num_elements = {num_elements}")
             return []
 
         # 2. Use a set to track unique patterns
@@ -696,7 +691,7 @@ class Tomography(Experiment):
             file_counts = Counter(file_names)
             duplicates = [fn for fn, count in file_counts.items() if count > 1]
             for dup in duplicates:
-                print(f"Error: Duplicate detected for {dup}")
+                print(f"[AOT-biomaps] Error: Duplicate detected for {dup}")
             return False
 
         # 2. Check each pattern individually
@@ -707,7 +702,7 @@ class Tomography(Experiment):
 
             # Check length
             if len(bits) != num_elements:
-                print(f"Error length: {pattern['fileName']}")
+                print(f"[AOT-biomaps] Error length: {pattern['fileName']}")
                 return False
 
             # Special case: "all active" pattern
@@ -716,7 +711,7 @@ class Tomography(Experiment):
 
             # Check 0/1 balance
             if np.sum(bits) != num_elements // 2:
-                print(f"Error 0/1 balance: {pattern['fileName']}")
+                print(f"[AOT-biomaps] Error 0/1 balance: {pattern['fileName']}")
                 return False
 
             # Check regularity
@@ -731,7 +726,7 @@ class Tomography(Experiment):
                     valid = True
                     break
             if not valid:
-                print(f"Error regularity: {pattern['fileName']}")
+                print(f"[AOT-biomaps] Error regularity: {pattern['fileName']}")
                 return False
 
         return True
@@ -746,7 +741,7 @@ class Tomography(Experiment):
             alpha (float): Tukey parameter (0.0=rectangle, 1.0=hann). 0.3 is a good compromise.
             divergence_deg (float): Opening angle of the mask to follow beam broadening. 0.0 = Straight, 0.5 = Slight opening (recommended).
         """
-        print(f"Applying apodization (Alpha={alpha}, Div={divergence_deg}°) on {len(self.AcousticFields)} fields...")
+        print(f"[AOT-biomaps] Applying apodization (Alpha={alpha}, Div={divergence_deg}°) on {len(self.AcousticFields)} fields...")
 
         probe_width = self.params.acoustic['probe']['num_elements'] * self.params.acoustic['probe']['element_width']
 
@@ -807,27 +802,36 @@ class Tomography(Experiment):
             # 8. Update object
             self.AcousticFields[i].field = field_apodized
 
-        print("Apodization done.")
+        print("[AOT-biomaps] Apodization done.")
 
     # PRIVATE METHODS
-    def _generate_acousticFields_STRUCT_CPU(self, fieldDataPath=None, show_log=False, nameBlock=None):
+    def _generate_acousticFields_STRUCT(self, fieldDataPath=None, isGPU=None, GPUdevice=None, tempFieldName="Kwave", nameBlock=None, generation_type="envelope_squarred", show_log=False):
         """
         Generate acoustic fields for structured waves using CPU-based simulation.
 
         Parameters:
             fieldDataPath (str): Path to save generated fields.
-            show_log (bool): Whether to show progress logs.
+            isGPU (bool): Whether to use GPU for simulation. (Default is None, which uses CPU.)
+            GPUdevice (int): The GPU device to use. (Default is None, which uses the default GPU.)
+            tempFieldName (str): Name for the temporary field files (default is "Kwave"). Mainly used for multithreading to avoid multiple threads writing to the same file.
             nameBlock (str): Optional name for the block when saving.
+            generation_type (str): The type of field generation to perform. Must be one of "envelope_squarred", "envelope", or "field".
+            show_log (bool): Whether to show progress logs.
 
         Returns:
             list: List of generated StructuredWave objects.
         """
         if self.patterns is None:
-            raise ValueError("patterns is not initialized. Please load or generate the active list first.")
-        listAcousticFields = []
-        progress_bar = trange(0, len(self.patterns), desc="Generating acoustic fields")
-        for i in progress_bar:
-            pattern = self.patterns[i]
+            raise ValueError("[AOT-biomaps] patterns is not initialized. Please load or generate the active list first.")
+
+        # 1. Pre-check step: Instantiation and sorting
+        to_load = []
+        to_generate = []
+        
+        # Absolute mapping: pre-allocation to guarantee output order
+        listAcousticFields = [None] * len(self.patterns)
+
+        for i, pattern in enumerate(self.patterns):
             if "fileName" in pattern:
                 AcousticField = StructuredWave(fileName=pattern["fileName"], params=self.params, medium=self.medium)
             else:
@@ -840,30 +844,62 @@ class Tomography(Experiment):
                     params=self.params,
                     medium=self.medium
                 )
-            if fieldDataPath is None:
-                pathField = None
-            else:
+                
+            pathField = None
+            if fieldDataPath is not None:
                 pathField = os.path.join(fieldDataPath, AcousticField.get_name_field() + self.FormatSave.value)
+                
+            # Sorting: Does the field file already exist on disk?
             if pathField is not None and os.path.exists(pathField) and self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
-                progress_bar.set_postfix_str(f"Loading field - {AcousticField.get_name_field()}")
-                try:
-                    AcousticField.load_field(fieldDataPath, self.FormatSave, nameBlock)
-                except:
-                    progress_bar.set_postfix_str(f"Error loading field -> Generating field - {AcousticField.get_name_field()} ---- processing on {config.get_process().upper()} ----")
-                    AcousticField.generate_field(show_log=show_log)
-                    if not os.path.exists(pathField):
-                        progress_bar.set_postfix_str(f"Saving field - {AcousticField.get_name_field()}")
-                        os.makedirs(os.path.dirname(pathField), exist_ok=True)
-                        AcousticField.save_field(fieldDataPath)
+                to_load.append((i, AcousticField, pathField))
             else:
-                progress_bar.set_postfix_str(f"Generating field - {AcousticField.get_name_field()} ---- processing on {config.get_process().upper()} ----")
-                AcousticField.generate_field(show_log=show_log)
-                if pathField is not None and not os.path.exists(pathField) and self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
-                    progress_bar.set_postfix_str(f"Saving field - {AcousticField.get_name_field()}")
-                    os.makedirs(os.path.dirname(pathField), exist_ok=True)
-                    AcousticField.save_field(fieldDataPath)
-            listAcousticFields.append(AcousticField)
-            progress_bar.set_postfix_str("")
+                to_generate.append((i, AcousticField, pathField))
+
+        print(f"[AOT-biomaps] Pre-check complete: {len(to_load)} fields to load, {len(to_generate)} fields to generate.")
+
+        # 2. Loading step
+        def do_load(task):
+            index, AcousticField, pathField = task
+            try:
+                AcousticField.load_field(fieldDataPath, self.FormatSave, nameBlock)
+                return index, AcousticField, True  
+            except Exception:
+                return index, AcousticField, False 
+
+        if to_load:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                futures_load = [executor.submit(do_load, task) for task in to_load]
+                
+                # First distinct progress bar for loading
+                for future in tqdm(concurrent.futures.as_completed(futures_load), total=len(to_load), desc="[AOT-biomaps] Loading fields", mininterval=0.0):
+                    index, AcousticField, success = future.result()
+                    if success:
+                        listAcousticFields[index] = AcousticField
+                    else:
+                        pathField = os.path.join(fieldDataPath, AcousticField.get_name_field() + self.FormatSave.value)
+                        to_generate.append((index, AcousticField, pathField))
+
+        # 3. Generation step
+        def do_generate(task):
+            index, AcousticField, pathField = task
+            safe_tempFieldName = f"{tempFieldName}_{AcousticField.get_name_field()}"
+            
+            AcousticField.generate_field(isGPU=isGPU, GPUdevice=GPUdevice, tempFieldName=safe_tempFieldName, generation_type=generation_type, show_log=show_log)
+            
+            if pathField is not None and not os.path.exists(pathField) and self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
+                os.makedirs(os.path.dirname(pathField), exist_ok=True)
+                AcousticField.save_field(fieldDataPath)
+                
+            return index, AcousticField
+
+        if to_generate:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                futures_gen = [executor.submit(do_generate, task) for task in to_generate]
+                
+                # Second distinct progress bar for generation
+                for future in tqdm(concurrent.futures.as_completed(futures_gen), total=len(to_generate), desc="[AOT-biomaps] Generating fields"):
+                    index, AcousticField = future.result()
+                    listAcousticFields[index] = AcousticField
 
         return listAcousticFields
 
@@ -882,24 +918,24 @@ class Tomography(Experiment):
             ValueError: If the file format is not supported.
         """
         if not os.path.exists(pathAO):
-            raise FileNotFoundError(f"File {pathAO} not found.")
+            raise FileNotFoundError(f"[AOT-biomaps] File {pathAO} not found.")
 
         if pathAO.endswith('.npy'):
             AOsignal = np.load(pathAO)
         elif pathAO.endswith('.h5'):
             with h5py.File(pathAO, 'r') as f:
                 if h5name not in f:
-                    raise KeyError(f"Dataset '{h5name}' not found in the HDF5 file.")
+                    raise KeyError(f"[AOT-biomaps] Dataset '{h5name}' not found in the HDF5 file.")
                 AOsignal = f[h5name][:]
         elif pathAO.endswith('.mat'):
             mat_data = loadmat(pathAO)
             if h5name not in mat_data:
-                raise KeyError(f"Dataset '{h5name}' not found in the .mat file.")
+                raise KeyError(f"[AOT-biomaps] Dataset '{h5name}' not found in the .mat file.")
             AOsignal = mat_data[h5name]
         elif pathAO.endswith('.hdr'):
             AOsignal = load_AOsignal(pathAO)
         else:
-            raise ValueError("Unsupported file format. Supported formats are: .npy, .h5, .mat, .hdr")
+            raise ValueError("[AOT-biomaps] Unsupported file format. Supported formats are: .npy, .h5, .mat, .hdr")
 
         if withTumor:
             self.AOsignal_withTumor = AOsignal
@@ -919,10 +955,10 @@ class Tomography(Experiment):
         """
         if withTumor:
             if self.AOsignal_withTumor is None:
-                raise ValueError("Experimental AOsignal with tumor is not initialized. Please load the experimental AO signal with tumor first.")
+                raise ValueError("[AOT-biomaps] Experimental AOsignal with tumor is not initialized. Please load the experimental AO signal with tumor first.")
         else:
             if self.AOsignal_withoutTumor is None:
-                raise ValueError("Experimental AOsignal without tumor is not initialized. Please load the experimental AO signal without tumor first.")
+                raise ValueError("[AOT-biomaps] Experimental AOsignal without tumor is not initialized. Please load the experimental AO signal without tumor first.")
         if self.AcousticFields is not None:
             if self.AcousticFields[0].field.shape[0] > self.AOsignal_withTumor.shape[0]:
                 self.cutAcousticFields(max_t=self.AOsignal_withTumor.shape[0]/float(self.params.acoustic['f_saving']))
@@ -942,10 +978,10 @@ class Tomography(Experiment):
                         if nameField.startswith("field_"):
                             nameField = nameField[len("field_"):]
                         if nameField != expected_name:
-                            raise ValueError(f"Field name {nameField} does not match the expected name {expected_name} from the active list.")
+                            raise ValueError(f"[AOT-biomaps] Field name {nameField} does not match the expected name {expected_name} from the active list.")
         print("Experimental AO signals are correctly initialized.")
 
-    def parse_and_demodulate(self, withTumor=True):
+    def demodulate_AOsignal(self, withTumor=True):
         """
         Parse and demodulate AO signals into complex-valued data.
         Groups signals by (spatial frequency, angle) and applies phase-based demodulation.
@@ -960,77 +996,71 @@ class Tomography(Experiment):
             AOsignal = self.AOsignal_withTumor
         else:
             AOsignal = self.AOsignal_withoutTumor
+
         delta_x = self.params.general['dx']  # in meters
         n_piezos = self.params.acoustic['probe']['num_elements']
         demodulated_data = {}
         structured_buffer = {}
 
-        for i in trange(AOsignal.shape[1], desc="Demodulating AO signals"):
-            hex_pattern = self.patterns[i]["fileName"]
-            fs_key = self.decimations[i]
-            angle_rad = np.deg2rad(self.theta[i])
+        for i in trange(AOsignal.shape[1], desc="[AOT-biomaps] Demodulating AO signals (4-phases quadrature)"):
+            field_obj = self.AcousticFields[i]
+            label = field_obj.get_name_field()
+            parts = label.split("_")
+            hex_pattern = parts[1]
+            angle_code = parts[-1]
 
-            # Plane wave (f_s = 0)
-            if fs_key == 0:
-                demodulated_data[(fs_key, angle_rad)] = np.array(AOsignal[:,i])
+            angle_deg = -int(angle_code[1:]) if angle_code.startswith("1") else int(angle_code)
+            angle_rad = float(np.round(np.deg2rad(angle_deg), 6))
+
+            if set(hex_pattern.lower().replace(" ", "")) == {'f'}:
+                fs_key = 0.0
+                phase = 0.0
+            else:
+                profile = hex_to_binary_profile(hex_pattern, n_piezos)
+                ft_prof = np.fft.fft(profile)
+                idx_max = np.argmax(np.abs(ft_prof[1:n_piezos//2])) + 1
+                freqs = np.fft.fftfreq(n_piezos, d=delta_x)
+                fs_key = float(np.round(abs(freqs[idx_max]) / 1000.0, 6))  # in mm⁻¹
+                phase = get_phase_deterministic(profile)
+
+            if fs_key == 0.0: # plane wave, no demodulation needed
+                demodulated_data[(fs_key, angle_rad)] = np.array(AOsignal[:, i], dtype=np.complex64)
                 continue
 
-            # Structured wave
-            profile = hex_to_binary_profile(hex_pattern, n_piezos)
-
-            # Calculate spatial frequency (FS)
-            ft_prof = np.fft.fft(profile)
-            # Only consider positive non-DC part
-            idx_max = np.argmax(np.abs(ft_prof[1:len(profile)//2])) + 1
-            freqs = np.fft.fftfreq(len(profile), d=delta_x)
-
-            # freqs is in m^-1 because delta_x is in meters
-            fs_m_inv = abs(freqs[idx_max])
-
-            # CORRECTION: Convert fs from m^-1 to mm^-1 (mm^-1 is used in iRadon)
-            fs_key = float(np.round(fs_m_inv / 1000.0, 5))
-            angle_rad = float(np.round(angle_rad, 5))
-
-            if fs_key == 0: continue
-
-            # Calculate Phase (Shift)
-            phase = get_phase_deterministic(profile)
-
-            # Store by (fs, theta) and phase
             key = (fs_key, angle_rad)
             if key not in structured_buffer:
                 structured_buffer[key] = {}
 
-            # Averaging is needed if multiple acquisitions have the same phase (for SNR)
+            sig = np.array(AOsignal[:, i])
             if phase in structured_buffer[key]:
-                structured_buffer[key][phase] = (structured_buffer[key][phase] + np.array(AOsignal[:,i])) / 2
+                structured_buffer[key][phase] = (structured_buffer[key][phase] + sig) / 2
             else:
-                structured_buffer[key][phase] = np.array(AOsignal[:,i])
+                structured_buffer[key][phase] = sig
 
         for (fs, theta), phases in structured_buffer.items():
-            s0 = phases.get(0.0, 0)
-            s_pi_2 = phases.get(np.pi/2, 0)
-            s_pi = phases.get(np.pi, 0)
-            s_3pi_2 = phases.get(3*np.pi/2, 0)
-
-            # Ensure zeros are arrays of the correct size
-            example = next(val for val in phases.values() if not isinstance(val, int))
-            if isinstance(s0, int): s0 = np.zeros_like(example)
-            if isinstance(s_pi, int): s_pi = np.zeros_like(example)
-            if isinstance(s_pi_2, int): s_pi_2 = np.zeros_like(example)
-            if isinstance(s_3pi_2, int): s_3pi_2 = np.zeros_like(example)
+            required_phases = [0.0, np.pi/2, np.pi, 3*np.pi/2]
+            if not all(p in phases for p in required_phases):
+                example = next(iter(phases.values()))
+                s0 = phases.get(0.0, np.zeros_like(example))
+                s_pi_2 = phases.get(np.pi/2, np.zeros_like(example))
+                s_pi = phases.get(np.pi, np.zeros_like(example))
+                s_3pi_2 = phases.get(3*np.pi/2, np.zeros_like(example))
+            else:
+                s0 = phases[0.0]
+                s_pi_2 = phases[np.pi/2]
+                s_pi = phases[np.pi]
+                s_3pi_2 = phases[3*np.pi/2]
 
             real = s0 - s_pi
             imag = s_pi_2 - s_3pi_2
-
             demodulated_data[(fs, theta)] = (real - 1j * imag) / (2/np.pi)
 
         return demodulated_data
 
-    def demodulate_acoustic_fields(self):
+    def demodulate_acoustic_fields(self, max_workers=None):
         """
         Demodulate acoustic fields into a flat dictionary: {(fs, theta): complex_field}.
-        Identical structure to parse_and_demodulate.
+        Identical structure to parse_and_demodulate, optimized with thread-safe multithreading.
 
         Returns:
             dict: Dictionary with keys (fs, theta) and values as complex fields.
@@ -1041,8 +1071,8 @@ class Tomography(Experiment):
         # buffer[(fs, theta)][phase] = real field
         buffer = {}
 
-        # 1. Grouping and Averaging
-        for i in trange(len(self.AcousticFields), desc="Organizing Acoustic Fields"):
+        # 1. Grouping and Averaging (Sequential to build keys in deterministic order)
+        for i in range(len(self.AcousticFields)):
             field_obj = self.AcousticFields[i]
             label = field_obj.get_name_field()
             parts = label.split("_")
@@ -1051,7 +1081,7 @@ class Tomography(Experiment):
 
             # Extract Angle and Frequency
             angle_deg = -int(angle_code[1:]) if angle_code.startswith("1") else int(angle_code)
-            angle_rad = np.round(np.deg2rad(angle_deg), 5)
+            angle_rad = float(np.round(np.deg2rad(angle_deg), 5))
 
             if set(hex_pattern.lower().replace(" ", "")) == {'f'}:
                 fs_key = 0.0
@@ -1066,7 +1096,8 @@ class Tomography(Experiment):
 
             # FLAT KEY (fs, theta)
             key = (fs_key, angle_rad)
-            if key not in buffer: buffer[key] = {}
+            if key not in buffer: 
+                buffer[key] = {}
 
             current_f = field_obj.field
             if phase in buffer[key]:
@@ -1074,38 +1105,45 @@ class Tomography(Experiment):
             else:
                 buffer[key][phase] = current_f
 
-        # 2. Quadrature
+        # 2. Quadrature (Multithreaded with strict order preservation)
         demodulated_fields = {}
         keys = list(buffer.keys())
 
-        for i in trange(len(keys), desc="Computing Complex Operator"):
-            key = keys[i]  # key is (fs, theta)
+        def process_quadrature(key):
             phases = buffer[key]
             fs = key[0]
 
             if fs == 0.0:
-                demodulated_fields[key] = next(iter(phases.values())).astype(np.complex64)
-            else:
-                s0 = phases.get(0.0)
-                s_pi_2 = phases.get(np.pi/2)
-                s_pi = phases.get(np.pi)
-                s_3pi_2 = phases.get(3*np.pi/2)
+                return key, next(iter(phases.values())).astype(np.complex64)
 
-                example = next(iter(phases.values()))
-                s0 = s0 if s0 is not None else np.zeros_like(example)
-                s_pi = s_pi if s_pi is not None else np.zeros_like(example)
-                s_pi_2 = s_pi_2 if s_pi_2 is not None else np.zeros_like(example)
-                s_3pi_2 = s_3pi_2 if s_3pi_2 is not None else np.zeros_like(example)
+            s0 = phases.get(0.0)
+            s_pi_2 = phases.get(np.pi/2)
+            s_pi = phases.get(np.pi)
+            s_3pi_2 = phases.get(3*np.pi/2)
 
-                real = s0 - s_pi
-                imag = s_pi_2 - s_3pi_2
+            example = next(iter(phases.values()))
+            s0 = s0 if s0 is not None else np.zeros_like(example)
+            s_pi = s_pi if s_pi is not None else np.zeros_like(example)
+            s_pi_2 = s_pi_2 if s_pi_2 is not None else np.zeros_like(example)
+            s_3pi_2 = s_3pi_2 if s_3pi_2 is not None else np.zeros_like(example)
 
-                # Store with key (fs, theta)
-                demodulated_fields[key] = ((real - 1j * imag) / (2/np.pi)).astype(np.complex64)
+            real = s0 - s_pi
+            imag = s_pi_2 - s_3pi_2
 
-        print(f"Acoustic Operator complete: {len(demodulated_fields)} configurations processed.")
+            complex_field = ((real - 1j * imag) / (2/np.pi)).astype(np.complex64)
+            return key, complex_field
+
+        # Execute parallel quadrature computations
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # executor.map processes in parallel but yields in the EXACT order of 'keys'
+            results = executor.map(process_quadrature, keys)
+            
+            for key, complex_field in tqdm(results, total=len(keys), desc="[AOT-biomaps] Demodulating Acoustic Fields", mininterval=0.0):
+                demodulated_fields[key] = complex_field
+
+        print(f"[AOT-biomaps] Acoustic Operator complete: {len(demodulated_fields)} configurations processed.")
         return demodulated_fields
-
+    
     def flip_probe(self, flipPattern=True, flipAngle=True):
         """
         Flip the probe (binary pattern and/or angle) for all acoustic fields and AO signals.
@@ -1115,7 +1153,7 @@ class Tomography(Experiment):
             flipAngle (bool): If True, invert the sign of the angle.
         """
         if self.AcousticFields is None:
-            print("Warning: AcousticFields is not initialized. No fields to flip, only AO signals.")
+            print("[AOT-biomaps] Warning: AcousticFields is not initialized. No fields to flip, only AO signals.")
             available_fields = False
         else:
             available_fields = True
@@ -1160,7 +1198,7 @@ class Tomography(Experiment):
             # Create a new StructuredWave with the flipped pattern and/or angle
             if available_fields:
                 new_angle_str = format_angle(new_angle)
-                new_field_name = f"field_{flipped_hex}_{new_angle_str}"
+                new_field_name = f"{flipped_hex}_{new_angle_str}"
                 new_field = StructuredWave(
                     fileName=new_field_name,
                     params=self.params,
@@ -1208,10 +1246,10 @@ class Tomography(Experiment):
         self.theta = new_theta
         self.decimations = new_decimations
         if flipPattern and flipAngle:
-            print(f"Flipped both probe and AO signals (pattern and angle).")
+            print(f"[AOT-biomaps] Flipped both probe and AO signals (pattern and angle).")
         elif flipPattern and not flipAngle:
-            print(f"Flipped probe and AO signals (pattern).")
+            print(f"[AOT-biomaps] Flipped probe and AO signals (pattern).")
         elif not flipPattern and flipAngle:
-            print(f"Flipped probe and AO signals (angle).")
+            print(f"[AOT-biomaps] Flipped probe and AO signals (angle).")
         else:
-            print(f"No flipping applied.")
+            print(f"[AOT-biomaps] No flipping applied.")

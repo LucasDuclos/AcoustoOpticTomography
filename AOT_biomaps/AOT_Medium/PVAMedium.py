@@ -55,7 +55,7 @@ class PVAMedium(Medium):
             bg_c = self.params.acoustic['medium']['c0']
             bg_rho = self.params.acoustic['medium']['density']
         else:
-            raise ValueError(f"Unsupported background medium: {bg_medium}. Supported options are 'air' and 'water'.")
+            raise ValueError(f"[AOT-biomaps] Unsupported background medium: {bg_medium}. Supported options are 'air' and 'water'.")
 
         c_map = np.full((Nx, Nz), bg_c, dtype=np.float32)
         rho_map = np.full((Nx, Nz), bg_rho, dtype=np.float32)
@@ -129,13 +129,13 @@ class PVAMedium(Medium):
         else:
             self.kmedium = None
             self.kgrid = None
-            warnings.warn("kWave is not available. Medium properties stored in medium_properties dictionary.", UserWarning)
+            print("[AOT-biomaps] Warning: kWave is not available. Medium properties stored in medium_properties dictionary.")
 
         # 10. Save variables for later use
-        self.factorX = int(np.ceil(self.params.general['dx'] / dx))
-        self.factorZ = int(np.ceil(self.params.general['dz'] / dz))
+        self.factorX = int(np.floor(self.params.general['dx'] / dx))
+        self.factorZ = int(np.floor(self.params.general['dz'] / dz))
         if KWAVE_AVAILABLE and self.kgrid is not None:
-            self.factorT = int(np.ceil((1 / self.kgrid.dt) / self.params.acoustic['f_saving']))
+            self.factorT = int(np.floor((1 / self.kgrid.dt) / self.params.acoustic['f_saving']))
         else:
             self.factorT = 1
             
