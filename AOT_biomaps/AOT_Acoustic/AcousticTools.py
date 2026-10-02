@@ -1,19 +1,52 @@
-from scipy.signal import hilbert
-from scipy.ndimage import zoom
-from scipy.io import loadmat as scipy_loadmat
+"""
+AOT-biomaps acoustic tools.
+
+Consolidated module:
+- MAT / IO helpers
+- pattern & file-name utilities
+- SIMPLE_SIM helpers (piezo-to-grid mapping + Numba kernel)
+- k-Wave generation pipeline (fused GPU pipeline, formerly in kwave_gpu.py)
+
+Removed (obsolete with the fused pipeline and the new parameter schema):
+- reshape_field_cpu / reshape_field_gpu
+    -> replaced by resample_bandlimited (spectral, anti-aliased)
+- calculate_envelope_squared_cpu/gpu, calculate_envelope_cpu/gpu and the old
+  calculate_envelope_squared / calculate_envelope wrappers with signature
+  (field, isGPU, GPUdevice) -> replaced by time-last-axis GPU versions.
+
+Layout conventions of the k-Wave pipeline:
+- k-Wave grid layout:  (Nx, Nz, Nt)  -- time on the LAST axis
+- pipeline/storage layout: (Nt, Nz, Nx)  -- time on the FIRST axis (after to_pipeline_layout)
+
+Orchestration order (fused pipeline):
+  sensor_data_to_grid -> calculate_envelope_squared (time last, full rate)
+  -> compute_target_sizes -> resample_field (time -> z -> x) -> to_pipeline_layout
+"""
+
 import os
 import numpy as np
+from scipy.io import loadmat as scipy_loadmat
 from scipy.stats import linregress
 from numba import njit, prange
 
 # Optional cupy import for GPU acceleration
 try:
     import cupy as cp
-    import cupyx.scipy.ndimage
     CUPY_AVAILABLE = True
 except ImportError:
+    cp = None
     CUPY_AVAILABLE = False
 
+
+def _get_xp(xp=None):
+    """Return the array namespace to use: explicit argument, cupy if available, else numpy."""
+    if xp is not None:
+        return xp
+    return cp if CUPY_AVAILABLE else np
+
+# ---------------------------------------------------------------------------
+# MAT / IO helpers
+# ---------------------------------------------------------------------------
 
 def loadmat(param_path_mat):
     """
@@ -30,264 +63,9 @@ def loadmat(param_path_mat):
     except Exception:
         raise ValueError(f"[AOT-biomaps] Could not load {param_path_mat}. Consider using scipy.io.loadmat or h5py for HDF5 files.")
 
-def reshape_field_gpu(field, factor, GPUdevice):
-    """
-    Downsample a 3D or 4D field on GPU using PyTorch or CuPy.
-    Args:
-        field: Input field (numpy array or torch/cupy array).
-        factor: Downsampling factor (tuple of ints).
-        GPUdevice: GPU device (e.g., "cuda:0").
-    Returns:
-        Downsampled field (numpy array).
-    """
-    cp.cuda.Device(GPUdevice).use()  # Set the GPU device
-    
-    if field is None:
-        raise ValueError(f"[AOT-biomaps] Acoustic field is not generated.")
-
-    if not isinstance(field, cp.ndarray):
-        field = cp.asarray(field, dtype=cp.float32)
-
-    if len(factor) == 3:
-        if field.ndim != 3:
-            raise ValueError(f"[AOT-biomaps] Expected a 3D field (T, Z, X).")
-    elif len(factor) == 4:
-        if field.ndim != 4:
-            raise ValueError(f"[AOT-biomaps] Expected a 4D field (T, Y, Z, X).")
-    else:
-        raise ValueError(f"[AOT-biomaps] Unsupported dimensions. Only 3D and 4D fields are supported.")
-
-    if not all(isinstance(f, int) and f >= 1 for f in factor):
-        raise ValueError(f"[AOT-biomaps] Downsampling factors must be integers >= 1.")
-
-    new_shape = tuple(s // f for s, f in zip(field.shape, factor))
-    zoom_factors = tuple(new_s / old_s for new_s, old_s in zip(new_shape, field.shape))
-    downsampled = cupyx.scipy.ndimage.zoom(field, zoom_factors, order=1)
-
-    return cp.asnumpy(downsampled).astype(np.float32)
-
-
-def reshape_field_cpu(field, factor):
-    """
-    Downsample a 3D or 4D field on CPU using scipy (optimized).
-    Args:
-        field: Input field (numpy array).
-        factor: Downsampling factor (tuple of ints).
-    Returns:
-        Downsampled field (numpy array).
-    """
-    if field is None:
-        raise ValueError(f"[AOT-biomaps] Acoustic field is not generated.")
-
-    if not isinstance(field, np.ndarray):
-        field = np.asarray(field, dtype=np.float32)
-
-    # Validate factor (must be integers >= 1)
-    if not all(isinstance(f, int) and f >= 1 for f in factor):
-        raise ValueError(f"[AOT-biomaps] Downsampling factors must be integers >= 1.")
-
-    # Calculate new shape
-    new_shape = [s // f for s, f in zip(field.shape, factor)]
-
-    # Use zoom with order=1 (linear) for downsampling
-    zoom_factors = [s_new / s_orig for s_new, s_orig in zip(new_shape, field.shape)]
-    downsampled = zoom(field, zoom_factors, order=1)
-
-    return downsampled.astype(np.float32)
-
-def calculate_envelope_squared_cpu(field):
-    """
-    Compute the squared envelope of the acoustic field on CPU in a vectorized way.
-    Optimized for 3D (T, X, Z) or 4D (T, X, Y, Z) arrays.
-
-    Args:
-        field: Acoustic field (numpy.ndarray). Expected shape: (T, X, Z) or (T, X, Y, Z).
-
-    Returns:
-        envelope_sq (numpy.ndarray): Squared envelope of the acoustic field.
-    """
-    try:
-        if field is None:
-            raise ValueError(f"[AOT-biomaps] Acoustic field is not generated.")
-
-        if not isinstance(field, np.ndarray):
-            field = np.asarray(field, dtype=np.float32)
-
-        if len(field.shape) not in [3, 4]:
-            raise ValueError(f"[AOT-biomaps] Field must be 3D (T, X, Z) or 4D (T, X, Y, Z).")
-
-        # Vectorized Hilbert transform along the time axis (axis=0)
-        analytic_signal = hilbert(field, axis=0)
-        envelope_sq = np.abs(analytic_signal) ** 2
-
-        return envelope_sq.astype(np.float32)
-
-    except Exception as e:
-        print(f"[AOT-biomaps] Error in calculate_envelope_squared_cpu: {e}")
-        raise
-
-def calculate_envelope_squared_gpu(field, GPUdevice, chunk_size=100):
-    """
-    Compute the squared envelope of the acoustic field on GPU using CuPy.
-    Returns the result on CPU (numpy.ndarray) and frees GPU memory.
-
-    Args:
-        field: Acoustic field (numpy.ndarray or cupy.ndarray) with shape (T, X, Z) or (T, X, Y, Z).
-        GPUdevice: The GPU device to use.
-        chunk_size: Number of spatial elements to process at once (to avoid OOM).
-
-    Returns:
-        envelope_sq (numpy.ndarray): Squared envelope on CPU.
-    """
-    if not CUPY_AVAILABLE:
-        print("[AOT-biomaps] Warning: CuPy not available. Falling back to CPU.")
-        return calculate_envelope_squared_cpu(field)
-    
-    try:
-        cp.cuda.Device(GPUdevice).use()
-        field_gpu = cp.asarray(field, dtype=cp.float32) 
-
-        T = field_gpu.shape[0]
-        field_flat = field_gpu.reshape(T, -1)
-
-        n_fft = T
-        h = cp.zeros(n_fft, dtype=cp.float32)
-        if n_fft % 2 == 0:
-            h[0] = h[n_fft // 2] = 1
-            h[1:n_fft // 2] = 2
-        else:
-            h[0] = 1
-            h[1:(n_fft + 1) // 2] = 2
-        h = h[:, cp.newaxis]  # (T, 1)
-
-        field_fft = cp.fft.fft(field_flat, axis=0)  
-        analytic_signal = cp.fft.ifft(field_fft * h, axis=0)
-        envelope_sq = cp.abs(analytic_signal) ** 2
-
-        return cp.asnumpy(envelope_sq.reshape(T, *field.shape[1:]))
-
-    except cp.cuda.memory.OutOfMemoryError:
-        print(f"[AOT-biomaps] Insufficient GPU memory. Falling back to CPU.")
-        return calculate_envelope_squared_cpu(field)
-    except Exception as e:
-        print(f"[AOT-biomaps] Error in calculate_envelope_squared_gpu: {e}")
-        raise
-
-def calculate_envelope_cpu(field):
-    """
-    Compute the envelope of the acoustic field on CPU in a vectorized way.
-    Optimized for 3D (T, X, Z) or 4D (T, X, Y, Z) arrays.
-
-    Args:
-        field: Acoustic field (numpy.ndarray). Expected shape: (T, X, Z) or (T, X, Y, Z).
-
-    Returns:
-        envelope (numpy.ndarray): Envelope of the acoustic field.
-    """
-    try:
-        if field is None:
-            raise ValueError(f"[AOT-biomaps] Acoustic field is not generated.")
-
-        if not isinstance(field, np.ndarray):
-            field = np.asarray(field, dtype=np.float32)
-
-        if len(field.shape) not in [3, 4]:
-            raise ValueError(f"[AOT-biomaps] Field must be 3D (T, X, Z) or 4D (T, X, Y, Z).")
-
-        # Vectorized Hilbert transform along the time axis (axis=0)
-        analytic_signal = hilbert(field, axis=0)
-        envelope = np.abs(analytic_signal)
-
-        return envelope.astype(np.float32)
-
-    except Exception as e:
-        print(f"[AOT-biomaps] Error in calculate_envelope_cpu: {e}")
-        raise
-
-def calculate_envelope_gpu(field, GPUdevice, chunk_size=100):
-    """
-    Compute the envelope of the acoustic field on GPU using CuPy.
-    Returns the result on CPU (numpy.ndarray) and frees GPU memory.
-
-    Args:
-        field: Acoustic field (numpy.ndarray or cupy.ndarray) with shape (T, X, Z) or (T, X, Y, Z).
-        GPUdevice: The GPU device to use.
-        chunk_size: Number of spatial elements to process at once (to avoid OOM).
-
-    Returns:
-        envelope (numpy.ndarray): Envelope on CPU.
-    """
-    if not CUPY_AVAILABLE:
-        print(f"[AOT-biomaps] Warning: CuPy not available. Falling back to CPU.")
-        return calculate_envelope_cpu(field)
-    
-    try:
-        cp.cuda.Device(GPUdevice).use()
-        field_gpu = cp.asarray(field, dtype=cp.float32) 
-
-        T = field_gpu.shape[0]
-        field_flat = field_gpu.reshape(T, -1)
-
-        n_fft = T
-        h = cp.zeros(n_fft, dtype=cp.float32)
-        if n_fft % 2 == 0:
-            h[0] = h[n_fft // 2] = 1
-            h[1:n_fft // 2] = 2
-        else:
-            h[0] = 1
-            h[1:(n_fft + 1) // 2] = 2
-        h = h[:, cp.newaxis]  # (T, 1)
-
-        field_fft = cp.fft.fft(field_flat, axis=0)  
-        analytic_signal = cp.fft.ifft(field_fft * h, axis=0)
-        envelope = cp.abs(analytic_signal)
-
-        return cp.asnumpy(envelope.reshape(T, *field.shape[1:]))
-
-    except cp.cuda.memory.OutOfMemoryError:
-        print(f"[AOT-biomaps] Insufficient GPU memory. Falling back to CPU.")
-        return calculate_envelope_cpu(field)
-    except Exception as e:
-        print(f"[AOT-biomaps] Error in calculate_envelope_gpu: {e}")
-        raise
-
-def calculate_envelope_squared(field, isGPU=None, GPUdevice=None, chunk_size=100):
-    """
-    Compute the squared envelope of the acoustic field.
-    Automatically uses GPU if available and requested, otherwise falls back to CPU.
-
-    Args:
-        field: Acoustic field (numpy.ndarray or cupy.ndarray) with shape (T, X, Z) or (T, X, Y, Z).
-        isGPU: Whether to use GPU for computation. (Default is None, which uses CPU.)
-        GPUdevice: The GPU device to use. (Default is None, which uses the default GPU.)
-        chunk_size: Number of spatial elements to process at once (to avoid OOM).
-
-    Returns:
-        envelope_sq (numpy.ndarray): Squared envelope of the acoustic field.
-    """
-    if isGPU is True and CUPY_AVAILABLE:
-        return calculate_envelope_squared_gpu(field=field, GPUdevice = GPUdevice, chunk_size=chunk_size)
-    else:
-        return calculate_envelope_squared_cpu(field=field)
-
-def calculate_envelope(field, isGPU=None, GPUdevice=None, chunk_size=100):
-    """
-    Compute the envelope of the acoustic field.
-    Automatically uses GPU if available and requested, otherwise falls back to CPU.
-
-    Args:
-        field: Acoustic field (numpy.ndarray or cupy.ndarray) with shape (T, X, Z) or (T, X, Y, Z).
-        isGPU: Whether to use GPU for computation. (Default is None, which uses CPU.)
-        GPUdevice: The GPU device to use. (Default is None, which uses the default GPU.)
-        chunk_size: Number of spatial elements to process at once (to avoid OOM).
-
-    Returns:
-        envelope (numpy.ndarray): Envelope of the acoustic field.
-    """
-    if isGPU is True and CUPY_AVAILABLE:
-        return calculate_envelope_gpu(field=field, GPUdevice = GPUdevice, chunk_size=chunk_size)
-    else:
-        return calculate_envelope_cpu(field=field)
+# ---------------------------------------------------------------------------
+# Pattern & file-name utilities
+# ---------------------------------------------------------------------------
 
 def get_pattern(pathFile):
     """
@@ -357,20 +135,21 @@ def get_angle(pathFile):
 
 def get_frequency(fileName, num_elements, dx):
     """
-    Calculate the spatial frequency from a file name.
+    Compute the spatial-frequency bin index of a pattern from its file name.
 
     Args:
-        fileName: File name containing the pattern.
+        fileName: File name containing the pattern (e.g. "field_<hex>_<angle>.hdr").
         num_elements: Number of elements in the probe.
-        dx: Element spacing in meters.
+        dx: Pixel size of the SIMULATION grid, in meters
+            (params.acoustic['dx_sim'] with the new parameter schema).
 
     Returns:
-        int: Spatial frequency in mm^-1.
+        int: Spatial-frequency bin index (dimensionless, in units of 1/(N*dx)).
     """
     profile = hex_to_binary_profile(fileName[6:-4], num_elements)
 
     if set(fileName[6:-4].lower().replace(" ", "")) == {'f'}:
-        fs_key = 0.0  # fs_key in mm^-1 (0.0 mm^-1)
+        fs_key = 0.0  # all-elements pattern -> zero spatial frequency
     else:
         ft_prof = np.fft.fft(profile)
         idx_max = np.argmax(np.abs(ft_prof[1:len(profile)//2])) + 1
@@ -379,7 +158,7 @@ def get_frequency(fileName, num_elements, dx):
         # freqs is in m^-1 because dx is in meters
         fs_m_inv = abs(freqs[idx_max])
 
-        fs_key = fs_m_inv  # Spatial frequency in mm^-1
+        fs_key = fs_m_inv  # Spatial frequency in m^-1
     return int(fs_key / (1/(len(profile)*dx)))
 
 def format_angle(a):
@@ -434,45 +213,85 @@ def hex_to_binary_profile(hex_string, n_piezos=192):
     except ValueError:
         return np.zeros(n_piezos, dtype=int)
 
-def calculate_angle_from_delays(delays, c=1540):
+def calculate_angle_from_delays(delays, num_elements=192, pitch=0.2e-3, c=1540):
     """
-    Calculate the angle of incidence θ (in degrees) from an array of 192 delays.
+    Calculate the angle of incidence theta (in degrees) from an array of delays.
     Uses linear regression to estimate the slope of the delays.
 
     Args:
-        delays: Array of 192 delays (in seconds).
+        delays: Array of per-element delays (in seconds).
+        num_elements: Number of elements in the probe (default: 192).
+        pitch: Element spacing in meters (default: 0.2 mm).
         c: Speed of sound (m/s).
 
     Returns:
         theta: Angle in degrees (positive to the right, negative to the left).
     """
-    pitch = 0.2e-3  # Element spacing (m)
-    x = np.linspace(-(192-1)/2 * pitch, (192-1)/2 * pitch, 192)  # Element positions (m)
+    x = np.linspace(-(num_elements - 1) / 2 * pitch, (num_elements - 1) / 2 * pitch, num_elements)
 
-    # Linear regression to estimate the slope (sinθ / c)
+    # Linear regression to estimate the slope (sin(theta) / c)
     slope, _, _, _, _ = linregress(x, delays)
 
     # Calculate the angle (in degrees)
     theta = np.rad2deg(np.arcsin(slope * c))
 
     # Determine the sign based on the position of the maximum delay
-    max_index = np.argmax(delays)
-    if max_index < 95:  # Left
+    max_index = int(np.argmax(delays))
+    if max_index < num_elements // 2:  # Left
         theta = -abs(theta)
-    elif max_index > 95:  # Right
+    elif max_index > num_elements // 2:  # Right
         theta = abs(theta)
-    else:  # Center (θ ≈ 0)
+    else:  # Center (theta ~ 0)
         theta = 0.0
 
     return int(np.round(theta, 0))
 
+# ---------------------------------------------------------------------------
+# SIMPLE_SIM helpers
+# ---------------------------------------------------------------------------
+
+def get_piezo_to_grid_mapping(Nx, dx, num_elements, element_width, pitch, probe_start_x, active_list):
+    """Map piezo elements to grid pixels with exact fractional coverage."""
+    mappings = []
+
+    for i in range(num_elements):
+        if active_list[i] == 0:
+            continue
+
+        el_start_x = probe_start_x + i * pitch
+        el_end_x = el_start_x + element_width
+
+        start_idx = int(np.floor(el_start_x / dx))
+        end_idx = int(np.floor(el_end_x / dx))
+
+        # Single pixel coverage
+        if start_idx == end_idx:
+            if 0 <= start_idx < Nx:
+                mappings.append((i, start_idx, element_width / dx))
+
+        # Multi-pixel coverage
+        else:
+            if 0 <= start_idx < Nx:
+                fraction_start = ((start_idx + 1) * dx - el_start_x) / dx
+                mappings.append((i, start_idx, fraction_start))
+
+            for j in range(start_idx + 1, end_idx):
+                if 0 <= j < Nx:
+                    mappings.append((i, j, 1.0))
+
+            if 0 <= end_idx < Nx and (el_end_x - end_idx * dx) > 1e-9:
+                fraction_end = (el_end_x - end_idx * dx) / dx
+                mappings.append((i, end_idx, fraction_end))
+
+    return mappings
+
 @njit(parallel=True, fastmath=True)
-def compute_field_numba(field, t, active_indices, apod_window, weight_base, 
-                        x_start_probe_fine, x_pivot_px_fine, dx_fine, c0, angle_rad, 
-                        n_t_burst, enveloppe_t, el_width_px_fine, cos_a, sin_a, 
+def compute_field_numba(field, t, active_indices, apod_window, weight_base,
+                        x_start_probe_fine, x_pivot_px_fine, dx_fine, c0, angle_rad,
+                        n_t_burst, enveloppe_t, el_width_px_fine, cos_a, sin_a,
                         factor, Nt, Nz, Nx, Nx_fine, Nz_fine):
     """
-    Kernel compilé en C pour le calcul intensif de la propagation acoustique.
+    Kernel Numba (C) for the SIMPLE_SIM propagation loop.
     """
     for idx in prange(len(active_indices)):
         i = active_indices[idx]
@@ -486,7 +305,7 @@ def compute_field_numba(field, t, active_indices, apod_window, weight_base,
             t_eff = t[t_idx] - delay_i
             if t_eff <= 0 or t_eff >= t[-1]:
                 continue
-                
+
             dist_travelled = c0 * t_eff
             z_px_fine = int((dist_travelled * cos_a) / dx_fine)
             x_px_fine_base = int((x_i_px_fine * dx_fine + dist_travelled * sin_a) / dx_fine)
@@ -495,14 +314,220 @@ def compute_field_numba(field, t, active_indices, apod_window, weight_base,
                 st = t_idx + b_shift
                 if st >= Nt:
                     continue
-                    
+
                 val_final = enveloppe_t[b_shift] * val_i
 
                 for offset_x in range(el_width_px_fine):
                     curr_x = x_px_fine_base + offset_x
-                    
+
                     if 0 <= z_px_fine < Nz_fine and 0 <= curr_x < Nx_fine:
                         zf = z_px_fine // factor
                         xf = curr_x // factor
-                        
+
                         field[st, zf, xf] += val_final
+
+# ---------------------------------------------------------------------------
+# k-Wave generation pipeline (fused GPU pipeline)
+# ---------------------------------------------------------------------------
+# Convention: k-Wave grid layout is (Nx, Nz, Nt) with time on the LAST axis,
+# so that Hilbert/envelope and time resampling operate along the
+# memory-contiguous last axis (fastest for rfft on both CPU and GPU).
+# The final storage layout (Nt, Nz, Nx) is produced by to_pipeline_layout.
+# ---------------------------------------------------------------------------
+
+def sensor_data_to_grid(data, Nx, Nz, backend="python", xp=None):
+    """
+    Normalize k-Wave sensor output to the grid layout (Nx, Nz, Nt), time last.
+
+    The pure-Python k-Wave backend returns 'p' flattened in C-order (row-major),
+    while the compiled C++/CUDA binaries apply an internal Fortran-order
+    (column-major) flatten and return (Ns, Nt).
+    This function detects the layout and forces the correct (Nx, Nz, Nt) C-contiguous array.
+
+    Args:
+        data: dict with key 'p', or raw array from k-Wave.
+        Nx, Nz: reference sizes (from medium.kgrid).
+        backend: "python" or "cpp".
+        xp: array namespace (cupy or numpy). Defaults to cupy if available.
+
+    Returns:
+        array (Nx, Nz, Nt) in namespace xp.
+    """
+    xp = _get_xp(xp)
+    Ns = Nx * Nz
+    
+    # 1. Aligner les axes en (Ns, Nt) pour le cpp
+    if data.ndim == 2 and data.shape[1] == Ns and data.shape[0] != Ns:
+        data = data.T
+        
+    data_array = xp.asarray(data, dtype=xp.float32)
+    
+    # 2. Reshape conditionnel
+    if backend in ["cpp", "cuda"]:
+        # CORRECTION FORTRAN vs C-ORDER (Le C++ aplatit la grille en faisant varier Nx le plus vite)
+        # On reshape en (Nz, Nx, Nt) pour absorber la contiguïté mémoire, puis on transpose.
+        return data_array.reshape((Nz, Nx, -1)).transpose(1, 0, 2)
+    else:
+        # Le backend python conserve l'ordre spatial natif (Nx, Nz)
+        return data_array.reshape((Nx, Nz, -1))
+
+
+def to_pipeline_layout(field, xp=None):
+    """
+    Convert a grid-layout field (Nx, Nz, Nt) to the pipeline/storage layout
+    (Nt, Nz, Nx), C-contiguous.
+
+    Args:
+        field: array (Nx, Nz, Nt), time last.
+        xp: array namespace (cupy or numpy). Defaults to cupy if available.
+
+    Returns:
+        array (Nt, Nz, Nx), C-contiguous.
+    """
+    xp = _get_xp(xp)
+    return xp.ascontiguousarray(field.transpose(2, 1, 0))
+
+def hilbert_analytic(field, xp=None):
+    """
+    FFT-based Hilbert transform (analytic signal) along `axis`.
+
+    Args:
+        field: real input array.
+        axis: axis of the time dimension (default: last axis).
+        xp: array namespace (cupy or numpy). Defaults to cupy if available.
+
+    Returns:
+        complex analytic signal, same shape as input.
+    """
+    xp = _get_xp(xp)
+    Nt = field.shape[-1]
+    h = xp.zeros((1, 1, Nt), dtype=xp.float32)
+    h[..., 0] = 1.0
+    if Nt % 2 == 0:
+        h[..., Nt // 2] = 1.0
+        h[..., 1:Nt // 2] = 2.0
+    else:
+        h[..., 1:(Nt + 1) // 2] = 2.0
+    return xp.fft.ifft(xp.fft.fft(field, axis=-1) * h, axis=-1)
+
+def calculate_envelope_squared(field, xp=None):
+    """
+    Squared envelope |s_a(t)|^2 of a grid-layout field (..., Nt), time last.
+
+    New fused-pipeline signature: (field, xp=None). This replaces the old
+    (field, isGPU, GPUdevice, chunk_size) time-first API.
+
+    Args:
+        field: array with time on the LAST axis (grid layout (Nx, Nz, Nt)).
+        xp: array namespace (cupy or numpy). Defaults to cupy if available.
+
+    Returns:
+        float32 array, same shape as input.
+    """
+    xp = _get_xp(xp)
+    analytic = hilbert_analytic(field, xp)
+    return (analytic.real ** 2 + analytic.imag ** 2).astype(xp.float32)
+    
+
+def calculate_envelope(field, xp=None):
+    """
+    Envelope |s_a(t)| of a grid-layout field (..., Nt), time last.
+
+    New fused-pipeline signature: (field, xp=None). This replaces the old
+    (field, isGPU, GPUdevice, chunk_size) time-first API.
+
+    Args:
+        field: array with time on the LAST axis (grid layout (Nx, Nz, Nt)).
+        xp: array namespace (cupy or numpy). Defaults to cupy if available.
+
+    Returns:
+        float32 array, same shape as input.
+    """
+    xp = _get_xp(xp)
+    analytic = hilbert_analytic(field, xp)
+    return xp.sqrt(analytic.real ** 2 + analytic.imag ** 2).astype(xp.float32)
+
+def resample_bandlimited(field, axis, M, xp=None):
+    """
+    Band-limited resampling of `field` along `axis` from N to M samples.
+
+    Pipeline: rfft -> raised-cosine anti-alias window rolling off between
+    0.7*kc and kc (kc = new Nyquist bin) -> irfft(n=M) -> in-place amplitude
+    correction `*= float32(M/N)`.
+
+    The amplitude correction is essential: irfft(n=M) normalizes by M while
+    the rfft bins were normalized by N, so without it a decimation M < N
+    would inflate the amplitudes by N/M (this was the old bug).
+
+    Args:
+        field: input array (real, time/space on `axis`).
+        axis: axis to resample (default: last axis = time in grid layout).
+        M: target number of samples on `axis` (M < N decimates, M > N upsamples).
+        xp: array namespace (cupy or numpy). Defaults to cupy if available.
+
+    Returns:
+        array with `axis` resampled to M samples.
+    """
+    xp = _get_xp(xp)
+    N = field.shape[axis]
+    if M == N:
+        return field
+    E = xp.fft.rfft(field, axis=axis)
+    K = E.shape[axis]                 # N//2 + 1 bins
+    Mk = M // 2 + 1                   # bins of the target
+    cut = min(K, Mk)                  # carried bins
+    kc = min(N, M) / 2.0              # cutoff = min of the two Nyquist frequencies
+
+    kb = xp.arange(cut, dtype=xp.float32)
+    w = xp.where(kb <= 0.70 * kc, 1.0,
+                 xp.where(kb <= kc,
+                          0.5 * (1 + xp.cos(xp.pi * (kb - 0.70 * kc) / (0.30 * kc))),
+                          0.0))
+    w = w.reshape([cut if ax == axis else 1 for ax in range(field.ndim)])
+
+    shape = list(field.shape)
+    shape[axis] = Mk
+    E2 = xp.zeros(tuple(shape), dtype=E.dtype)
+    sl = [slice(None)] * field.ndim
+    sl[axis] = slice(0, cut)
+    E2[tuple(sl)] = E[tuple(sl)] * w
+
+    out = xp.fft.irfft(E2, n=M, axis=axis)
+    out *= xp.float32(M / N)          # in-place: stays float32
+    return out
+
+def resample_field(field, target_sizes, xp=None):
+    """
+    Band-limited resampling of a grid-layout field (Nx, Nz, Nt) to the save
+    grid. Decimation order: time (axis 2) -> z (axis 1) -> x (axis 0).
+
+    Time is resampled via the anti-aliased spectral path, which is why the
+    envelope must be computed BEFORE this call (full-rate Hilbert).
+
+    Args:
+        field: grid-layout array (Nx, Nz, Nt), time last.
+        target_sizes: (M_t, M_z, M_x). None on an axis = keep it unchanged.
+        xp: array namespace (cupy or numpy). Defaults to cupy if available.
+
+    Returns:
+        array (M_x, M_z, M_t) grid layout, resampled.
+    """
+    xp = _get_xp(xp)
+    Nt_t, Nz_t, Nx_t = target_sizes
+    field = resample_bandlimited(field, 2, Nt_t, xp)
+    field = resample_bandlimited(field, 1, Nz_t, xp)
+    field = resample_bandlimited(field, 0, Nx_t, xp)
+    return field
+
+def compute_target_sizes(Nx, Nz, Nt, dx, dz, dt, target_dt, target_dx, target_dz):
+    """
+    Target grid sizes + EFFECTIVE steps (<= targets) from target resolutions.
+    Returns (sizes, steps) with sizes=(Nt_t, Nz_t, Nx_t), steps=(dt', dz', dx').
+    """
+    Nt_t = max(2, int(np.floor(Nt * dt / target_dt + 1e-9)))
+    Nz_t = max(2, int(np.floor(Nz * dz / target_dz + 1e-9)))
+    Nx_t = max(2, int(np.floor(Nx * dx / target_dx + 1e-9)))
+    dt_p = (Nt * dt) / Nt_t
+    dz_p = (Nz * dz) / Nz_t
+    dx_p = (Nx * dx) / Nx_t
+    return (Nt_t, Nz_t, Nx_t), (dt_p, dz_p, dx_p)

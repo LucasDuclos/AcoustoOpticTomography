@@ -65,13 +65,6 @@ class IrregularWave(AcousticField):
         """
         raise NotImplementedError("[AOT-biomaps] 2D acoustic field generation not implemented for IrregularWave.")
 
-    def _generate_3Dacoustic_field_KWAVE(self):
-        """
-        Generate a 3D acoustic field using k-Wave.
-        Not implemented for IrregularWave.
-        """
-        raise NotImplementedError("[AOT-biomaps] 3D acoustic field generation not implemented for IrregularWave.")
-
     def _save2D_HDR_IMG(self, filePath):
         """
         Save the acoustic field to HDR/IMG files.

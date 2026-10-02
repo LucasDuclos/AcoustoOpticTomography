@@ -1256,26 +1256,23 @@ class AlgebraicRecon(Recon):
         if not self.MSE:
             raise ValueError("[AOT-biomaps] MSE is empty. Please calculate MSE first.")
 
+        extent = self._eff_extent()
         best_idx = np.argmin(self.MSE)
         best_recon = self.reconPhantom[best_idx]
+        gt = self._gt(withTumor=True)
 
-        # Crée la figure et les axes
         fig, axs = plt.subplots(1, 3, figsize=figSize)
 
-        # Left: Best reconstructed image (normalized)
         im0 = axs[0].imshow(best_recon,
-                            extent=(self.experiment.params.general['Xrange'][0]*1000, self.experiment.params.general['Xrange'][1]*1000,
-                                    self.experiment.params.general['Zrange'][1]*1000, self.experiment.params.general['Zrange'][0]*1000),
+                            extent=extent,
                             cmap='hot', aspect='equal', vmin=0, vmax=1)
         axs[0].set_title(f"Min MSE Reconstruction\nIter {self.indices[best_idx]}, MSE={np.min(self.MSE):.4f}")
         axs[0].set_xlabel("x (mm)", fontsize=12)
         axs[0].set_ylabel("z (mm)", fontsize=12)
         axs[0].tick_params(axis='both', which='major', labelsize=8)
 
-        # Middle: Ground truth (normalized)
-        im1 = axs[1].imshow(self.experiment.OpticImage.phantom,
-                            extent=(self.experiment.params.general['Xrange'][0]*1000, self.experiment.params.general['Xrange'][1]*1000,
-                                    self.experiment.params.general['Zrange'][1]*1000, self.experiment.params.general['Zrange'][0]*1000),
+        im1 = axs[1].imshow(gt,
+                            extent=extent,
                             cmap='hot', aspect='equal', vmin=0, vmax=1)
         axs[1].set_title(r"Ground Truth ($\lambda$)")
         axs[1].set_xlabel("x (mm)", fontsize=12)
@@ -1283,20 +1280,17 @@ class AlgebraicRecon(Recon):
         axs[1].tick_params(axis='both', which='major', labelsize=8)
         axs[1].tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
 
-        # Right: Reconstruction at last iteration
         lastRecon = self.reconPhantom[-1]
-        if self.experiment.OpticImage.phantom.shape != lastRecon.shape:
+        if gt.shape != lastRecon.shape:
             lastRecon = lastRecon.T
         im2 = axs[2].imshow(lastRecon,
-                            extent=(self.experiment.params.general['Xrange'][0]*1000, self.experiment.params.general['Xrange'][1]*1000,
-                                    self.experiment.params.general['Zrange'][1]*1000, self.experiment.params.general['Zrange'][0]*1000),
+                            extent=extent,
                             cmap='hot', aspect='equal', vmin=0, vmax=1)
-        axs[2].set_title(f"Last Reconstruction\nIter {self.numIterations * self.numSubsets}, MSE={np.mean((self.experiment.OpticImage.phantom - lastRecon) ** 2):.4f}")
+        axs[2].set_title(f"Last Reconstruction\nIter {self.numIterations * self.numSubsets}, MSE={np.mean((gt - lastRecon) ** 2):.4f}")
         axs[2].set_xlabel("x (mm)", fontsize=12)
         axs[2].set_ylabel("z (mm)", fontsize=12)
         axs[2].tick_params(axis='both', which='major', labelsize=8)
 
-        # Ajoute une colorbar horizontale centrée en dessous des trois plots
         fig.subplots_adjust(bottom=0.2)
         cbar_ax = fig.add_axes([0.25, 0.08, 0.5, 0.03])
         cbar = fig.colorbar(im2, cax=cbar_ax, orientation='horizontal')
@@ -1332,7 +1326,7 @@ class AlgebraicRecon(Recon):
         """
         import matplotlib as mpl
         mpl.rcParams['animation.embed_limit'] = 200
-
+        extent = self._eff_extent()
         if len(self.reconPhantom) == 0 or len(self.reconPhantom) < 2:
             raise ValueError("[AOT-biomaps] Not enough lambda matrices available for animation.")
 
@@ -1354,19 +1348,7 @@ class AlgebraicRecon(Recon):
             vmax = np.max(frames_subset)
 
         fig, ax = plt.subplots(figsize=figSize, dpi=100)
-        im = ax.imshow(
-            frames_subset[0],
-            extent=(
-                self.experiment.params.general['Xrange'][0],
-                self.experiment.params.general['Xrange'][1],
-                self.experiment.params.general['Zrange'][1],
-                self.experiment.params.general['Zrange'][0]
-            ),
-            vmin=vmin,
-            vmax=vmax,
-            aspect='equal',
-            cmap='hot'
-        )
+        im = ax.imshow(frames_subset[0], extent=extent, vmin=vmin, vmax=vmax, aspect='equal', cmap='hot')
         title = ax.set_title(f"Iteration {indices_subset[0]}")
         ax.set_xlabel("x (mm)")
         ax.set_ylabel("z (mm)")
@@ -1467,66 +1449,65 @@ class AlgebraicRecon(Recon):
 
         plt.show()
 
-    def show_SSIM_bestRecon(self, isSaving=True, figSize=(15, 5), show_logs=True):
-        
+    def show_SSIM_bestRecon(self, withTumor=True, isSaving=True, figSize=(15, 5), show_logs=True):
+        """Display best-SSIM reconstruction, cropped ground truth and last reconstruction.
+        withTumor: if True, compare against the phantom (tumor case); else against the laser intensity."""
         if not self.SSIM:
             raise ValueError("[AOT-biomaps] SSIM is empty. Please calculate SSIM first.")
 
+        extent = self._eff_extent()
+        gt = self._gt(withTumor=withTumor)
+        recon_list = self.reconPhantom if withTumor else self.reconLaser
+
+        if recon_list is None or len(recon_list) == 0:
+            raise ValueError("[AOT-biomaps] Reconstructed image list is empty. Run reconstruction first.")
+
         best_idx = np.argmax(self.SSIM)
-        best_recon = self.reconPhantom[best_idx]
+        best_recon = recon_list[best_idx]
 
-        # ----------------- Plotting -----------------
-        _, axs = plt.subplots(1, 3, figsize=figSize)  # 1 row, 3 columns
+        _, axs = plt.subplots(1, 3, figsize=figSize)
 
-        # Left: Best reconstructed image (normalized)
-        im0 = axs[0].imshow(best_recon, 
-                            extent=(self.experiment.params.general['Xrange'][0], self.experiment.params.general['Xrange'][1], self.experiment.params.general['Zrange'][1], self.experiment.params.general['Zrange'][0]),
+        # Left: best SSIM reconstruction
+        im0 = axs[0].imshow(best_recon, extent=extent,
                             cmap='hot', aspect='equal', vmin=0, vmax=1)
-        axs[0].set_title(f"Max SSIM Reconstruction\nIter {self.indices[best_idx]}, SSIM={np.min(self.MSE):.4f}")
-        axs[0].set_xlabel("x (mm)")
-        axs[0].set_ylabel("z (mm)")
+        axs[0].set_title(f"Max SSIM Reconstruction\nIter {self.indices[best_idx]}, SSIM={self.SSIM[best_idx]:.4f}")
+        axs[0].set_xlabel("X (mm)")
+        axs[0].set_ylabel("Z (mm)")
         plt.colorbar(im0, ax=axs[0])
 
-        # Middle: Ground truth (normalized)
-        im1 = axs[1].imshow(self.experiment.OpticImage.laser.intensity, 
-                            extent=(self.experiment.params.general['Xrange'][0], self.experiment.params.general['Xrange'][1], self.experiment.params.general['Zrange'][1], self.experiment.params.general['Zrange'][0]),
+        # Middle: ground truth (cropped to effective geometry)
+        im1 = axs[1].imshow(gt, extent=extent,
                             cmap='hot', aspect='equal', vmin=0, vmax=1)
         axs[1].set_title(r"Ground Truth ($\lambda$)")
-        axs[1].set_xlabel("x (mm)")
-        axs[1].set_ylabel("z (mm)")
+        axs[1].set_xlabel("X (mm)")
+        axs[1].set_ylabel("Z (mm)")
         plt.colorbar(im1, ax=axs[1])
 
-        # Right: Reconstruction at iter 350
-        lastRecon = self.reconPhantom[-1] 
-        im2 = axs[2].imshow(lastRecon,
-                            extent=(self.experiment.params.general['Xrange'][0], self.experiment.params.general['Xrange'][1], self.experiment.params.general['Zrange'][1], self.experiment.params.general['Zrange'][0]),
+        # Right: last reconstruction
+        lastRecon = recon_list[-1]
+        im2 = axs[2].imshow(lastRecon, extent=extent,
                             cmap='hot', aspect='equal', vmin=0, vmax=1)
         axs[2].set_title(f"Last Reconstruction\nIter {self.numIterations * self.numSubsets}, SSIM={self.SSIM[-1]:.4f}")
-        axs[2].set_xlabel("x (mm)")
-        axs[2].set_ylabel("z (mm)")
+        axs[2].set_xlabel("X (mm)")
+        axs[2].set_ylabel("Z (mm)")
         plt.colorbar(im2, ax=axs[2])
 
         plt.tight_layout()
-        if isSaving:
-            now = datetime.now()    
+        if isSaving and self.saveDir is not None:
+            now = datetime.now()
             date_str = now.strftime("%Y_%d_%m_%y")
-            SavingFolder = os.path.join(self.saveDir, f'{len(self.experiment.AcousticFields)}_SCANS_comparison_SSIM_BestANDLastRecon_{self.optimizer.name}_{date_str}.png')
+            suffix = 'withTumor' if withTumor else 'withoutTumor'
+            SavingFolder = os.path.join(self.saveDir,
+                f"{len(self.experiment.AcousticFields)}_SCANS_comparison_SSIM_BestANDLastRecon_{self.optimizer.name}_{suffix}_{date_str}.png")
             plt.savefig(SavingFolder, dpi=300)
             if show_logs:
                 print(f"[AOT-biomaps] SSIM plot saved to {SavingFolder}")
+        elif isSaving:
+            print("[AOT-biomaps] Warning: saveDir is None. Figure not saved.")
         plt.show()
 
     def plot_CRC_vs_Noise(self, use_ROI=True, fin=None, min_distance=0.01, figSize = (4,3),
                      log_scale_x=False, log_scale_y=False, isSaving=False, show_logs=True):
-        """
-        Plot CRC vs Noise with min_distance always calculated in linear space.
-
-        Args:
-            min_distance: Minimum linear distance between points (always calculated in linear space)
-            log_scale_x: Display X axis in logarithmic scale (but distance calculation remains linear)
-            log_scale_y: Display Y axis in logarithmic scale
-        """
-        # Vérifications initiales
         if self.reconLaser is None or self.reconLaser == []:
             raise ValueError("[AOT-biomaps] Reconstructed laser is empty. Run reconstruction first.")
         if isinstance(self.reconLaser, list) and len(self.reconLaser) == 1:
@@ -1541,60 +1522,50 @@ class AlgebraicRecon(Recon):
         iter_range = self.indices[:fin+1]
 
         if self.CRC is None:
-            self.calculateCRC(use_ROI=use_ROI)
+            self.calculate_CRC(use_ROI=use_ROI)
 
-        # Calcul des valeurs de bruit
+        gt_laser = self._gt(withTumor=False)
+
         noise_values = []
         for i in range(len(iter_range)):
             recon_without_tumor = self.reconLaser[i]
-            noise = np.mean(np.abs(recon_without_tumor - self.experiment.OpticImage.laser.intensity))
-            noise_values.append(max(noise, 1e-10))  # Évite les valeurs nulles
+            noise = np.mean(np.abs(recon_without_tumor - gt_laser))
+            noise_values.append(max(noise, 1e-10))
 
-        # Sous-échantillonnage TOUJOURS basé sur la distance linéaire
         sampled_indices = [0]
         for i in range(1, len(noise_values)):
             last_noise = noise_values[sampled_indices[-1]]
             current_noise = noise_values[i]
-
-            # Calcul de la distance EN LINÉAIRE (peu importe l'échelle d'affichage)
             distance = abs(current_noise - last_noise)
-
             if distance > min_distance:
                 sampled_indices.append(i)
 
         sampled_indices.append(len(noise_values) - 1)
 
-        # Vérification si l'avant-dernier point est trop proche du dernier
         if len(sampled_indices) > 1:
             last_idx = sampled_indices[-1]
             prev_idx = sampled_indices[-2]
             last_noise = noise_values[last_idx]
             prev_noise = noise_values[prev_idx]
-
             if abs(last_noise - prev_noise) <= min_distance:
-                sampled_indices = sampled_indices[:-1]  # Supprime l'avant-dernier
+                sampled_indices = sampled_indices[:-1]
 
-        # Extraction des données
         sampled_noise = [noise_values[i] for i in sampled_indices]
         sampled_CRC = [self.CRC[i] for i in sampled_indices]
         sampled_iter = [iter_range[i] for i in sampled_indices]
 
-        # Création de la figure
         plt.figure(figsize=figSize)
         plt.plot(sampled_noise, sampled_CRC, 'o-', color='blue', label=f'{self.optimizer.name}')
 
-        # Positionnement des labels
         for x, y, it in zip(sampled_noise, sampled_CRC, sampled_iter):
             plt.text(x * 1.01, y * 1.01, str(it),
                     fontsize=8, ha='left', va='bottom',
                     bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
 
-        # Configuration des axes
         plt.xlabel("Noise (mean absolute error)")
         plt.ylabel("CRC (Contrast Recovery Coefficient)")
         plt.title(f"CRC vs Noise (linear min_distance={min_distance})")
 
-        # Application des échelles (uniquement pour l'affichage)
         if log_scale_x:
             plt.xscale('log')
         if log_scale_y:
@@ -1603,7 +1574,6 @@ class AlgebraicRecon(Recon):
         plt.grid(True, which="both", ls="--", alpha=0.5)
         plt.legend()
 
-        # Sauvegarde
         if isSaving:
             if self.saveDir is None:
                 print("[AOT-biomaps] Warning: saveDir is None. Configure saving path to save the figure.")
@@ -1623,33 +1593,19 @@ class AlgebraicRecon(Recon):
         plt.show()
 
     def show_reconstruction_progress(self, start=0, fin=None, save_path=None, with_tumor=True, show_logs=True):
-        """
-        Show the reconstruction progress for either with or without tumor.
-        If isPropMSE is True, the frame selection is adapted to MSE changes.
-        Otherwise, indices are evenly spaced between start and fin.
-
-        Parameters:
-            start: int, starting iteration index
-            fin: int, ending iteration index (inclusive)
-            duration: int, duration of the animation in milliseconds
-            save_path: str, path to save the figure (optional)
-            with_tumor: bool, if True, show reconstruction with tumor; else without (default: True)
-            isPropMSE: bool, if True, use adaptive speed based on MSE (default: True)
-        """
         import matplotlib as mpl
         mpl.rcParams['animation.embed_limit'] = 200
 
         if fin is None:
             fin = len(self.reconPhantom) - 1 if with_tumor else len(self.reconLaser) - 1
 
-        # Check data availability
         if with_tumor:
             if self.reconPhantom is None or self.reconPhantom == []:
                 raise ValueError("[AOT-biomaps] Reconstructed phantom is empty. Run reconstruction first.")
             if isinstance(self.reconPhantom, list) and len(self.reconPhantom) == 1:
                 raise ValueError("[AOT-biomaps] Reconstructed Image with tumor is a single frame. Run reconstruction with isSavingEachIteration=True.")
             recon_list = self.reconPhantom
-            ground_truth = self.experiment.OpticImage.phantom
+            ground_truth = self._gt(withTumor=True)
             title_suffix = "with_tumor"
         else:
             if self.reconLaser is None or self.reconLaser == []:
@@ -1657,10 +1613,9 @@ class AlgebraicRecon(Recon):
             if isinstance(self.reconLaser, list) and len(self.reconLaser) == 1:
                 raise ValueError("[AOT-biomaps] Reconstructed Image without tumor is a single frame. Run reconstruction with isSavingEachIteration=True.")
             recon_list = self.reconLaser
-            ground_truth = self.experiment.OpticImage.laser.intensity
+            ground_truth = self._gt(withTumor=False)
             title_suffix = "without_tumor"
 
-        # Collect data for all iterations
         recon_list_data = []
         diff_abs_list = []
         mse_list = []
@@ -1677,23 +1632,20 @@ class AlgebraicRecon(Recon):
             mse_list.append(mse)
             noise_list.append(noise)
 
-        # Calculate global min/max for difference images
         global_min_diff = np.min([d.min() for d in diff_abs_list[1:]])
         global_max_diff = np.max([d.max() for d in diff_abs_list[1:]])
 
-        # Evenly spaced indices
         num_frames = min(5, fin - start + 1)
         all_indices = np.linspace(start, fin, num_frames, dtype=int).tolist()
 
-        # Plot
         nrows = min(5, len(all_indices))
-        ncols = 3  # Recon, |Recon - GT|, Ground Truth
+        ncols = 3
         vmin, vmax = 0, 1
 
         fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 3 * nrows))
 
         for i, iter_idx in enumerate(all_indices[:nrows]):
-            idx_in_list = iter_idx - start  # Index in the collected data lists
+            idx_in_list = iter_idx - start
             recon = recon_list_data[idx_in_list]
             diff_abs = diff_abs_list[idx_in_list]
             mse_val = mse_list[idx_in_list]
@@ -1720,7 +1672,6 @@ class AlgebraicRecon(Recon):
         plt.tight_layout()
 
         if save_path:
-            # Add suffix to filename based on with_tumor parameter
             if '.' in save_path:
                 name, ext = save_path.rsplit('.', 1)
                 save_path = f"{name}_{title_suffix}.{ext}"
@@ -1728,7 +1679,7 @@ class AlgebraicRecon(Recon):
                 save_path = f"{save_path}_{title_suffix}"
             plt.savefig(save_path, dpi=300)
             if show_logs:
-                print(f"[AOT-biomaps] Figure saved to: {save_path}")
+                print(f"[AOT-biomaps] Figure saved to {save_path}")
 
         plt.show()
 
@@ -1952,27 +1903,15 @@ class AlgebraicRecon(Recon):
         plt.show()
 
     def show(self, withTumor=True, savePath=None, scale='same', figsize=(8, 4)):
-        """
-        Display the reconstructed images with a properly positioned colorbar.
-        Args:
-            withTumor (bool): If True, displays reconPhantom. If False, displays reconLaser. Default is True.
-            savePath (str): Path to save the figure. If None, the figure is not saved. Default is None.
-            scale (str): Scale for the aspect ratio of the plots. Default is 'same'. Options are 'same' or 'auto'.
-            figsize (tuple): Figure size (width, height). Default is (8, 4).
+        extent = self._eff_extent()
 
-        Note:
-            Requires matplotlib to be installed. If matplotlib is not available, this method will raise an ImportError.
-        """
-        extent = [self.experiment.params.general['Xrange'][0] * 1e3, self.experiment.params.general['Xrange'][1] * 1e3, self.experiment.params.general['Zrange'][1] * 1e3, self.experiment.params.general['Zrange'][0] * 1e3]
-
-        # Determine the image to display
         if withTumor:
             if self.reconPhantom is None:
                 raise ValueError("[AOT-biomaps] Reconstructed phantom with tumor is empty. Run reconstruction first.")
             if isinstance(self.reconPhantom, (list, tuple)) and len(self.reconPhantom) == 0:
                 raise ValueError("[AOT-biomaps] Reconstructed phantom with tumor is empty. Run reconstruction first.")
             image = self.reconPhantom[-1] if isinstance(self.reconPhantom, list) else self.reconPhantom
-            ground_truth = self.experiment.OpticImage.phantom if self.experiment.OpticImage else None
+            ground_truth = self._gt(withTumor=True)
             title_recon = "Reconstructed phantom with tumor"
             title_gt = "Phantom with tumor"
         else:
@@ -1981,11 +1920,10 @@ class AlgebraicRecon(Recon):
             if isinstance(self.reconLaser, (list, tuple)) and len(self.reconLaser) == 0:
                 raise ValueError("[AOT-biomaps] Reconstructed laser without tumor is empty. Run reconstruction first.")
             image = self.reconLaser[-1] if isinstance(self.reconLaser, list) else self.reconLaser
-            ground_truth = self.experiment.OpticImage.laser.intensity if self.experiment.OpticImage else None
+            ground_truth = self._gt(withTumor=False)
             title_recon = "Reconstructed laser without tumor"
             title_gt = "Laser without tumor"
 
-        # Gestion propre des sous-graphes avec squeeze=False pour garantir un tableau 2D
         n_cols = 2 if ground_truth is not None else 1
         fig, axs = plt.subplots(1, n_cols, figsize=figsize if n_cols == 2 else (figsize[0]/2, figsize[1]), squeeze=False)
 
@@ -2000,7 +1938,6 @@ class AlgebraicRecon(Recon):
         axs[0, 0].set_ylabel("Z (mm)")
         axs[0, 0].tick_params(axis='both', which='major')
 
-        # Plot ground truth if available
         if ground_truth is not None:
             gt_vmin, gt_vmax = (0, 1) if scale == 'same' else (np.min(ground_truth), np.max(ground_truth))
 
@@ -2012,22 +1949,19 @@ class AlgebraicRecon(Recon):
 
         plt.subplots_adjust(bottom=0.15, wspace=0.3)
 
-        # Calculate colorbar position dynamically based on figsize
-        cbar_width = 0.05 * figsize[0] / figsize[1]  # Relative to figure height
+        cbar_width = 0.05 * figsize[0] / figsize[1]
         cbar_height = 0.05
-        cbar_x = 0.25  # Centered horizontally
-        cbar_y = -0.06 # Positioned at the bottom
+        cbar_x = 0.25
+        cbar_y = -0.06
 
-        # Add colorbar
         cbar_ax = fig.add_axes([cbar_x, cbar_y, 0.5, cbar_height])
         cbar = fig.colorbar(im0, cax=cbar_ax, orientation='horizontal')
         if ground_truth is not None and scale == 'same':
-            cbar.set_label('Normalized Intensity') 
+            cbar.set_label('Normalized Intensity')
         else:
             cbar.set_label('Intensity')
         cbar.ax.tick_params(labelsize=8)
 
-        # Save figure if path is provided
         if savePath is not None:
             if not os.path.exists(savePath):
                 os.makedirs(savePath)

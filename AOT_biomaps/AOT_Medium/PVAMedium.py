@@ -16,32 +16,35 @@ class PVAMedium(Medium):
     """
     Class representing a Polyvinyl Alcohol (PVA) medium for acoustic wave propagation.
     Models a heterogeneous medium with random scattering structures.
-    - The global grid remains strictly defined by user parameters (Xrange, Zrange).
+    - The SIMULATION grid is defined by the acoustic parameters
+      (dx_sim/dz_sim, Nx_sim/Nz_sim), finer than (or equal to) the saved grid.
     - The phantom is centered in X and starts at Z=0.
-    - Background (outside the phantom) is defined by 'background_medium' ('air', 'water').
+    - Background (outside the phantom) is 'air' or 'water'.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     def generate_medium(self):
-        
-        dx = self.params.general['dx']
-        dz = self.params.general['dz']
-        
-        Nx = int(self.params.general['Nx'])
-        Nz = int(self.params.general['Nz'])
+        """
+        Generate a heterogeneous PVA medium on the SIMULATION grid.
+        """
+        # Simulation grid (fine resolution)
+        dx = float(self.params.acoustic.get('dx_sim', self.params.general['dx']))
+        dz = float(self.params.acoustic.get('dz_sim', self.params.general['dz']))
+        Nx = int(self.params.acoustic.get('Nx_sim', self.params.general['Nx']))
+        Nz = int(self.params.acoustic.get('Nz_sim', self.params.general['Nz']))
 
         width = self.params.acoustic['medium'].get('width', self.params.general['Xrange'][1] - self.params.general['Xrange'][0])
         height = self.params.acoustic['medium'].get('height', self.params.general['Zrange'][1] - self.params.general['Zrange'][0])
-        
+
         Px = int(np.round(width / dx))
         Pz = int(np.round(height / dz))
-        
-        # Security: ensure phantom doesn't exceed global grid
+
+        # Security: ensure phantom doesn't exceed the simulation grid
         Px = min(Px, Nx)
         Pz = min(Pz, Nz)
 
-        # Positioning the Phantom (Centered in X, Top in Z)
+        # Positioning the phantom (centered in X, top in Z)
         x_start = (Nx - Px) // 2
         x_end = x_start + Px
         z_start = 0
@@ -62,10 +65,10 @@ class PVAMedium(Medium):
         alpha_coeff_map = np.zeros((Nx, Nz), dtype=np.float32)
         BonA_map = np.zeros((Nx, Nz), dtype=np.float32)
 
-        # 5. Generate Heterogeneous PVA strictly inside the Phantom dimensions (Px, Pz)
+        # Generate the heterogeneous PVA strictly inside the phantom (Px, Pz)
         eta = np.random.randn(Px, Pz).astype(np.float32) * self.params.acoustic['medium']['noise_lvl']
         for _ in range(self.params.acoustic['medium']['n_phases']):
-            sigma_val = np.random.uniform(*[s/dx for s in self.params.acoustic['medium']['size_structures']])
+            sigma_val = np.random.uniform(*[s / dx for s in self.params.acoustic['medium']['size_structures']])
             threshold = np.random.uniform(1.2, 2.2)
             noise_field = gaussian_filter(np.random.randn(Px, Pz), sigma=sigma_val)
             noise_field /= (np.std(noise_field) + 1e-9)
@@ -77,25 +80,25 @@ class PVAMedium(Medium):
         sound_speed_pva = self.params.acoustic['medium']['c0'] * (1 + eta)
         density_pva = self.params.acoustic['medium']['density'] * (1 + eta)
 
-        # 6. Apply PVA properties to the global maps
+        # Apply PVA properties to the global maps
         c_map[x_start:x_end, z_start:z_end] = sound_speed_pva
         rho_map[x_start:x_end, z_start:z_end] = density_pva
         BonA_map[x_start:x_end, z_start:z_end] = self.params.acoustic['medium'].get('BonA', 6.0)
 
-        # 7. Handle Absorption
+        # Handle absorption (from the parameter schema)
         is_absorbing = self.params.acoustic['medium'].get('isAbsorbingMedium', False)
-        
+
         if is_absorbing:
             eta_norm = (eta - np.min(eta)) / (np.max(eta) - np.min(eta) + 1e-9)
             alpha_coeff_pva = 0.4 + 0.3 * eta_norm
             alpha_coeff_map[x_start:x_end, z_start:z_end] = alpha_coeff_pva
             alpha_power = self.params.acoustic['medium'].get('alpha_power', 1.5)
-            alpha_mode = 'no_dispersion'
+            alpha_mode = None
         else:
             alpha_power = 1.5
             alpha_mode = 'no_absorption'
 
-        # 8. Store medium properties
+        # Store medium properties
         self.medium_properties = {
             'sound_speed': c_map,
             'density': rho_map,
@@ -107,7 +110,7 @@ class PVAMedium(Medium):
             'sound_speed_ref': self.params.acoustic['medium']['c0']
         }
 
-        # 9. Initialize kWave objects
+        # Initialize kWave objects (on the SIMULATION grid)
         if KWAVE_AVAILABLE:
             self.kmedium = kWaveMedium(
                 sound_speed=c_map,
@@ -123,7 +126,6 @@ class PVAMedium(Medium):
 
             self.kgrid = kWaveGrid([Nx, Nz], [dx, dz])
             dt = 1 / self.params.acoustic['f_AQ']
-            
             nt_assigned = getattr(self, 'Nt_reshaped', self.params.general.get('Nt'))
             self.kgrid.setTime(nt_assigned, dt)
         else:
@@ -131,14 +133,7 @@ class PVAMedium(Medium):
             self.kgrid = None
             print("[AOT-biomaps] Warning: kWave is not available. Medium properties stored in medium_properties dictionary.")
 
-        # 10. Save variables for later use
-        self.factorX = int(np.floor(self.params.general['dx'] / dx))
-        self.factorZ = int(np.floor(self.params.general['dz'] / dz))
-        if KWAVE_AVAILABLE and self.kgrid is not None:
-            self.factorT = int(np.floor((1 / self.kgrid.dt) / self.params.acoustic['f_saving']))
-        else:
-            self.factorT = 1
-            
+        # Save variables for later use (SIMULATION grid attributes)
         self.c_mean = np.mean(c_map[:, 0])
         self.Nx_reshaped = Nx
         self.Nz_reshaped = Nz

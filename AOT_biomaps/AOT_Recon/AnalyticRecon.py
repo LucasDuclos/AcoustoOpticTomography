@@ -356,7 +356,7 @@ class AnalyticRecon(Recon):
 
         return cp.real(Irec).get()
 
-    def show(self, withTumor=True, savePath=None, scale='same', figsize=(8, 4)):
+    def show(self, withTumor=True, savePath=None, scale='same', title=None, figsize=(8, 4)):
         """
         Display the reconstructed images with a properly positioned colorbar.
         Args:
@@ -376,14 +376,14 @@ class AnalyticRecon(Recon):
                 raise ValueError("[AOT-biomaps] Reconstructed phantom with tumor is empty. Run reconstruction first.")
             image = self.reconPhantom
             ground_truth = self.experiment.OpticImage.phantom if self.experiment.OpticImage else None
-            title_recon = "Reconstructed phantom with tumor"
+            title_recon = "Reconstructed phantom with tumor" if title is None else title
             title_gt = "Phantom with tumor"
         else:
             if self.reconLaser is None:
                 raise ValueError("[AOT-biomaps] Reconstructed laser without tumor is empty. Run reconstruction first.")
             image = self.reconLaser
             ground_truth = self.experiment.OpticImage.laser.intensity if self.experiment.OpticImage else None
-            title_recon = "Reconstructed laser without tumor"
+            title_recon = "Reconstructed laser without tumor" if title is None else title
             title_gt = "Laser without tumor"
 
         # Gestion propre des sous-graphes avec squeeze=False pour garantir un tableau 2D

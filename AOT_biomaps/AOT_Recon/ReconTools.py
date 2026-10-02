@@ -86,6 +86,16 @@ def backward_projection(SMatrix, e):
 # UTILITY FUNCTIONS
 # ============================================================================
 
+def get_ground_truth(SMatrix, withTumor=True):
+    """Return the ground truth cropped to the effective SMatrix geometry."""
+    optic = SMatrix.experiment.OpticImage
+    if optic is None:
+        return None
+    gt = optic.phantom if withTumor else optic.laser.intensity
+    if hasattr(SMatrix, "crop_to_effective"):
+        return SMatrix.crop_to_effective(gt)
+    return gt   # other SMatrix types (DENSE/CSR): no truncation support yet
+
 def mse(SMatrix, lambda_true, lambda_pred):
     """
     Calculate the Mean Squared Error (MSE) between two arrays.
@@ -664,18 +674,6 @@ def check_gpu_memory(device_index, required_memory, show_logs=True):
         print(f"[AOT-biomaps] Free memory on GPU {device_index}: {free_memory_gb:.2f} GB, Required memory: {required_memory:.2f} GB")
     
     return free_memory_gb >= required_memory
-
-def check_gpu_available(SMatrix) -> bool:
-    """Check if GPU operations are available."""
-    if not isinstance(SMatrix.device, str) or "gpu" not in SMatrix.device:
-        return False
-    if not hasattr(SMatrix, 'sparse_mod'):
-        return False
-    if not CUPY_AVAILABLE:
-        print("[AOT-biomaps] Warning: CuPy is not available. Falling back to CPU.")
-        SMatrix.device = 'cpu'
-        return False
-    return True
 
 def get_array_module(SMatrix):
     """Get the appropriate array module based on device."""

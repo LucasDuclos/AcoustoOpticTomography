@@ -71,7 +71,7 @@ import numpy as np
 from tqdm import trange
 from typing import Optional, Union, Tuple
 
-from AOT_biomaps.AOT_Recon.ReconTools import get_array_module, get_device_context, forward_projection, backward_projection, check_stopping_criterion, estimate_lipschitz_constant
+from AOT_biomaps.AOT_Recon.ReconTools import get_array_module, get_device_context, get_ground_truth, forward_projection, backward_projection, check_stopping_criterion, estimate_lipschitz_constant
 from AOT_biomaps.AOT_Recon.ReconEnums import StopCriterionType
 from AOT_biomaps.AOT_Recon.AOT_Preconditioner.PreconditionerEnums import PreconditionerType
 from AOT_biomaps.AOT_Recon.AOT_Preconditioner.NoPreconditioner import NoPreconditioner
@@ -250,10 +250,7 @@ def PGD(
 
             # Stopping Criterion
             if stop_criterion != StopCriterionType.MAX_ITERATIONS:
-                if SMatrix.experiment.OpticImage is None:
-                    ground_truth = None
-                else:
-                    ground_truth = SMatrix.experiment.OpticImage.phantom if withTumor else SMatrix.experiment.OpticImage.laser.intensity
+                ground_truth = get_ground_truth(SMatrix, withTumor)
                 gradient_for_stop = grad_fidelity_prec if stop_criterion == StopCriterionType.GRADIENT_NORM else None
                 isStop, val = check_stopping_criterion(SMatrix, lambda_flat, prev_lambda, stop_criterion, stop_threshold, window_size=stop_window_size, history=cost_history, ground_truth=ground_truth, gradient=gradient_for_stop, window_history=window_history)
                 if show_logs and show_criterion:

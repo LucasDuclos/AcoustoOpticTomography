@@ -606,6 +606,151 @@ extern "C"{
         }
     }
 
+    /**
+    * Kernel: count_nnz_after_truncation__SELL__REAL
+    * Purpose: Count non-zero elements per row after applying time and space masks.
+    */
+    __global__ void count_nnz_after_truncation__SELL__REAL(
+        const float* __restrict__ sell_values,
+        const unsigned int* __restrict__ sell_colinds,
+        const long long* __restrict__ slice_ptr,
+        const int* __restrict__ slice_len,
+        const int* __restrict__ row_perm,
+        const int* __restrict__ old_to_new_phys_row,
+        const int* __restrict__ old_to_new_col,
+        int* __restrict__ new_row_nnz,
+        int old_NT,
+        int new_NT,
+        int slice_height,
+        long long total_storage,
+        int Z,
+        int X
+    ) {
+        int sorted_row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (sorted_row >= old_NT) return;
+
+        int old_phys_row = row_perm[sorted_row];
+        if (old_phys_row < 0 || old_phys_row >= old_NT) return;
+
+        int new_phys_row = old_to_new_phys_row[old_phys_row];
+        
+        if (new_phys_row < 0 || new_phys_row >= new_NT) return;
+
+        int num_slices = (old_NT + slice_height - 1) / slice_height;
+        int slice_id = sorted_row / slice_height;
+        if (slice_id >= num_slices) return;
+
+        long long base = slice_ptr[slice_id];
+        int len = slice_len[slice_id];
+        if (base < 0 || len < 0) return;
+
+        int row_in_slice = sorted_row % slice_height;
+        long long ZX = (long long)Z * X;
+        int count = 0;
+
+        for (int j = 0; j < len; ++j) {
+            long long idx = base + row_in_slice + (long long)j * slice_height;
+            if (idx < 0 || idx >= total_storage) break;
+
+            if (sell_values[idx] != 0.0f) {
+                unsigned int old_col = sell_colinds[idx];
+                if (old_col < ZX) {
+                    if (old_to_new_col[old_col] != -1) {
+                        count++;
+                    }
+                }
+            }
+        }
+        
+        new_row_nnz[new_phys_row] = count;
+    }
+
+    __global__ void accumulate_hessian_diag__SELL__REAL(
+        const float* __restrict__ values,
+        const unsigned int* __restrict__ colinds,
+        long long total_nnz,
+        float* __restrict__ diag
+    ) {
+        long long idx = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx >= total_nnz) return;
+        float v = values[idx];
+        if (v == 0.0f) return;
+        atomicAdd(&diag[colinds[idx]], v * v);
+    }
+
+    /**
+    * Kernel: fill_after_truncation__SELL__REAL
+    * Purpose: Populate the new SELL matrix directly on GPU.
+    */
+    __global__ void fill_after_truncation__SELL__REAL(
+        const float* __restrict__ old_values,
+        const unsigned int* __restrict__ old_colinds,
+        const long long* __restrict__ old_slice_ptr,
+        const int* __restrict__ old_slice_len,
+        const int* __restrict__ old_row_perm,
+        const int* __restrict__ old_to_new_phys_row,
+        const int* __restrict__ old_to_new_col,
+        const int* __restrict__ new_inv_row_perm,
+        const long long* __restrict__ new_slice_ptr,
+        const int* __restrict__ new_slice_len,
+        float* __restrict__ new_values,
+        unsigned int* __restrict__ new_colinds,
+        int old_NT,
+        int slice_height,
+        long long old_total_values,
+        long long new_total_values,
+        long long old_ZX
+    ) {
+        int sorted_row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (sorted_row >= old_NT) return;
+
+        int old_phys_row = old_row_perm[sorted_row];
+        if (old_phys_row < 0 || old_phys_row >= old_NT) return;
+
+        int new_phys_row = old_to_new_phys_row[old_phys_row];
+        if (new_phys_row < 0) return;
+
+        int old_slice_id = sorted_row / slice_height;
+        long long old_base = old_slice_ptr[old_slice_id];
+        int old_len = old_slice_len[old_slice_id];
+        if (old_base < 0 || old_len < 0) return;
+
+        int new_sorted_row = new_inv_row_perm[new_phys_row];
+        if (new_sorted_row < 0) return;
+
+        int new_slice_id = new_sorted_row / slice_height;
+        long long new_base = new_slice_ptr[new_slice_id];
+        int new_len = new_slice_len[new_slice_id];
+        if (new_base < 0 || new_len < 0) return;
+
+        int old_row_in_slice = sorted_row % slice_height;
+        int new_row_in_slice = new_sorted_row % slice_height;
+
+        int new_j = 0;
+        for (int j = 0; j < old_len; ++j) {
+            long long old_idx = old_base + old_row_in_slice + (long long)j * slice_height;
+            if (old_idx < 0 || old_idx >= old_total_values) break;
+
+            float val = old_values[old_idx];
+            if (val == 0.0f) continue;
+
+            unsigned int old_col = old_colinds[old_idx];
+            if (old_col >= old_ZX) continue;
+
+            int new_col = old_to_new_col[old_col];
+            if (new_col < 0) continue;
+
+            if (new_j < new_len) {
+                long long new_idx = new_base + new_row_in_slice + (long long)new_j * slice_height;
+                if (new_idx >= 0 && new_idx < new_total_values) {
+                    new_values[new_idx] = val;
+                    new_colinds[new_idx] = (unsigned int)new_col;
+                }
+            }
+            new_j++;
+        }
+    }
+
     // ============================================================================
     // CSR MATRIX KERNELS
     // ============================================================================     
@@ -815,36 +960,13 @@ extern "C"{
         long long total_nnz,
         float* __restrict__ col_sum
     ) {
-        const unsigned full_mask = 0xffffffffu;
-        long long gid = (long long)blockIdx.x * blockDim.x + threadIdx.x;
-        long long stride = (long long)blockDim.x * gridDim.x;
-        int lane = threadIdx.x & 31;  // Lane ID within the warp (0-31)
-
-        for (long long idx = gid; idx < total_nnz; idx += stride) {
-            unsigned int col = col_ind[idx];
-            float v = values[idx];
-            if (v == 0.0f) continue;
-
-            // Warp-level reduction for the same column
-            float sum = v;
-            for (int offset = 1; offset <= 16; offset <<= 1) {
-                unsigned int col_down = __shfl_down_sync(full_mask, col, offset);
-                float v_down = __shfl_down_sync(full_mask, v, offset);
-                // Only add if the column is the same
-                if (col_down == col) {
-                    sum += v_down;
-                }
-            }
-
-            // Check if this thread is the "head" of the column group
-            unsigned int col_up = __shfl_up_sync(full_mask, col, 1);
-            bool is_head = (lane == 0) || (col != col_up);
-
-            if (is_head) {
-                atomicAdd(&col_sum[col], sum);
-            }
-        }
+        long long idx = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx >= total_nnz) return;
+        float v = fabsf(values[idx]);
+        if (v != 0.0f) atomicAdd(&col_sum[col_ind[idx]], v);
     }
+
+    
 
     /**
     * Kernel: accumulate_columns_atomic__COMPLEX
@@ -855,43 +977,14 @@ extern "C"{
         const float2* __restrict__ values,
         const unsigned int* __restrict__ col_ind,
         long long total_nnz,
-        float2* __restrict__ col_sum
+        float* __restrict__ col_sum
     ) {
-        const unsigned full_mask = 0xffffffffu;
-        long long gid = (long long)blockIdx.x * blockDim.x + threadIdx.x;
-        long long stride = (long long)blockDim.x * gridDim.x;
-        int lane = threadIdx.x & 31;  // Lane ID within the warp (0-31)
-
-        for (long long idx = gid; idx < total_nnz; idx += stride) {
-            unsigned int col = col_ind[idx];
-            float2 v = values[idx];
-            // Skip if both real and imaginary parts are zero
-            if (v.x == 0.0f && v.y == 0.0f) continue;
-
-            // Separate real and imaginary parts for warp reduction
-            float sum_real = v.x;
-            float sum_imag = v.y;
-
-            for (int offset = 1; offset <= 16; offset <<= 1) {
-                unsigned int col_down = __shfl_down_sync(full_mask, col, offset);
-                float v_real_down = __shfl_down_sync(full_mask, sum_real, offset);
-                float v_imag_down = __shfl_down_sync(full_mask, sum_imag, offset);
-                if (col_down == col) {
-                    sum_real += v_real_down;
-                    sum_imag += v_imag_down;
-                }
-            }
-
-            // Check if this thread is the "head" of the column group
-            unsigned int col_up = __shfl_up_sync(full_mask, col, 1);
-            bool is_head = (lane == 0) || (col != col_up);
-
-            if (is_head) {
-                atomicAdd(&col_sum[col].x, sum_real);
-                atomicAdd(&col_sum[col].y, sum_imag);
-            }
-        }
+        long long idx = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx >= total_nnz) return;
+        float v = hypotf(values[idx].x, values[idx].y);
+        if (v != 0.0f) atomicAdd(&col_sum[col_ind[idx]], v);
     }
+
 
     /**
     * Kernel: accumulate_abs_columns_atomic__REAL

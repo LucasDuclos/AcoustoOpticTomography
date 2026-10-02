@@ -72,16 +72,39 @@ class Recon(ABC):
     def check_existing_file(self, date=None, withTumor=True):
         pass
 
+    def _gt(self, withTumor=True):
+        """Ground truth cropped to the effective SMatrix geometry (handles virtual/physical truncation)."""
+        optic = self.experiment.OpticImage
+        if optic is None:
+            return None
+        gt = optic.phantom if withTumor else optic.laser.intensity
+        S = getattr(self, 'SMatrix', None)
+        if S is not None and hasattr(S, 'crop_to_effective'):
+            return S.crop_to_effective(gt)
+        return gt
+
+    def _crop_mask(self, mask):
+        """Crop a full-size (Z, X) mask/label array to the effective SMatrix geometry."""
+        S = getattr(self, 'SMatrix', None)
+        if S is not None and hasattr(S, 'crop_to_effective'):
+            return S.crop_to_effective(mask)
+        return mask
+    
+    def _eff_extent(self, scale=1e3):
+        """imshow extent [x0, x1, z1, z0] in mm, matching the effective SMatrix geometry."""
+        g = self.experiment.params.general
+        Xrange = [g['Xrange'][0] * scale, g['Xrange'][1] * scale]
+        Zrange = [g['Zrange'][0] * scale, g['Zrange'][1] * scale]
+        S = getattr(self, 'SMatrix', None)
+        if S is not None and hasattr(S, 'effective_extent'):
+            return S.effective_extent(Xrange, Zrange)
+        return [Xrange[0], Xrange[1], Zrange[1], Zrange[0]]
+
     def calculate_CRC(self, use_ROI=True):
         """
         Computes the Contrast Recovery Coefficient (CRC) for all ROIs combined or globally.
-        For analytic reconstruction: returns a single CRC value.
-        For iterative reconstruction: returns a list of CRC values (one per iteration).
-        If iteration is specified, returns CRC for that specific iteration only.
-
-        :param iteration: Specific iteration index (optional). If None, computes for all iterations.
-        :param use_ROI: If True, computes CRC for all ROIs combined. If False, computes global CRC.
-        :return: CRC value or list of CRC values.
+        Ground truths and ROI masks are cropped to the effective SMatrix geometry
+        (virtual or physical truncation aware).
         """
         if self.reconType is None:
             raise ValueError("[AOT-biomaps] Run reconstruction first")
@@ -91,16 +114,17 @@ class Recon(ABC):
         if self.reconPhantom is None or self.reconPhantom == []:
             raise ValueError("[AOT-biomaps] Reconstructed phantom is empty. Run reconstruction first.")
 
-        # Handle empty reconstructions
-        if self.reconLaser is None or self.reconLaser == []:
-            print("[AOT-biomaps] Reconstructed laser is empty. Running reconstruction without tumor...")
-            self.run(withTumor=False, isSavingEachIteration=True)
+        # Effective ground truths (cropped to the reconstruction geometry)
+        gt_phantom = self._gt(withTumor=True)
+        gt_laser = self._gt(withTumor=False)
 
-        # Get the ROI mask(s) from the phantom if needed
+        # Get the ROI mask(s) from the phantom if needed (cropped to effective geometry)
+        global_mask = None
         if use_ROI:
             self.experiment.OpticImage.find_ROI()
-            global_mask = np.logical_or.reduce(self.experiment.OpticImage.maskList)
-        if len(global_mask) == 0:
+            masks = [self._crop_mask(m) for m in self.experiment.OpticImage.maskList]
+            global_mask = np.logical_or.reduce(masks)
+        if global_mask is not None and len(global_mask) == 0:
             print("[AOT-biomaps] No ROIs found in the phantom. Computing global CRC instead.")
             use_ROI = False
 
@@ -108,12 +132,12 @@ class Recon(ABC):
         if self.reconType is ReconType.Analytic:
             if use_ROI:
                 recon_ratio = np.mean(self.reconPhantom[global_mask]) / np.mean(self.reconLaser[global_mask])
-                lambda_ratio = np.mean(self.experiment.OpticImage.phantom[global_mask]) / np.mean(self.experiment.OpticImage.laser.intensity[global_mask])
+                lambda_ratio = np.mean(gt_phantom[global_mask]) / np.mean(gt_laser[global_mask])
             else:
                 recon_ratio = np.mean(self.reconPhantom) / np.mean(self.reconLaser)
-                lambda_ratio = np.mean(self.experiment.OpticImage.phantom) / np.mean(self.experiment.OpticImage.laser.intensity)
+                lambda_ratio = np.mean(gt_phantom) / np.mean(gt_laser)
 
-            self.CRC =(recon_ratio - 1) / (lambda_ratio - 1)
+            self.CRC = (recon_ratio - 1) / (lambda_ratio - 1)
 
         # Iterative reconstruction case
         else:
@@ -123,70 +147,62 @@ class Recon(ABC):
             for it in iterations:
                 if use_ROI:
                     recon_ratio = np.mean(self.reconPhantom[it][global_mask]) / np.mean(self.reconLaser[it][global_mask])
-                    lambda_ratio = np.mean(self.experiment.OpticImage.phantom[global_mask]) / np.mean(self.experiment.OpticImage.laser.intensity[global_mask])
+                    lambda_ratio = np.mean(gt_phantom[global_mask]) / np.mean(gt_laser[global_mask])
                 else:
                     recon_ratio = np.mean(self.reconPhantom[it]) / np.mean(self.reconLaser[it])
-                    lambda_ratio = np.mean(self.experiment.OpticImage.phantom) / np.mean(self.experiment.OpticImage.laser.intensity)
+                    lambda_ratio = np.mean(gt_phantom) / np.mean(gt_laser)
 
                 crc_list.append((recon_ratio - 1) / (lambda_ratio - 1))
 
             self.CRC = crc_list
 
-    def calculate_MSE(self,withTumor=True):
+    def calculate_MSE(self, withTumor=True):
         """
-        Calculate the Mean Squared Error (MSE) of the reconstruction.
-
-        Returns:
-            mse: float or list of floats, Mean Squared Error of the reconstruction
+        Calculate the Mean Squared Error (MSE) of the reconstruction,
+        against the ground truth cropped to the effective geometry.
         """
         if self.reconPhantom is None or self.reconPhantom == []:
             raise ValueError("[AOT-biomaps] Reconstructed phantom is empty. Run reconstruction first.")
 
+        gt = self._gt(withTumor=withTumor)
+
         if self.reconType in (ReconType.Analytic, ReconType.DeepLearning):
-            self.MSE = mse(None, self.experiment.OpticImage.phantom, self.reconPhantom)
+            self.MSE = mse(None, gt, self.reconPhantom)
 
         elif self.reconType in (ReconType.Algebraic, ReconType.Bayesian, ReconType.Convex):
             self.MSE = []
             if withTumor:
                 for theta in self.reconPhantom:
-                    self.MSE.append(mse(None, self.experiment.OpticImage.phantom, theta))
+                    self.MSE.append(mse(None, gt, theta))
             else:
                 for theta in self.reconLaser:
-                    self.MSE.append(mse(None, self.experiment.OpticImage.laser.intensity, theta))
+                    self.MSE.append(mse(None, gt, theta))
 
     def calculate_SSIM(self, withTumor=True, show_log=False):
         """
         Calculate SSIM without normalizing images, using original data_range.
+        Reference image is cropped to the effective geometry.
         """
         if self.reconPhantom is None or self.reconPhantom == []:
             raise ValueError("[AOT-biomaps] Reconstructed phantom is empty. Run reconstruction first.")
 
-        # Select reference image
-        if withTumor:
-            ref_img = self.experiment.OpticImage.phantom
-        else:
-            ref_img = self.experiment.OpticImage.laser.intensity
+        ref_img = self._gt(withTumor=withTumor)
 
-        # Get data_range for reference image
         ref_min, ref_max = ref_img.min(), ref_img.max()
         data_range = ref_max - ref_min
 
-        # Process reconstructions
         if self.reconType in (ReconType.Analytic, ReconType.DeepLearning):
-            # Single reconstruction case
             recon = self.reconPhantom
             self.SSIM = ssim(ref_img, recon, data_range=data_range)
 
-        else:  # Algebraic/Bayesian (multiple reconstructions)
+        else:
             self.SSIM = []
             recon_list = self.reconPhantom if withTumor else self.reconLaser
 
-            # Use trange if show_log is True, otherwise range
             iteration = trange(len(recon_list), desc=f"Calculating SSIM {'with' if withTumor else 'without'} tumor") if show_log else range(len(recon_list))
 
             for i in iteration:
                 theta = recon_list[i]
-                # Calculate data_range for each reconstruction (if different from reference)
                 theta_min, theta_max = theta.min(), theta.max()
-                current_data_range = max(data_range, theta_max - theta_min)  # Use the larger range
+                current_data_range = max(data_range, theta_max - theta_min)
                 self.SSIM.append(ssim(ref_img, theta, data_range=current_data_range))

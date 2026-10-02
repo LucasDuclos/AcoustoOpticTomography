@@ -10,14 +10,56 @@ class Params:
         self.acoustic = config.get('acoustic', {})
         self.optic = config.get('optic', {})
         self.reconstruction = config.get('reconstruction', {})
+
+        # ------------------------------------------------------------------
+        # FINAL (saved / reconstruction) grid: general.dx, general.dz
+        # This is the resolution of the fields AFTER the band-limited
+        # resampling performed in generate_acoustic_field_KWAVE_2D.
+        # ------------------------------------------------------------------
         self.general['Nx'] = int(np.round((self.general['Xrange'][1] - self.general['Xrange'][0]) / self.general['dx']))
         self.general['Ny'] = int(np.round((self.general['Yrange'][1] - self.general['Yrange'][0]) / self.general['dy'])) if self.general['Yrange'] is not None else 1
         self.general['Nz'] = int(np.round((self.general['Zrange'][1] - self.general['Zrange'][0]) / self.general['dz']))
-        self.general['Nt'] = int((self.general['Nt']) * int(float(self.acoustic['f_AQ'])) / int(float(self.acoustic['f_saving']))) if 'Nt' in self.general else None
+
+        # ------------------------------------------------------------------
+        # SIMULATION grid: acoustic.dx_sim, acoustic.dz_sim
+        # Backward compatible: defaults to the general grid when absent
+        # ------------------------------------------------------------------
+        self.acoustic.setdefault('dx_sim', self.general['dx'])
+        self.acoustic.setdefault('dy_sim', self.general['dy'])
+        self.acoustic.setdefault('dz_sim', self.general['dz'])
+        self.acoustic['Nx_sim'] = int(np.round((self.general['Xrange'][1] - self.general['Xrange'][0]) / self.acoustic['dx_sim']))
+        self.acoustic['Ny_sim'] = int(np.round((self.general['Yrange'][1] - self.general['Yrange'][0]) / self.acoustic['dy_sim'])) if self.general['Yrange'] is not None else 1
+        self.acoustic['Nz_sim'] = int(np.round((self.general['Zrange'][1] - self.general['Zrange'][0]) / self.acoustic['dz_sim']))
+
+        # ------------------------------------------------------------------
+        # Temporal sampling rates
+        #   f_AQ : simulation sampling rate (None here if 'AUTO'; the Medium resolves it from the CFL condition)
+        #   ft   : TARGET sampling rate of the SAVED fields. The temporal decimation is band-limited (spectral), performed on GPU in generate_acoustic_field_KWAVE_2D. The EFFECTIVE step is stored at generation time in field.last_decimation.
+        # ------------------------------------------------------------------
         self.acoustic['f_AQ'] = None if self.acoustic['f_AQ'] == 'AUTO' else int(float(self.acoustic['f_AQ']))
-        self.acoustic['f_saving'] = self.acoustic['f_AQ'] if (self.acoustic['f_saving'] is None or self.acoustic['f_saving'] == "AUTO") else int(float(self.acoustic['f_saving']))
         self.acoustic['f_US'] = int(float(self.acoustic['f_US']))
+        self.general['ft'] = int(float(self.general['ft'])) if self.general.get('ft') is not None else None
+        self.general['Nt'] = self.general.get('Nt')
+
+        # ------------------------------------------------------------------
+        # Consistency checks
+        # ------------------------------------------------------------------
+        if self.general['dx'] < self.acoustic['dx_sim'] - 1e-12 or \
+        self.general['dz'] < self.acoustic['dz_sim'] - 1e-12:
+            raise ValueError(
+                "[AOT-biomaps] The saved grid step (general.dx/dz) must be >= the "
+                "simulation grid step (acoustic.dx_sim/dz_sim): one cannot save at "
+                "a finer resolution than the simulation."
+            )
+        if self.general['ft'] is not None and self.acoustic['f_AQ'] is not None:
+            if self.general['ft'] > self.acoustic['f_AQ']:
+                raise ValueError(
+                    "[AOT-biomaps] ft (saved sampling rate) cannot exceed "
+                    "f_AQ (simulation sampling rate)."
+                )
+
         self.acoustic['medium']['size_structures'] = [float(s) for s in self.acoustic['medium']['size_structures']]
+
         if self.acoustic['medium']['width'] > self.general['Xrange'][1] - self.general['Xrange'][0]:
             raise ValueError("[AOT-biomaps] The medium width must be smaller than the X range to ensure it fills the grid.")
         if self.acoustic['medium']['height'] > self.general['Zrange'][1] - self.general['Zrange'][0]:
@@ -27,8 +69,8 @@ class Params:
             raise ValueError("[AOT-biomaps] Unsupported background medium: {}. Supported options are 'air' and 'water'.".format(self.acoustic['medium']['background_medium']))
         if self.acoustic['medium']['background_medium'].lower() == 'air':
             x_range_width = self.general['Xrange'][1] - self.general['Xrange'][0]
-            required_width = self.acoustic['medium']['width'] + 40 * self.general['dx']
-            
+            # 40 SIMULATION pixels of air margin (the sim grid is what 'sees' the wave)
+            required_width = self.acoustic['medium']['width'] + 40 * self.acoustic['dx_sim']
             if required_width > x_range_width + 1e-9:
                 excess_mm = (required_width - x_range_width) * 1e3
                 raise ValueError(

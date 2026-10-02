@@ -19,7 +19,6 @@ import warnings
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib as mpl
-from IPython.display import HTML
 from scipy.ndimage import zoom
 
 # Optional cupy import for GPU acceleration
@@ -183,13 +182,13 @@ class Experiment(ABC):
                 self.AOsignal_withoutTumor = mean_sig  
     
     @abstractmethod
-    def generate_acoustic_fields(self, fieldDataPath, fieldParamPath, generation_type="envelope_squarred", show_log=True):
+    def generate_acoustic_fields(self, fieldDataPath, fieldParamPath, generation_type="envelope_squared", show_log=True):
         """
         Generate the acoustic fields for simulation.
         Args:
             fieldDataPath: Path to save the generated fields.
             fieldParamPath: Path to the field parameters file.
-            generation_type: The type of field generation to perform. Must be one of "envelope_squarred", "envelope", or "field".
+            generation_type: The type of field generation to perform. Must be one of "envelope_squared", "envelope", or "field".
             show_log: Whether to display a progress bar.
         Returns:
             systemMatrix: A numpy array of the generated fields.
@@ -298,22 +297,36 @@ class Experiment(ABC):
                 raise ValueError(f"[AOT-biomaps] Field {field.get_name_field()} has an invalid shape: {field.field.shape}. Expected shape to be at least ({max_t},).")
             self.AcousticFields[i].field = field.field[min_t:max_t, :, :]
 
-    def add_noise(self, y=None, noiseType='gaussian', noiseLvl=0.1, dataToUse=None, m=1, withTumor=True, show_log=True):
+    def add_noise(self, y=None, noiseType='gaussian', snr_dB=20.0, noiseLvl=0.1, dataToUse=None, m=1, withTumor=True, keep_nonnegative=False, noiseScope='global', show_log=True):
         """
         Add noise to AO signals with various noise models.
 
         Supported noise types:
-        - 'gaussian': Add Gaussian noise with std = noiseLvl * max(signal)
-        - 'poisson': Add Poisson noise proportional to signal amplitude
-        - 'experimental': Add noise with same SNR as in experimental dataToUse for m averages
+        - 'gaussian': additive Gaussian noise with target SNR (dB):
+            sigma_n = RMS(signal) * 10^(-snr_dB / 20)
+        - 'poisson': Poisson noise proportional to signal amplitude (uses noiseLvl)
+        - 'experimental': noise with same SNR as experimental dataToUse for m averages
 
         Parameters:
-            y (np.ndarray, optional): Input signal to add noise to. If None, uses self.AOsignal_withTumor or self.AOsignal_withoutTumor.
+            y (np.ndarray, optional): Input signal. If None, uses self.AOsignal_withTumor
+                or self.AOsignal_withoutTumor.
             noiseType (str): Type of noise ('gaussian', 'poisson', or 'experimental').
-            noiseLvl (float): Noise level for gaussian/poisson noise.
-            dataToUse (np.ndarray): Experimental data for 'experimental' noise type (shape: (n_repeats, n_signals)).
+            snr_dB (float): Target SNR in dB for gaussian noise (SNR_dB = 10*log10(Ps/Pn)).
+            noiseLvl (float): Noise level for poisson noise.
+            dataToUse (np.ndarray): Experimental data for 'experimental' noise type
+                (shape: (n_repeats, n_signals)).
             m (int): Number of averages for 'experimental' noise type.
             withTumor (bool): If True and y is None, use signal with tumor.
+            keep_nonnegative (bool): If True, shift each signal by its minimum BEFORE
+                adding noise, so that the requested SNR is preserved (the SNR is then
+                defined w.r.t. the shifted signal).
+            noiseScope (str): Noise level definition for gaussian noise.
+                'global' (default): sigma_n is computed once from the RMS of ALL
+                signals, so the same absolute noise level is applied to every signal
+                (mimics detector noise). The effective per-signal SNR then varies
+                with signal amplitude; snr_dB is defined w.r.t. the global RMS.
+                'per_signal': sigma_n is proportional to each signal's own RMS,
+                so every signal has the same nominal SNR (original behavior).
             show_log (bool): If True, displays progress bar.
 
         Returns:
@@ -336,33 +349,51 @@ class Experiment(ABC):
         if noiseType.lower() == 'experimental':
             if dataToUse is None:
                 raise ValueError("[AOT-biomaps] dataToUse must be provided for experimental noise type.")
-            # Estimate noise variance from experimental data (using random pairs)
             n_pairs = min(500, dataToUse.shape[0] // 2)
             random_pairs = np.random.choice(dataToUse.shape[0], size=(n_pairs, 2), replace=False)
             noise_var = 0.0
             for i, k in random_pairs:
                 diff = dataToUse[i, :] - dataToUse[k, :]
                 noise_var += np.sum(diff**2)
+            # E[(n_i - n_k)^2] = 2*sigma_n^2  ->  unbiased sigma_n^2
             noise_var /= (2 * dataToUse.shape[1] * n_pairs)
-            noise_var *= 0.5  # Because var(n_i - n_k) = 2*σ_n²
             noise_var_for_m = noise_var / m
             mean_signal = np.mean(dataToUse, axis=0)
             amplitude_real = np.std(mean_signal)
 
+        # Pre-compute sigma_n for gaussian noise according to noiseScope
+        if noiseType.lower() == 'gaussian':
+            if noiseScope == 'global':
+                # One common noise level from the global RMS of all signals
+                global_power = np.mean(signals**2)
+                sigma_n_global = np.sqrt(global_power / 10**(snr_dB / 10.0))
+            elif noiseScope == 'per_signal':
+                sigma_n_global = None  # computed per signal inside the loop
+            else:
+                raise ValueError("[AOT-biomaps] noiseScope must be 'global' or 'per_signal'.")
+
         noiseSignals = np.zeros_like(signals)
         n_signals = signals.shape[1]
 
-        # Loop over signals
         iteration = trange(n_signals, desc=f"[AOT-biomaps] Adding {noiseType} noise") if show_log else range(n_signals)
         for i in iteration:
             signal = signals[:, i]
 
+            # Shift BEFORE noise so the requested SNR is preserved
+            if keep_nonnegative and np.min(signal) < 0:
+                signal = signal - np.min(signal)
+
             if noiseType.lower() == 'gaussian':
-                # Gaussian noise: std = noiseLvl * max(signal)
-                noise = np.random.normal(0, noiseLvl * np.max(signal), signal.shape)
+                if sigma_n_global is None:
+                    # per-signal SNR: sigma_n proportional to this signal's RMS
+                    signal_power = np.mean(signal**2)
+                    sigma_n = np.sqrt(signal_power / 10**(snr_dB / 10.0))
+                else:
+                    # global noise level, identical for all signals
+                    sigma_n = sigma_n_global
+                noise = np.random.normal(0, sigma_n, signal.shape)
                 noisy_signal = signal + noise
             elif noiseType.lower() == 'poisson':
-                # Poisson noise proportional to signal
                 max_signal = np.max(np.abs(signal))
                 if max_signal != 0:
                     noise = np.random.poisson(noiseLvl * np.abs(signal)) / (noiseLvl * max_signal)
@@ -370,7 +401,6 @@ class Experiment(ABC):
                 else:
                     noisy_signal = signal.copy()
             elif noiseType.lower() == 'experimental':
-                # Experimental-based noise with matching SNR
                 amplitude_y = np.max(np.abs(signal))
                 amplitude_ratio = amplitude_y / amplitude_real
                 noise = np.random.randn(signal.shape[0]) * np.sqrt(noise_var_for_m) * amplitude_ratio
@@ -378,14 +408,10 @@ class Experiment(ABC):
             else:
                 raise ValueError("[AOT-biomaps] noiseType must be 'gaussian', 'poisson', or 'experimental'.")
 
-            # Ensure non-negative (shift if needed)
-            if np.min(noisy_signal) < 0:
-                noisy_signal -= np.min(noisy_signal)
-
             noiseSignals[:, i] = noisy_signal
 
         return noiseSignals
-
+    
     def reduce_dims(self, mode='avg'):
         """
         Reduces the T, X, Z dimensions of a numpy array (T, X, Z) by a factor of 2 using CuPy pooling.
@@ -487,7 +513,7 @@ class Experiment(ABC):
 
         for idx in range(num_plots):
             ax = axes[idx]
-            im = ax.imshow(self.AcousticFields[0, :, :, idx],
+            im = ax.imshow(self.AcousticFields[idx].field[0],
                         extent=(self.params.general['Xrange'][0], self.params.general['Xrange'][1], self.params.general['Zrange'][1], self.params.general['Zrange'][0]),
                         vmax=1, aspect='equal', cmap='jet', animated=True)
             ax.set_xlabel("x (mm)")
@@ -502,7 +528,7 @@ class Experiment(ABC):
         def update(frame):
             artists = []
             for im, ax, idx in ims:
-                im.set_array(self.AcousticFields[frame, :, :, idx])
+                im.set_array(self.AcousticFields[idx].field[frame])
                 fig.suptitle(f"System Matrix Animation {wave_name} t = {frame * 25e-6 * 1000:.2f} ms")
                 artists.append(im)
             return artists

@@ -6,16 +6,16 @@ import platform
 
 # Default dependencies
 REQUIRED_DEPENDENCIES = [
-    'numpy==1.26.4',
-    'scipy==1.13.1',
-    'tqdm==4.60.0',
-    'matplotlib==3.9.2',
-    'numba==0.61.2',
-    'scikit-image==0.24.0'
+    'numpy>=1.22.2,<2.3.0',
+    'scipy>=1.15.0',
+    'tqdm>=4.60.0',
+    'matplotlib>=3.10.0',
+    'numba>=0.61.2',
+    'scikit-image>=0.24.0'
 ]
 
 OPTIONAL_DEPENDENCIES = {
-    'acoustic': ['k-wave-python==0.3.5'],
+    'acoustic': ['k-wave-python>=0.6.2'],
 }
 
 def is_windows():
@@ -79,7 +79,7 @@ def get_install_requires():
 
 setup(
     name='aot-biomaps',
-    version='2.9.918',
+    version='2.9.972',
     packages=find_packages(),
     package_dir={'': '.'},
     include_package_data=True,
@@ -101,6 +101,60 @@ setup(
         'console_scripts': ['aot-biomaps = AOT_biomaps.__main__:main'],
     }
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
