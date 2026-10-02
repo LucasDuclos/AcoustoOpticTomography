@@ -133,7 +133,7 @@ class Focus(Experiment):
         Z = self.params.general['Nz']
         dx = self.params.general['dx']
         c0 = self.params.acoustic['medium']['c0']
-        f_saving = self.params.acoustic['f_saving']
+        f_saving = self.params.general['ft']
         Nt = int(np.ceil(Z * dx / c0 * f_saving))
 
         signals_AO_truncated = signals_AO[5:Nt, :]
