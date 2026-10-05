@@ -125,7 +125,6 @@ class AcousticField(ABC):
         - c0 (float): Speed of sound in the medium, specified in meters per second (m/s). Default is 1540 m/s.
         - f_US (float): Frequency of the ultrasound signal, specified in Hertz (Hz). Default is 6 MHz.
         - f_AQ (float): Frequency of data acquisition, specified in Hertz (Hz). Default is 180 MHz.
-        - f_saving (float): Frequency at which the acoustic field data is saved, specified in Hertz (Hz). Default is 10 MHz.
         - num_cycles (int): Number of cycles in the burst signal. Default is 4 cycles.
         - num_elements (int): Number of elements in the transducer array. Default is 192 elements.
         - element_width (float): Width of each transducer element, specified in meters (m). Default is 0.2 mm.
