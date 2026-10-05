@@ -63,7 +63,7 @@ class Tomography(Experiment):
 
         print("[AOT-biomaps] Experiment is correctly initialized.")
 
-    def generate_acoustic_fields(self, isGPU=None, GPUdevice=None, fieldDataPath=None, tempFieldName="Kwave", nameBlock=None, generation_type="envelope_squared", show_log=True, max_workers=None, backend=None):
+    def generate_acoustic_fields(self, isGPU=None, GPUdevice=None, fieldDataPath=None, tempFieldName="Kwave", nameBlock=None, generation_type="envelope_squared", show_log=True, max_workers=None, backend=None, materialize=False):
         """
         Generate the acoustic fields for simulation.
 
@@ -75,6 +75,11 @@ class Tomography(Experiment):
             nameBlock (str): Optional name for h5 file.
             generation_type (str): The type of field generation to perform. Must be one of "envelope_squared", "envelope", or "field".
             show_log (bool): Whether to show progress logs.
+            max_workers (int): Max PARALLEL GENERATIONS. Default: one worker per GPU (GPU mode) or 4 (CPU mode).
+            backend (str): "python" (default) or "cpp". Use "cpp" with a GPUdevice LIST for true multi-GPU scaling.
+            materialize (bool): If True, promote loaded fields from file-backed memmap (or views over a memmap) to resident anonymous RAM ndarrays, guarded by a RAM budget check (80% of MemAvailable). 
+                The disk cost is paid once, visibly, during the loading step; every downstream pass (e.g. generate_AOsignal) then runs at RAM bandwidth and becomes immune to page-cache eviction by unrelated I/O. Recommended for analysis/reconstruction sessions.
+                Leave False for one-shot passes or oversized SetMixtes.
 
         Returns:
             list: List of generated FocusedWave objects.
@@ -82,7 +87,7 @@ class Tomography(Experiment):
         if self.medium is None:
             raise ValueError("[AOT-biomaps] Medium is not initialized. Please generate the medium first.")
         if self.TypeAcoustic.value == WaveType.StructuredWave.value:
-            self.AcousticFields = self._generate_acousticFields_STRUCT(isGPU=isGPU, GPUdevice=GPUdevice, fieldDataPath=fieldDataPath, tempFieldName=tempFieldName, nameBlock=nameBlock, generation_type=generation_type, show_log=show_log, max_workers=max_workers, backend=backend)
+            self.AcousticFields = self._generate_acousticFields_STRUCT(isGPU=isGPU, GPUdevice=GPUdevice, fieldDataPath=fieldDataPath, tempFieldName=tempFieldName, nameBlock=nameBlock, generation_type=generation_type, show_log=show_log, max_workers=max_workers, backend=backend, materialize=materialize)
         else:
             raise ValueError("[AOT-biomaps] Unsupported wave type.")
 
@@ -793,41 +798,34 @@ class Tomography(Experiment):
         print("[AOT-biomaps] Apodization done.")
 
     # PRIVATE METHODS
-    def _generate_acousticFields_STRUCT(self, fieldDataPath=None, isGPU=None, GPUdevice=None,
-                                        tempFieldName="Kwave", nameBlock=None,
-                                        generation_type="envelope_squared", show_log=False,
-                                        max_workers=None, backend=None):
+    def _generate_acousticFields_STRUCT(self, fieldDataPath=None, isGPU=None, GPUdevice=None, tempFieldName="Kwave", nameBlock=None, generation_type="envelope_squared", show_log=False, max_workers=None, backend=None, materialize=False):
         """
         Generate acoustic fields for structured waves.
 
         Concurrency model:
         - LOADING is cheap (np.memmap) and stays parallel.
-        - GENERATION is VRAM-bound: one k-Wave simulation + fused
-          post-processing peaks at ~10-12 GB VRAM per field (sensor data
-          alone = Nx_sim*Nz_sim*Nt*4 B). An unbounded ThreadPoolExecutor
-          (~32 workers) saturates a 48 GB GPU -> OutOfMemoryError.
-          Default: one generation worker PER GPU.
-        - backend "cpp": the simulation runs as a subprocess -> the GIL is
-          released during the sim -> multiple workers truly scale.
-        - backend "python": the kwave-python time loop is GIL-bound ->
-          multiple GPU workers do NOT scale (each field ~2x slower).
+        - GENERATION is VRAM-bound: one k-Wave simulation + fused post-processing peaks at ~10-12 GB VRAM per field (sensor data alone = Nx_sim*Nz_sim*Nt*4 B). An unbounded ThreadPoolExecutor (~32 workers) saturates a 48 GB GPU -> OutOfMemoryError.
+            Default: one generation worker PER GPU.
+        - backend "cpp": the simulation runs as a subprocess -> the GIL is released during the sim -> multiple workers truly scale.
+        - backend "python": the kwave-python time loop is GIL-bound -> multiple GPU workers do NOT scale (each field ~2x slower).
+
+        Memory model (materialize):
+        - load_field(HDR_IMG) returns a np.memmap: the .img file is only MAPPED (zero bytes read). The kernel reads pages on first touch, so the disk cost silently reappears later (e.g. in generate_AOsignal), and the page cache can be evicted at any time by unrelated I/O.
+        - materialize=True promotes every loaded field from page-cache-backed memmap (or any ndarray view whose .base chain reaches a memmap) to an anonymous ndarray (guaranteed resident RAM). The disk cost moves (visibly) into the loading progress bar, and every downstream pass runs at RAM bandwidth.
+        - A safety budget check (80% of MemAvailable, which includes the reclaimable page cache, unlike MemFree) refuses promotion if the estimated total size does not fit.
 
         Parameters:
             fieldDataPath (str): Path to save generated fields.
             isGPU (bool): Whether to use GPU for simulation. (Default: config.)
-            GPUdevice (int or list of int): GPU device index. A LIST pins one
-                worker per GPU (e.g. [0, 1] on a 2-GPU machine); an int pins
-                all workers to one device; None uses the best GPU.
-            tempFieldName (str): Prefix for the per-field temporary scratch
-                dirs (cpp backend). Kept unique per field internally.
+            GPUdevice (int or list of int): GPU device index. A LIST pins one worker per GPU (e.g. [0, 1] on a 2-GPU machine); an int pins all workers to one device; None uses the best GPU.
+            tempFieldName (str): Prefix for the per-field temporary scratch dirs (cpp backend). Kept unique per field internally.
             nameBlock (str): Optional name for the block when saving.
             generation_type (str): "envelope_squared", "envelope" or "field".
             show_log (bool): Whether to show progress logs.
-            max_workers (int): Max PARALLEL GENERATIONS. Default: one per
-                GPU (GPU mode) or 4 (CPU mode). Do not raise this above the
-                number of GPUs.
-            backend (str): "python" (default) or "cpp". Use "cpp" with a
-                GPUdevice LIST for true multi-GPU scaling.
+            max_workers (int): Max PARALLEL GENERATIONS. Default: one per GPU (GPU mode) or 4 (CPU mode). Do not raise this above the number of GPUs.
+            backend (str): "python" (default) or "cpp". Use "cpp" with a GPUdevice LIST for true multi-GPU scaling.
+            materialize (bool): If True, promote loaded fields from np.memmap to resident RAM ndarrays (guarded by a RAM budget check).
+                Recommended for analysis/reconstruction sessions that call generate_AOsignal repeatedly. Leave False for one-shot passes or when RAM cannot hold the whole SetMixte.
 
         Returns:
             list: List of generated StructuredWave objects.
@@ -855,15 +853,15 @@ class Tomography(Experiment):
             max_workers = len(gpu_devices) if isGPU else min(4, os.cpu_count() or 1)
         if isGPU and max_workers > len(gpu_devices):
             print(f"[AOT-biomaps] Warning: max_workers={max_workers} > number of GPUs "
-                  f"({len(gpu_devices)}). Capping to {len(gpu_devices)} to avoid VRAM OOM.")
+                    f"({len(gpu_devices)}). Capping to {len(gpu_devices)} to avoid VRAM OOM.")
             max_workers = len(gpu_devices)
 
         # One-time warning: multi-GPU only pays off with the cpp backend.
         if isGPU and len(gpu_devices) > 1 and backend == "python":
             print(f"[AOT-biomaps] Warning: {len(gpu_devices)} GPUs pinned with "
-                  f"backend='python': the kwave-python time loop is GIL-bound, "
-                  f"multiple workers will NOT scale (each field ~2x slower). "
-                  f"Use backend='cpp' for true multi-GPU scaling.")
+                    f"backend='python': the kwave-python time loop is GIL-bound, "
+                    f"multiple workers will NOT scale (each field ~2x slower). "
+                    f"Use backend='cpp' for true multi-GPU scaling.")
 
         # 1. Pre-check step: Instantiation and sorting
         to_load = []
@@ -890,26 +888,69 @@ class Tomography(Experiment):
             if fieldDataPath is not None:
                 pathField = os.path.join(fieldDataPath, AcousticField.get_name_field() + self.FormatSave.value)
 
-            # Sorting: a field file counts as "on disk" only if it is NOT
-            # EMPTY. Zero-byte .img files (e.g. from a previously interrupted
-            # or truncated save) must be regenerated AND overwritten, not
-            # blindly trusted.
-            if pathField is not None and os.path.exists(pathField) \
-                    and os.path.getsize(pathField) > 0 \
-                    and self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
+            # Sorting: a field file counts as "on disk" only if it is NOT EMPTY. Zero-byte .img files (e.g. from a previously interrupted or truncated save) must be regenerated AND overwritten, not blindly trusted.
+            if pathField is not None and os.path.exists(pathField) and os.path.getsize(pathField) > 0 and self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
                 to_load.append((i, AcousticField, pathField))
             else:
                 to_generate.append((i, AcousticField, pathField))
 
-        print(f"[AOT-biomaps] Pre-check complete: {len(to_load)} fields to load, "
-              f"{len(to_generate)} fields to generate "
-              f"({max_workers} generation worker(s)).")
+        print(f"[AOT-biomaps] Pre-check complete: {len(to_load)} fields to load, {len(to_generate)} fields to generate ({max_workers} generation worker(s)).")
+
+        # --- RAM budget, inlined: MemAvailable (includes reclaimable page cache), NOT MemFree (SC_AVPHYS_PAGES). Promoting a cached memmap to an anonymous array mostly re-labels existing page-cache pages, so MemAvailable is the honest budget. sysconf fallback if /proc/meminfo is not readable (non-Linux).
+        ram_available = None
+        try:
+            with open('/proc/meminfo') as f:
+                for line in f:
+                    if line.startswith('MemAvailable:'):
+                        ram_available = int(line.split()[1]) * 1024   # kB -> bytes
+                        break
+        except OSError:
+            pass
+        if ram_available is None:
+            ram_available = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_AVPHYS_PAGES')   # fallback
+
+        # --- Materialization state (closure-shared, GIL-protected) -----------
+        # materialize_enabled[0] may be flipped OFF by the budget check below. bytes_per_field[0] is filled once, on the first successful load.
+        materialize_enabled = [bool(materialize)]
+        bytes_per_field = [None]
 
         # 2. Loading step (memmap -> cheap, stays parallel)
         def do_load(task):
             index, AcousticField, pathField = task
             try:
                 AcousticField.load_field(fieldDataPath, self.FormatSave, nameBlock)
+                F = AcousticField.field
+
+                # --- File-backed detection, inlined: walk the .base chain; a view over a memmap is still file-backed (evictable page cache) whatever its ndarray subclass. -------------------
+                b = F
+                is_file_backed = False
+                while b is not None:
+                    if isinstance(b, np.memmap):
+                        is_file_backed = True
+                        break
+                    b = b.base
+
+                # --- Materialization: ANY file-backed array (memmap subclass OR ndarray view whose base chain reaches a memmap) is promoted to a fresh ANONYMOUS copy -> guaranteed RAM. ---
+                if materialize_enabled[0] and is_file_backed:
+                    if bytes_per_field[0] is None:
+                        bytes_per_field[0] = F.nbytes
+                        est_total = bytes_per_field[0] * len(to_load)
+                        if est_total > 0.8 * ram_available:
+                            materialize_enabled[0] = False
+                            print(f"[AOT-biomaps] Warning: materialize refused: "
+                                    f"~{est_total / 2**30:.0f} Go needed for {len(to_load)} fields "
+                                    f"vs {ram_available / 2**30:.0f} Go RAM available. "
+                                    f"Falling back to lazy memmap.")
+                        else:
+                            print(f"[AOT-biomaps] Materializing fields to RAM: "
+                                    f"~{est_total / 2**30:.0f} Go for {len(to_load)} fields "
+                                    f"(RAM available: {ram_available / 2**30:.0f} Go).")
+                    if materialize_enabled[0]:
+                        # np.array(copy=True) is the ONLY construct that always forces a real data copy; it also drops any view/memmap subclass -> anonymous pages, base is None.
+                        Fc = np.array(F, dtype=F.dtype, order='C', copy=True)
+                        assert Fc.base is None   # fresh anonymous array, not file-backed
+                        AcousticField.field = Fc
+
                 return index, AcousticField, True
             except Exception:
                 return index, AcousticField, False
@@ -928,6 +969,8 @@ class Tomography(Experiment):
                         to_generate.append((index, AcousticField, pathField))
 
         # 3. Generation step (VRAM-bound -> bounded, one worker per GPU)
+        # NOTE: freshly generated fields are already resident ndarrays
+        # (save_field writes a copy to disk, it does not de-materialize the in-memory array), so no materialization is needed on this path.
         def do_generate(task):
             index, AcousticField, pathField = task
             safe_tempFieldName = f"{tempFieldName}_{AcousticField.get_name_field()}"
@@ -935,11 +978,7 @@ class Tomography(Experiment):
             # Round-robin device pinning: worker index -> GPU index
             device = gpu_devices[index % len(gpu_devices)]
 
-            AcousticField.generate_field(isGPU=isGPU, GPUdevice=device,
-                                         tempFieldName=safe_tempFieldName,
-                                         generation_type=generation_type,
-                                         show_log=show_log,
-                                         backend=backend)
+            AcousticField.generate_field(isGPU=isGPU, GPUdevice=device, tempFieldName=safe_tempFieldName, generation_type=generation_type, show_log=show_log, backend=backend)
 
             # Save only if missing or EMPTY (overwrite corrupted zero-byte files)
             if pathField is not None and self.params.acoustic['typeSim'] != TypeSim.SIMPLE_SIM.value:
@@ -1027,7 +1066,7 @@ class Tomography(Experiment):
                 raise ValueError("[AOT-biomaps] Experimental AOsignal without tumor is not initialized. Please load the experimental AO signal without tumor first.")
         if self.AcousticFields is not None:
             if self.AcousticFields[0].field.shape[0] > self.AOsignal_withTumor.shape[0]:
-                self.cutAcousticFields(max_t=self.AOsignal_withTumor.shape[0]/float(self.params.acoustic['f_saving']))
+                self.cutAcousticFields(max_t=self.AOsignal_withTumor.shape[0]/float(self.params.general['ft']))
             else:
                 min_time_shape = min(field.field.shape[0] for field in self.AcousticFields)
                 if withTumor:
