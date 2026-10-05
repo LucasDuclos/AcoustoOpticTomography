@@ -169,7 +169,7 @@ class Recon(ABC):
         if self.reconType in (ReconType.Analytic, ReconType.DeepLearning):
             self.MSE = mse(None, gt, self.reconPhantom)
 
-        elif self.reconType in (ReconType.Algebraic):
+        elif self.reconType == ReconType.Algebraic:
             self.MSE = []
             if withTumor:
                 for theta in self.reconPhantom:
