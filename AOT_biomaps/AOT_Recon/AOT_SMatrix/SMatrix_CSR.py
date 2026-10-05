@@ -234,6 +234,15 @@ class SMatrix_CSR(SMatrix):
             with cp.cuda.Device(self.gpu_index):
                 self.norm_factor_inv_gpu = cp.asarray(self.norm_factor_inv)
 
+    def _save_sparse_matrix(self, filePath):
+        raise NotImplementedError("[AOT-biomaps] Direct-to-file saving not implemented for CSR matrix. Use CPU allocation instead.")
+    
+    def _load_sparse_matrix_cpu(self, filePath):
+        raise NotImplementedError("[AOT-biomaps] Direct-to-CPU loading not implemented for CSR matrix. Use CPU allocation instead.")
+    
+    def _load_sparse_matrix_gpu(self, filePath):
+        raise NotImplementedError("[AOT-biomaps] Direct-to-GPU loading not implemented for CSR matrix. Use CPU allocation instead.")
+
     def forward_projection(self, theta: Union[np.ndarray, "cp.ndarray"]) -> Union[np.ndarray, "cp.ndarray"]:
         """Perform forward projection: q = A * theta."""
         dtype = self._get_dtype()

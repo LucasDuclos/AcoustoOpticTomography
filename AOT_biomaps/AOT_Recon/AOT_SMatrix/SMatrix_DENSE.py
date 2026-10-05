@@ -111,6 +111,15 @@ class SMatrix_DENSE(SMatrix):
                 # Réinjection directe et vectorisée dans le tenseur 4D
                 self.dense_matrix[t, n:n+current_n] = block.reshape((current_n, self.Z, self.X))
 
+    def _save_sparse_matrix(self, filePath):
+        raise NotImplementedError("[AOT-biomaps] Direct-to-file saving not implemented for DENSE matrix. Use CPU allocation instead.")
+    
+    def _load_sparse_matrix_cpu(self, filePath):
+        raise NotImplementedError("[AOT-biomaps] Direct-to-CPU loading not implemented for DENSE matrix. Use CPU allocation instead.")
+
+    def _load_sparse_matrix_gpu(self, filePath):
+        raise NotImplementedError("[AOT-biomaps] Direct-to-GPU loading not implemented for DENSE matrix. Use CPU allocation instead.")
+    
     def forward_projection(self, theta: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
         """
         Perform forward projection: q = A * theta

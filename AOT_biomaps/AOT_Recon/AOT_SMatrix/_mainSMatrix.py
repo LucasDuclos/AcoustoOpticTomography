@@ -200,7 +200,33 @@ class SMatrix(ABC):
         self.device = 'cpu'
         self._allocate_cpu()
 
+    def save_SMatrix(self, filePath):
+        """Save the matrix to disk (CPU memory)."""
+        self._save_sparse_matrix(filePath)
+
+    def load_SMatrix(self, filePath):
+        """Load the matrix from disk (CPU memory)."""
+        if self.device.startswith('gpu'):
+            self._load_sparse_matrix_gpu(filePath)
+        else:
+            self._load_sparse_matrix_cpu(filePath)
+
     # --- Abstract Methods (Strict Contract) ---
+
+    @abstractmethod
+    def _save_sparse_matrix(self, filePath):
+        """Save the matrix to disk (CPU memory)."""
+        pass
+
+    @abstractmethod
+    def _load_sparse_matrix_cpu(self, filePath):
+        """Load the matrix from disk (CPU memory)."""
+        pass
+
+    @abstractmethod
+    def _load_sparse_matrix_gpu(self, filePath):
+        """Load the matrix from disk directly into GPU memory."""
+        pass
 
     @abstractmethod
     def _allocate_gpu(self):

@@ -314,7 +314,7 @@ class SMatrix_SELL(SMatrix):
                 rows_in_slice = np.arange(s * C, s * C + C, dtype=np.int32)
                 self.sell_rowinds[base:base + length * C] = np.tile(rows_in_slice, length)
 
-    def save_sparse_matrix(self, filepath):
+    def _save_sparse_matrix(self, filePath):
         """ 
         Saves the complete SELL matrix to an uncompressed .npz file.
         To be executed on the local machine (e.g., BIOST052) after generation.
@@ -351,7 +351,7 @@ class SMatrix_SELL(SMatrix):
 
         # Optimized save without compression (ultra-fast read access)
         np.savez(
-            filepath,
+            filePath,
             values=values,
             colinds=colinds,
             slice_ptr=slice_ptr,
@@ -361,18 +361,24 @@ class SMatrix_SELL(SMatrix):
             norm_factor_inv=getattr(self, 'norm_factor_inv', np.array([])),
             metadata=metadata
         )
-        print(f"[AOT-biomaps] SELL SMatrix successfully saved ({self.total_storage} elements) to: {filepath}")
+        print(f"[AOT-biomaps] SELL SMatrix successfully saved ({self.total_storage} elements) to: {filePath}")
         if self.sell_values is None and CUPY_AVAILABLE:
             self._release_pool()
+    
+    def _load_sparse_matrix_cpu(self, filePath):
+        """
+        Loads the complete SELL matrix from an uncompressed .npz file into CPU RAM.
+        """
+        raise NotImplementedError("[AOT-biomaps] Direct-to-CPU loading not implemented for SELL matrix. Set device='gpu' instead.")
 
-    def load_sparse_matrix_gpu(self, filepath):
+    def _load_sparse_matrix_gpu(self, filePath):
         """ 
         Loads the arrays directly from the .npz file into the GPU VRAM.
         To be executed on the compute node (e.g., H100) before run().
         """       
-        print(f"[AOT-biomaps] Direct-to-GPU loading of SMatrix from {filepath}...")
+        print(f"[AOT-biomaps] Direct-to-GPU loading of SMatrix from {filePath}...")
         self.load_module()
-        data = np.load(filepath)
+        data = np.load(filePath)
         
         # 1. Restore metadata
         meta = data['metadata']

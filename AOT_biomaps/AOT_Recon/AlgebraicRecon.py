@@ -519,15 +519,33 @@ class AlgebraicRecon(Recon):
     # PUBLIC METHODS
     def generate_SMatrix(self, isShowLogs=True):
         if self.smatrixType == SMatrixType.DENSE:
-            self.SMatrix = self._fill_SMatrix_DENSE(isShowLogs=isShowLogs)
+            self.SMatrix = self._fill_SMatrix_DENSE(isShowLogs=isShowLogs, isLoading=False, SMatrixPath=None)
         elif self.smatrixType == SMatrixType.CSR:
-            self.SMatrix = self._fill_SMatrix_CSR(isShowLogs=isShowLogs)
+            self.SMatrix = self._fill_SMatrix_CSR(isShowLogs=isShowLogs, isLoading=False, SMatrixPath=None)
         elif self.smatrixType == SMatrixType.COO:
             raise NotImplementedError(f"[AOT-biomaps] COO sparse matrix not implemented yet.")
         elif self.smatrixType == SMatrixType.SELL:
-            self.SMatrix = self._fill_SMatrix_SELL(isShowLogs=isShowLogs)
+            self.SMatrix = self._fill_SMatrix_SELL(isShowLogs=isShowLogs, isLoading=False, SMatrixPath=None)
         else:
             raise ValueError(f"[AOT-biomaps] Unsupported SMatrix type: {self.smatrixType}")
+        
+    def load_SMatrix(self, SMatrixPath: str, isShowLogs=True):
+        if self.smatrixType == SMatrixType.DENSE:
+            self.SMatrix = self._fill_SMatrix_DENSE(isShowLogs=isShowLogs, isLoading=True, SMatrixPath=SMatrixPath)
+        elif self.smatrixType == SMatrixType.CSR:
+            self.SMatrix = self._fill_SMatrix_CSR(isShowLogs=isShowLogs, isLoading=True, SMatrixPath=SMatrixPath)
+        elif self.smatrixType == SMatrixType.COO:
+            raise NotImplementedError(f"[AOT-biomaps] COO sparse matrix not implemented yet.")
+        elif self.smatrixType == SMatrixType.SELL:
+            self.SMatrix = self._fill_SMatrix_SELL(isShowLogs=isShowLogs, isLoading=True, SMatrixPath=SMatrixPath)
+        else:
+            raise ValueError(f"[AOT-biomaps] Unsupported SMatrix type: {self.smatrixType}")
+        
+    def save_SMatrix(self, SMatrixPath: str):
+        if self.SMatrix is None:
+            raise ValueError("[AOT-biomaps] Cannot save SMatrix because it has not been generated or loaded yet.")
+        
+        self.SMatrix.save_SMatrix(filePath=SMatrixPath)
     
     def flip_probe(self):
         self.SMatrix.flip_probe()
@@ -1762,46 +1780,62 @@ class AlgebraicRecon(Recon):
         
     # PRIVATE METHODS
              
-    def _fill_SMatrix_DENSE(self, isShowLogs=True):
+    def _fill_SMatrix_DENSE(self, isShowLogs=True, isLoading=False, SMatrixPath=None):
         """
         Build a real or complex dense matrix using SMatrix_DENSE class.
         Frees all temporary memory at each step.
         """
         print("[AOT-biomaps] Building DENSE SMatrix") if isShowLogs else None
         SMatrix = SMatrix_DENSE(experiment=self.experiment, device=self.device, isComplexSMatrix=self.isComplexRecon)
-        SMatrix.allocate()
-        SMatrix.normalize_matrix()
+        if isLoading:
+            if SMatrixPath is None:
+                raise ValueError("[AOT-biomaps] SMatrixPath is required when loading a SELL SMatrix.")
+            SMatrix.load_SMatrix(filepath=SMatrixPath)
+        else:
+            SMatrix.allocate()
+            SMatrix.normalize_matrix()
         if isShowLogs:
             print(f"[AOT-biomaps] DENSE SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
         return SMatrix
     
-    def _fill_SMatrix_CSR(self, isShowLogs=True):
+    def _fill_SMatrix_CSR(self, isShowLogs=True, isLoading=False, SMatrixPath=None):
         """
         Built a real or complex sparse CSR matrix in chunks without intermediate concatenation.
         Frees all temporary memory at each step.
         """
         print("[AOT-biomaps] Building CSR SMatrix with relative threshold =", self.sparseThreshold) if isShowLogs else None
         SMatrix = SMatrix_CSR(experiment=self.experiment, device=self.device, block_rows=self.blockRows, relative_threshold=self.sparseThreshold, isComplexSMatrix=self.isComplexRecon)
-        SMatrix.allocate()
-        SMatrix.normalize_matrix()
+        if isLoading:
+            if SMatrixPath is None:
+                raise ValueError("[AOT-biomaps] SMatrixPath is required when loading a SELL SMatrix.")
+            SMatrix.load_SMatrix(filepath=SMatrixPath)
+        else:
+            SMatrix.allocate()
+            SMatrix.normalize_matrix()
         if isShowLogs:
             print(f"[AOT-biomaps] CSR SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
             print(f"[AOT-biomaps] CSR sparse matrix density: {SMatrix.compute_density():.2f}%")
         return SMatrix
     
-    def _fill_SMatrix_SELL(self, isShowLogs=True):
+    def _fill_SMatrix_SELL(self, isShowLogs=True, isLoading=False, SMatrixPath=None):
         """
         Built a real or complex sparse SELL matrix in chunks without intermediate concatenation.
         Frees all temporary memory at each step.
         """
         print("[AOT-biomaps] Building SELL SMatrix with relative threshold =", self.sparseThreshold) if isShowLogs else None
         SMatrix = SMatrix_SELL(experiment=self.experiment, device=self.device, block_rows=self.blockRows, relative_threshold=self.sparseThreshold, slice_height=self.sliceHeight, sigma=self.sigma_sell, isComplexSMatrix=self.isComplexRecon)
-        SMatrix.allocate()
-        SMatrix.normalize_matrix()
+        if isLoading:
+            if SMatrixPath is None:
+                raise ValueError("[AOT-biomaps] SMatrixPath is required when loading a SELL SMatrix.")
+            SMatrix.load_SMatrix(filepath=SMatrixPath)
+        else:
+            SMatrix.allocate()
+            SMatrix.normalize_matrix()
         if isShowLogs:
             print(f"[AOT-biomaps] SELL SMatrix size: {SMatrix.get_matrix_size()['total_gb']:.2f} GB")
             print(f"[AOT-biomaps] SELL sparse matrix density: {SMatrix.compute_density():.2f}%")
         return SMatrix
+
         
     # STATIC METHODS
     @staticmethod
