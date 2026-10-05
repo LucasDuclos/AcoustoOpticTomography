@@ -1711,7 +1711,7 @@ class AlgebraicRecon(Recon):
             overwrite (bool): If True, ignores existing files and returns True for saving.
 
         Returns:
-            tuple: (bool: whether to save, str: the filepath)
+            tuple: (bool: whether to save, str: the filePath)
         """
         if self.saveDir is None:
             raise ValueError("[AOT-biomaps] Save directory is not specified.")
@@ -1790,7 +1790,7 @@ class AlgebraicRecon(Recon):
         if isLoading:
             if SMatrixPath is None:
                 raise ValueError("[AOT-biomaps] SMatrixPath is required when loading a SELL SMatrix.")
-            SMatrix.load_SMatrix(filepath=SMatrixPath)
+            SMatrix.load_SMatrix(filePath=SMatrixPath)
         else:
             SMatrix.allocate()
             SMatrix.normalize_matrix()
@@ -1808,7 +1808,7 @@ class AlgebraicRecon(Recon):
         if isLoading:
             if SMatrixPath is None:
                 raise ValueError("[AOT-biomaps] SMatrixPath is required when loading a SELL SMatrix.")
-            SMatrix.load_SMatrix(filepath=SMatrixPath)
+            SMatrix.load_SMatrix(filePath=SMatrixPath)
         else:
             SMatrix.allocate()
             SMatrix.normalize_matrix()
@@ -1827,7 +1827,7 @@ class AlgebraicRecon(Recon):
         if isLoading:
             if SMatrixPath is None:
                 raise ValueError("[AOT-biomaps] SMatrixPath is required when loading a SELL SMatrix.")
-            SMatrix.load_SMatrix(filepath=SMatrixPath)
+            SMatrix.load_SMatrix(filePath=SMatrixPath)
         else:
             SMatrix.allocate()
             SMatrix.normalize_matrix()
