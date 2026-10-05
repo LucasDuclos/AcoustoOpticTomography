@@ -77,7 +77,7 @@ from .AOT_Recon.AOT_SMatrix._mainSMatrix import *
 from .Config import config
 from .Settings import *
 
-__version__ = '2.9.972'
+__version__ = '2.9.975'
 __process__ = config.get_process()
 
 # Reference to the config object
@@ -141,6 +141,9 @@ def initialize(process=None, gpu_id=None):
     __config__._update()
     
     return __process__
+
+
+
 
 
 
