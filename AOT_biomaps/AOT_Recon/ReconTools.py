@@ -101,6 +101,8 @@ def mse(SMatrix, lambda_true, lambda_pred):
     Calculate the Mean Squared Error (MSE) between two arrays.
     Equivalent to sklearn.metrics.mean_squared_error.
     """
+    if SMatrix is None:
+        return np.mean((lambda_true - lambda_pred) ** 2)
     with get_device_context(SMatrix):
         xp = get_array_module(SMatrix) if SMatrix is not None else np
         lambda_true = xp.asarray(lambda_true)

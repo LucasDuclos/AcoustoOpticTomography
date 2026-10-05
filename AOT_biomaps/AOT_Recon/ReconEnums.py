@@ -16,11 +16,8 @@ class ReconType(Enum):
     """A reconstruction method based on analytical solutions."""
     Algebraic = 'algebraic'
     """A reconstruction method that Algebraicly refines the solution."""
-    Bayesian = 'bayesian'
-    """A reconstruction method based on Bayesian statistical approaches."""
     DeepLearning = 'deep_learning'
     """A reconstruction method utilizing deep learning algorithms."""
-    Convex = 'convex'
 
 class AnalyticType(Enum):
     iFOURIER = 'iFOURIER'
