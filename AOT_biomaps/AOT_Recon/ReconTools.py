@@ -107,7 +107,7 @@ def mse(SMatrix, lambda_true, lambda_pred):
         xp = get_array_module(SMatrix) if SMatrix is not None else np
         lambda_true = xp.asarray(lambda_true)
         lambda_pred = xp.asarray(lambda_pred)
-        return xp.mean((lambda_true - lambda_pred) ** 2)
+        return float(xp.mean((lambda_true - lambda_pred) ** 2))
 
 # =============================================================================
 # ALGORITHM FUNCTIONS

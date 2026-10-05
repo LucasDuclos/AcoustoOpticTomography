@@ -1701,7 +1701,7 @@ class AlgebraicRecon(Recon):
 
         plt.show()
 
-    def check_existing_file(self, date=None, withTumor=True):
+    def check_existing_file(self, date=None, withTumor=True, optimizer=None):
         """
         Check if the reconstruction file already exists, based on current instance parameters.
 
@@ -1717,7 +1717,7 @@ class AlgebraicRecon(Recon):
             raise ValueError("[AOT-biomaps] Save directory is not specified.")
         if date is None:
             date = datetime.now().strftime("%d%m")
-        results_dir = os.path.join(self.saveDir, f'results_{date}_{self.optimizer.value}')
+        results_dir = os.path.join(self.saveDir, f'results_{date}_{self.optimizer.value if optimizer is None else optimizer.value}')
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
 
@@ -1746,8 +1746,10 @@ class AlgebraicRecon(Recon):
         else:
             if self.saveDir is None:
                 raise ValueError("[AOT-biomaps] Save directory is not specified. Please set saveDir before loading.")
-            
-            recon_path = os.path.join(self.saveDir, f'{recon_key}.npy')
+            isExisting, recon_path = self.check_existing_file(date=results_date, withTumor=withTumor, optimizer=optimizer)
+            recon_path = os.path.join(recon_path, f"{recon_key}.npy")
+            if not isExisting:
+                raise FileNotFoundError(f"[AOT-biomaps] No existing reconstruction file found for {recon_key} in {self.saveDir}.")
             if not os.path.exists(recon_path):
                 raise FileNotFoundError(f"[AOT-biomaps] No {recon_key}.npy file found in {self.saveDir}.")
 
