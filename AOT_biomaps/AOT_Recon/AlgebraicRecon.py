@@ -1728,58 +1728,10 @@ class AlgebraicRecon(Recon):
         else:
             if self.saveDir is None:
                 raise ValueError("[AOT-biomaps] Save directory is not specified. Please set saveDir before loading.")
-
-            # Determine the optimizer name to use
-            opt_name = optimizer.value if optimizer is not None else self.optimizer.value
-
-            # Build the base directory pattern (e.g., "results_*_PDHG")
-            dir_pattern = f'results_*_{opt_name}'
-
-            # Add optimizer-specific parameters to the pattern
-            if optimizer is None:
-                optimizer = self.optimizer
-            if optimizer == OptimizerType.PPGMLEM:
-                dir_pattern += f'_Beta_{self.beta}_Delta_{self.delta}_Gamma_{self.gamma}_Sigma_{self.sigma}'
-            elif optimizer in (OptimizerType.PGC, OptimizerType.DEPIERRO):
-                dir_pattern += f'_Beta_{self.beta}_Sigma_{self.sigma}'
-            elif optimizer == OptimizerType.PGD:
-                dir_pattern += f'_Alpha_{self.alpha}'
-
-            # List all directories in self.saveDir
-            all_dirs = [d for d in os.listdir(self.saveDir) if os.path.isdir(os.path.join(self.saveDir, d))]
-
-            # Filter directories matching the pattern (e.g., "results_0906_PDHG")
-            matching_dirs = []
-            for d in all_dirs:
-                if d.startswith('results_') and f'_{opt_name}' in d:
-                    matching_dirs.append(d)
-
-            if not matching_dirs:
-                raise FileNotFoundError(f"[AOT-biomaps] No matching results directory found for pattern 'results_*_{opt_name}' in {self.saveDir}.")
-
-            # If results_date is specified, use it
-            if results_date is not None:
-                target_dir = f'results_{results_date}_{opt_name}'
-                if optimizer == OptimizerType.PPGMLEM:
-                    target_dir += f'_Beta_{self.beta}_Delta_{self.delta}_Gamma_{self.gamma}_Sigma_{self.sigma}'
-                elif optimizer in (OptimizerType.PGC, OptimizerType.DEPIERRO):
-                    target_dir += f'_Beta_{self.beta}_Sigma_{self.sigma}'
-                elif optimizer == OptimizerType.PGD:
-                    target_dir += f'_Alpha_{self.alpha}'
-
-                # Check if the directory exists
-                results_dir = os.path.join(self.saveDir, target_dir)
-                if not os.path.exists(results_dir):
-                    raise FileNotFoundError(f"[AOT-biomaps] Directory {results_dir} does not exist.")
-            else:
-                # Find the most recent directory (sorted by date in ddmm format)
-                matching_dirs.sort(reverse=True)  # Sort alphabetically (ddmm dates are sortable)
-                results_dir = os.path.join(self.saveDir, matching_dirs[0])
-
-            # Path to the reconstruction file
-            recon_path = os.path.join(results_dir, f'{recon_key}.npy')
+            
+            recon_path = os.path.join(self.saveDir, f'{recon_key}.npy')
             if not os.path.exists(recon_path):
-                raise FileNotFoundError(f"[AOT-biomaps] No {recon_key}.npy file found in {results_dir}.")
+                raise FileNotFoundError(f"[AOT-biomaps] No {recon_key}.npy file found in {self.saveDir}.")
 
         # Load the file (3D array or list of 2D arrays)
         data = np.load(recon_path, allow_pickle=True)
