@@ -5,7 +5,7 @@ from typing import Optional, Union
 import contextlib
 
 from AOT_biomaps.AOT_Recon.AOT_SMatrix._mainSMatrix import SMatrix
-from AOT_biomaps.AOT_Recon.ReconEnums import SMatrixType
+from AOT_biomaps.AOT_Recon.ReconEnums import SMatrixType, SMATRIX_FORMAT_TAG, SMATRIX_FORMAT_TAGS
 from AOT_biomaps.AOT_Recon.ReconTools import check_gpu_available
 
 # Check for CuPy availability
@@ -22,7 +22,7 @@ class SMatrix_SELL(SMatrix):
     Sparse matrix in SELL-C-sigma format for efficient GPU operations.
     Supports both REAL and COMPLEX fields via `isComplexSMatrix`.
     """
-
+    _FORMAT_TAG = SMATRIX_FORMAT_TAG[SMatrixType.SELL]
     def __init__(self, block_rows: int = 256, relative_threshold: float = 0.01,
                  slice_height: int = 32, sigma: int = 4096, **kwargs):
         """
@@ -341,7 +341,8 @@ class SMatrix_SELL(SMatrix):
             # No spatial truncation: mode 0
             spatial_meta = np.zeros(7)
 
-        metadata = np.concatenate([metadata, spatial_meta])
+        # Format tag (last field, checked at load time)
+        metadata = np.concatenate([metadata, spatial_meta, np.array([self._FORMAT_TAG])])
 
         # Optimized save without compression (ultra-fast read access)
         np.savez(
@@ -353,19 +354,43 @@ class SMatrix_SELL(SMatrix):
             row_perm=self.row_perm,
             inv_row_perm=self.inv_row_perm,
             norm_factor_inv=self.norm_factor_inv if self.norm_factor_inv is not None else np.array([]),
-            metadata=metadata
+            metadata=metadata,
+            normalization_factor=np.float64(getattr(self, 'normalization_factor', 1.0))
         )
         print(f"[AOT-biomaps] SELL SMatrix successfully saved ({self.total_storage} elements) to: {filePath}")
         if self.sell_values is None and CUPY_AVAILABLE:
             self._release_pool()
+
+    def _check_format_tag(self, meta):
+        """Ensure the npz was saved as a REAL/COMPLEX SELL matrix (format tag + complex flag)."""
+        # 1. Identify the file's format first (useful message before any length check)
+        tag = int(meta[-1]) if len(meta) >= 1 else -1
+        if tag != self._FORMAT_TAG and tag in SMATRIX_FORMAT_TAGS:
+            raise ValueError(f"[AOT-biomaps] Wrong matrix format: file is {SMATRIX_FORMAT_TAGS[tag]} (tag {tag}), but this object is SELL (tag {self._FORMAT_TAG}). Load it with the matching smatrixType or regenerate the SMatrix.")
+
+        # 2. Unknown / legacy file
+        if len(meta) < 16:
+            raise ValueError(f"[AOT-biomaps] Incompatible npz: metadata too short ({len(meta)} fields, expected >= 16). Not a SELL file from this AOT-biomaps version — regenerate the SMatrix.")
+
+        # 3. REAL vs COMPLEX mismatch (isComplexSMatrix is meta[7] for SELL)
+        file_is_complex = bool(int(meta[7]))
+        if file_is_complex != self.isComplexSMatrix:
+            kind_file = "COMPLEX" if file_is_complex else "REAL"
+            kind_self = "COMPLEX" if self.isComplexSMatrix else "REAL"
+            raise ValueError(f"[AOT-biomaps] SMatrix type mismatch: file was saved as {kind_file} but this object is configured as {kind_self}. Recreate AlgebraicRecon with the matching isComplexRecon setting or regenerate the SMatrix.")
     
     def _load_sparse_matrix_cpu(self, filePath):
         """Loads the SELL matrix from the .npz file into CPU RAM."""
         print(f"[AOT-biomaps] Loading SELL SMatrix from {filePath} into CPU RAM...")
         data = np.load(filePath)
+        if 'normalization_factor' in data:
+            self.normalization_factor = float(data['normalization_factor'])
+        else:
+            raise ValueError("[AOT-biomaps] npz has no 'normalization_factor': the matrix scale is unknown (saved by an older version?). Regenerate and re-save the SMatrix with this version.")
 
         # 1. Metadata (same layout as _save_sparse_matrix)
         meta = data['metadata']
+        self._check_format_tag(meta)
         self.N, self.T, self.Z, self.X, self.slice_height, self.total_storage, self.total_nnz = map(int, meta[:7])
         self.isComplexSMatrix = bool(meta[7])
 
@@ -390,17 +415,7 @@ class SMatrix_SELL(SMatrix):
             self.norm_factor_inv = data['norm_factor_inv']
 
         # 3. Rebuild sell_rowinds (required by CPU projections)
-        C = int(self.slice_height)
-        num_rows = int(self.N * self.T)
-        num_slices = (num_rows + C - 1) // C
-
-        self.sell_rowinds = np.zeros(self.total_storage, dtype=np.int32)
-        for s in range(num_slices):
-            base = int(self.slice_ptr[s])
-            length = int(self.slice_len[s])
-            if length > 0:
-                rows_in_slice = np.arange(s * C, min(num_rows, s * C + C), dtype=np.int32)
-                self.sell_rowinds[base:base + length * C] = np.tile(rows_in_slice, length)
+        self.sell_rowinds = self._build_sell_rowinds()
 
         data.close()
         self.device = 'cpu'
@@ -414,19 +429,21 @@ class SMatrix_SELL(SMatrix):
         print(f"[AOT-biomaps] Direct-to-GPU loading of SMatrix from {filePath}...")
         self.load_module()
         data = np.load(filePath)
-        
+        if 'normalization_factor' in data:
+            self.normalization_factor = float(data['normalization_factor'])
+        else:
+            raise ValueError("[AOT-biomaps] npz has no 'normalization_factor': the matrix scale is unknown (saved by an older version?). Regenerate and re-save the SMatrix with this version.")
+
         meta = data['metadata']
+        self._check_format_tag(meta)
         self.N, self.T, self.Z, self.X, self.slice_height, self.total_storage, self.total_nnz = map(int, meta[:7])
         self.isComplexSMatrix = bool(meta[7])
 
         self._phys_box = None
-        if len(meta) >= 15 and int(meta[8]) == 1:
-            self._phys_box = {'z': (int(meta[9]), int(meta[10])),
-                              'x': (int(meta[11]), int(meta[12])),
-                              'Zf': int(meta[13]), 'Xf': int(meta[14])}
-        elif len(meta) >= 15 and int(meta[8]) == 2:
-            self._phys_box = {'dec': {"Z": int(meta[9]), "X": int(meta[10])},
-                              'Zf': int(meta[13]), 'Xf': int(meta[14])}
+        if int(meta[8]) == 1:
+            self._phys_box = {'z': (int(meta[9]), int(meta[10])), 'x': (int(meta[11]), int(meta[12])), 'Zf': int(meta[13]), 'Xf': int(meta[14])}
+        elif int(meta[8]) == 2:
+            self._phys_box = {'dec': {"Z": int(meta[9]), "X": int(meta[10])}, 'Zf': int(meta[13]), 'Xf': int(meta[14])}
 
         cp_dtype = self._get_cp_dtype()
 
@@ -452,6 +469,21 @@ class SMatrix_SELL(SMatrix):
         data.close()  
 
         print(f"[AOT-biomaps] SELL SMatrix loaded into VRAM. Density restored.")
+
+    def _build_sell_rowinds(self, num_rows=None):
+        """Rebuild sell_rowinds (full C rows per slice, incl. phantom rows on the last partial slice).
+        Must match _allocate_cpu: phantom rows (index >= num_rows) are harmless (values == 0)."""
+        num_rows = int(num_rows if num_rows is not None else self.N * self.T)
+        C = int(self.slice_height)
+        num_slices = len(self.slice_len)
+        out = np.zeros(self.total_storage, dtype=np.int32)
+        for s in range(num_slices):
+            base = int(self.slice_ptr[s])
+            length = int(self.slice_len[s])
+            if length > 0:
+                rows_in_slice = np.arange(s * C, s * C + C, dtype=np.int32) 
+                out[base:base + length * C] = np.tile(rows_in_slice, length)
+        return out
 
     def forward_projection(self, theta: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
         """Forward projection: q = phi_t . P^-1 . A_sell . phi_s^T . theta."""
@@ -593,7 +625,7 @@ class SMatrix_SELL(SMatrix):
             v_cols = self.sell_colinds[valid]
             v_rows = self.sell_rowinds[valid]
 
-            np.add.at(c, v_cols.astype(np.int64), v_vals * e_cpu_permuted[v_rows])
+            np.add.at(c, v_cols.astype(np.int64), np.conj(v_vals) * e_cpu_permuted[v_rows])
 
             if virt and self._vs_active_cols is not None:
                 return c[self._vs_active_cols]
@@ -1085,16 +1117,8 @@ class SMatrix_SELL(SMatrix):
                 v_cols = colinds[valid]
                 # sell_rowinds gives sorted-row indices; map back to physical rows
                 sell_rowinds = getattr(self, "sell_rowinds", None)
-                if sell_rowinds is None:
-                    # Rebuild on the fly (not built by _load_sparse_matrix_cpu? safety net)
-                    num_slices = len(slice_len)
-                    sell_rowinds = np.zeros(self.total_storage, dtype=np.int32)
-                    for s in range(num_slices):
-                        base = int(slice_ptr[s])
-                        length = int(slice_len[s])
-                        if length > 0:
-                            rows_in_slice = np.arange(s * C, min(old_NT, s * C + C), dtype=np.int32)
-                            sell_rowinds[base:base + length * C] = np.tile(rows_in_slice, length)
+                if sell_rowinds is None or sell_rowinds.size != self.total_storage:
+                    sell_rowinds = self._build_sell_rowinds(old_NT)
                 v_rows_sorted = sell_rowinds[valid]
                 v_rows_phys = row_perm[v_rows_sorted]
 
@@ -1162,13 +1186,7 @@ class SMatrix_SELL(SMatrix):
                 self.device = 'cpu'
 
                 # B.7 Rebuild sell_rowinds for CPU projections
-                self.sell_rowinds = np.zeros(new_total_storage, dtype=np.int32)
-                for s in range(new_num_slices):
-                    base = int(new_slice_ptr[s])
-                    length = int(new_slice_len[s])
-                    if length > 0:
-                        rows_in_slice = np.arange(s * C, min(new_NT, s * C + C), dtype=np.int32)
-                        self.sell_rowinds[base:base + length * C] = np.tile(rows_in_slice, length)
+                self.sell_rowinds = self._build_sell_rowinds(new_NT)
 
             # ==========================================================
             # Common bookkeeping
@@ -1251,6 +1269,8 @@ class SMatrix_SELL(SMatrix):
         if hasattr(self, "_full_T"):
             self.N, self.T = self._full_N, self._full_T
             self.Z, self.X = self._full_Z, self._full_X
+            for a in ("_full_N", "_full_T", "_full_Z", "_full_X"):
+                delattr(self, a) 
         if verbose:
             print("[AOT-biomaps] Virtual truncation removed. Full matrix active.")
 

@@ -1,3 +1,4 @@
+from curses import meta
 import os
 import warnings
 import numpy as np
@@ -6,7 +7,7 @@ from typing import Optional, Union
 import contextlib
 
 from AOT_biomaps.AOT_Recon.AOT_SMatrix._mainSMatrix import SMatrix
-from AOT_biomaps.AOT_Recon.ReconEnums import SMatrixType
+from AOT_biomaps.AOT_Recon.ReconEnums import SMatrixType, SMATRIX_FORMAT_TAG, SMATRIX_FORMAT_TAGS
 from AOT_biomaps.AOT_Recon.ReconTools import check_gpu_available
 
 # Check for CuPy availability
@@ -23,6 +24,7 @@ class SMatrix_CSR(SMatrix):
     Construction of a CSR matrix from a `experiment` object.
     Supports both REAL and COMPLEX fields via `isComplexSMatrix`.
     """
+    _FORMAT_TAG = SMATRIX_FORMAT_TAG[SMatrixType.CSR]
 
     def __init__(self, block_rows: int = 128, relative_threshold: float = 0.01, **kwargs):
         """
@@ -269,32 +271,50 @@ class SMatrix_CSR(SMatrix):
         else:
             spatial_meta = np.zeros(7)
 
-        metadata = np.concatenate([metadata, spatial_meta])
-
-        norm_inv = self.norm_factor_inv if self.norm_factor_inv is not None else np.array([])
+        metadata = np.concatenate([metadata, spatial_meta, np.array([self._FORMAT_TAG])])
 
         np.savez(filePath, values=values, colinds=col_ind, row_ptr=row_ptr,
-                 norm_factor_inv=norm_inv, metadata=metadata)
+                 norm_factor_inv=self.norm_factor_inv if self.norm_factor_inv is not None else np.array([]), metadata=metadata,normalization_factor=np.float64(getattr(self, 'normalization_factor', 1.0)))
         print(f"[AOT-biomaps] CSR SMatrix successfully saved ({self.total_nnz} nnz) to: {filePath}")
 
+    def _check_format_tag(self, meta):
+        """Ensure the npz was saved as a REAL/COMPLEX CSR matrix (format tag + complex flag)."""
+        # 1. Identify the file's format first (useful message before any length check)
+        tag = int(meta[-1]) if len(meta) >= 1 else -1
+        if tag != self._FORMAT_TAG and tag in SMATRIX_FORMAT_TAGS:
+            raise ValueError(f"[AOT-biomaps] Wrong matrix format: file is {SMATRIX_FORMAT_TAGS[tag]} (tag {tag}), but this object is CSR (tag {self._FORMAT_TAG}). Load it with the matching smatrixType or regenerate the SMatrix.")
+
+        # 2. Unknown / legacy file
+        if len(meta) < 14:
+            raise ValueError(f"[AOT-biomaps] Incompatible npz: metadata too short ({len(meta)} fields, expected >= 14). Not a CSR file from this AOT-biomaps version — regenerate the SMatrix.")
+
+        # 3. REAL vs COMPLEX mismatch (isComplexSMatrix is meta[5] for CSR)
+        file_is_complex = bool(int(meta[5]))
+        if file_is_complex != self.isComplexSMatrix:
+            kind_file = "COMPLEX" if file_is_complex else "REAL"
+            kind_self = "COMPLEX" if self.isComplexSMatrix else "REAL"
+            raise ValueError(f"[AOT-biomaps] SMatrix type mismatch: file was saved as {kind_file} but this object is configured as {kind_self}. Recreate AlgebraicRecon with the matching isComplexRecon setting or regenerate the SMatrix.") 
+          
     def _load_sparse_matrix_cpu(self, filePath):
         """Loads the CSR matrix from the .npz file into CPU RAM."""
         print(f"[AOT-biomaps] Loading CSR SMatrix from {filePath} into CPU RAM...")
         data = np.load(filePath)
+        if 'normalization_factor' in data:
+            self.normalization_factor = float(data['normalization_factor'])
+        else:
+            raise ValueError("[AOT-biomaps] npz has no 'normalization_factor': the matrix scale is unknown (saved by an older version?). Regenerate and re-save the SMatrix with this version.")
 
         meta = data['metadata']
+        self._check_format_tag(meta)
         self.N, self.T, self.Z, self.X, self.total_nnz = map(int, meta[:5])
         self.isComplexSMatrix = bool(meta[5])
 
         # Restore the physical spatial crop info if present (older files: len(meta)==6)
         self._phys_box = None
-        if len(meta) >= 13 and int(meta[6]) == 1:
-            self._phys_box = {'z': (int(meta[7]), int(meta[8])),
-                              'x': (int(meta[9]), int(meta[10])),
-                              'Zf': int(meta[11]), 'Xf': int(meta[12])}
-        elif len(meta) >= 13 and int(meta[6]) == 2:
-            self._phys_box = {'dec': {"Z": int(meta[7]), "X": int(meta[8])},
-                              'Zf': int(meta[11]), 'Xf': int(meta[12])}
+        if int(meta[6]) == 1:
+            self._phys_box = {'z': (int(meta[7]), int(meta[8])), 'x': (int(meta[9]), int(meta[10])), 'Zf': int(meta[11]), 'Xf': int(meta[12])}
+        elif int(meta[6]) == 2:
+            self._phys_box = {'dec': {"Z": int(meta[7]), "X": int(meta[8])}, 'Zf': int(meta[11]), 'Xf': int(meta[12])}
 
         self.row_ptr = data['row_ptr']
         self.h_col_ind = data['colinds']
@@ -323,20 +343,23 @@ class SMatrix_CSR(SMatrix):
         print(f"[AOT-biomaps] Direct-to-GPU loading of CSR SMatrix from {filePath}...")
         self.load_module()
         data = np.load(filePath)
-
+        if 'normalization_factor' in data:
+            self.normalization_factor = float(data['normalization_factor'])
+        else:
+            raise ValueError(
+                "[AOT-biomaps] npz has no 'normalization_factor': the matrix scale is unknown (saved by an older version?). Regenerate and re-save the SMatrix with this version.")
+        
         meta = data['metadata']
+        self._check_format_tag(meta)
         self.N, self.T, self.Z, self.X, self.total_nnz = map(int, meta[:5])
         self.isComplexSMatrix = bool(meta[5])
 
         # Restore the physical spatial crop info if present (older files: len(meta)==6)
         self._phys_box = None
-        if len(meta) >= 13 and int(meta[6]) == 1:
-            self._phys_box = {'z': (int(meta[7]), int(meta[8])),
-                              'x': (int(meta[9]), int(meta[10])),
-                              'Zf': int(meta[11]), 'Xf': int(meta[12])}
-        elif len(meta) >= 13 and int(meta[6]) == 2:
-            self._phys_box = {'dec': {"Z": int(meta[7]), "X": int(meta[8])},
-                              'Zf': int(meta[11]), 'Xf': int(meta[12])}
+        if int(meta[6]) == 1:
+            self._phys_box = {'z': (int(meta[7]), int(meta[8])), 'x': (int(meta[9]), int(meta[10])), 'Zf': int(meta[11]), 'Xf': int(meta[12])}
+        elif int(meta[6]) == 2:
+            self._phys_box = {'dec': {"Z": int(meta[7]), "X": int(meta[8])}, 'Zf': int(meta[11]), 'Xf': int(meta[12])}
 
         cp_dtype = self._get_cp_dtype()
 
@@ -457,11 +480,11 @@ class SMatrix_CSR(SMatrix):
                 e_tmp = np.zeros(full_NT, dtype=dtype)
                 e_tmp[self._vt_active_rows] = e_cpu
                 e_cpu = e_tmp
-                c = self.scipy_csr.T.dot(e_cpu)
+                c = self.scipy_csr.conj().T.dot(e_cpu)
                 if self._vs_active_cols is not None:
                     return c[self._vs_active_cols]
                 return c
-            return self.scipy_csr.T.dot(e_cpu)
+            return self.scipy_csr.conj().T.dot(e_cpu) 
         
     def apply_apodization(self, window_vector: Union[np.ndarray, 'cp.ndarray']):
         """Apply apodization window to the matrix values."""
@@ -596,14 +619,13 @@ class SMatrix_CSR(SMatrix):
                 row_ptr = self.row_ptr_gpu
 
                 # Column sums (|A|^T * 1)
-                col_sums = cp.bincount(colinds, weights=abs_vals,
-                                       minlength=full_ZX).astype(cp.float32)
+                col_sums = cp.bincount(colinds, weights=abs_vals, minlength=full_ZX).astype(cp.float32)
 
                 # Row sums (|A| * 1): expand row_ptr -> per-entry row index
                 row_counts = (row_ptr[1:] - row_ptr[:-1]).astype(cp.int64)
-                row_idx = cp.repeat(cp.arange(full_NT, dtype=cp.int64), row_counts)
-                row_sums = cp.bincount(row_idx, weights=abs_vals,
-                                       minlength=full_NT).astype(cp.float32)
+                nnz = int(row_ptr[-1])
+                row_idx = cp.searchsorted(row_ptr, cp.arange(nnz, dtype=row_ptr.dtype), side='right') - 1
+                row_sums = cp.bincount(row_idx, weights=abs_vals, minlength=full_NT).astype(cp.float32)
 
                 # gather: full -> effective (phi_t on rows, phi_s on cols)
                 if virt:
@@ -620,11 +642,9 @@ class SMatrix_CSR(SMatrix):
             colinds = self.h_col_ind.astype(np.int64)
             row_counts = (self.row_ptr[1:] - self.row_ptr[:-1]).astype(np.int64)
 
-            col_sums = np.bincount(colinds, weights=abs_vals,
-                                   minlength=full_ZX).astype(np.float32)
+            col_sums = np.bincount(colinds, weights=abs_vals, minlength=full_ZX).astype(np.float32)
             row_idx = np.repeat(np.arange(full_NT, dtype=np.int64), row_counts)
-            row_sums = np.bincount(row_idx, weights=abs_vals,
-                                   minlength=full_NT).astype(np.float32)
+            row_sums = np.bincount(row_idx, weights=abs_vals, minlength=full_NT).astype(np.float32)
 
             if virt:
                 row_sums = row_sums[self._vt_active_rows]
@@ -715,7 +735,8 @@ class SMatrix_CSR(SMatrix):
 
             # 4. Vectorized COO reconstruction + filtering
             row_counts = row_ptr[1:] - row_ptr[:-1]
-            row_idx = xp.repeat(xp.arange(old_NT, dtype=xp.int32), row_counts)
+            nnz = int(row_ptr[-1])
+            row_idx = xp.searchsorted(row_ptr, xp.arange(nnz, dtype=row_ptr.dtype), side='right') - 1
 
             keep = (old_to_new_row[row_idx] >= 0) & (old_to_new_col[colinds] >= 0)
 
@@ -832,6 +853,8 @@ class SMatrix_CSR(SMatrix):
         if hasattr(self, "_full_T"):
             self.N, self.T = self._full_N, self._full_T
             self.Z, self.X = self._full_Z, self._full_X
+            for a in ("_full_N", "_full_T", "_full_Z", "_full_X"): 
+                delattr(self, a) 
         if verbose:
             print("[AOT-biomaps] Virtual truncation removed. Full matrix active.")
 

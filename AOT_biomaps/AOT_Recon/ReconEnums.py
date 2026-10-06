@@ -242,6 +242,13 @@ class SMatrixType(Enum):
           ACM Transactions on Mathematical Software, 41(2), 1–24. DOI: 10.1145/2592376.
     """
 
+SMATRIX_FORMAT_TAG = {
+    SMatrixType.SELL: 2001,
+    SMatrixType.CSR:  2002,
+    SMatrixType.DENSE: 2003,
+}
+SMATRIX_FORMAT_TAGS = {tag: mt.name for mt, tag in SMATRIX_FORMAT_TAG.items()}
+
 class StopCriterionType(Enum):
     """
     Enum for different stopping criteria used in iterative reconstruction algorithms.

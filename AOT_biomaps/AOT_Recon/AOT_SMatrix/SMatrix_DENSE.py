@@ -3,7 +3,7 @@ from tqdm import trange
 from typing import Optional, Union
 import contextlib
 from AOT_biomaps.AOT_Recon.AOT_SMatrix._mainSMatrix import SMatrix
-from AOT_biomaps.AOT_Recon.ReconEnums import SMatrixType
+from AOT_biomaps.AOT_Recon.ReconEnums import SMatrixType, SMATRIX_FORMAT_TAG, SMATRIX_FORMAT_TAGS
 from AOT_biomaps.AOT_Recon.ReconTools import check_gpu_available
 
 # Check for CuPy availability
@@ -19,6 +19,7 @@ class SMatrix_DENSE(SMatrix):
     Construction of a DENSE matrix from a `experiment` object.
     Supports both REAL and COMPLEX fields via `isComplexSMatrix`.
     """
+    _FORMAT_TAG = SMATRIX_FORMAT_TAG[SMatrixType.DENSE]
 
     def __init__(self, **kwargs):
         """
@@ -114,6 +115,9 @@ class SMatrix_DENSE(SMatrix):
 
     def _save_sparse_matrix(self, filePath):
         """Saves the complete DENSE matrix to an uncompressed .npz file."""
+        if self._is_virtual_truncated():
+            raise RuntimeError("[AOT-biomaps] Call untruncate() before save_sparse_matrix().")
+
         if check_gpu_available(self) and self.dense_matrix_gpu is not None:
             dense = cp.asnumpy(self.dense_matrix_gpu)
             with cp.cuda.Device(self.gpu_index):
@@ -135,38 +139,57 @@ class SMatrix_DENSE(SMatrix):
         else:
             spatial_meta = np.zeros(7)
 
-        metadata = np.concatenate([
-            np.array([self.N, self.T, self.Z, self.X, int(self.isComplexSMatrix)]),
-            spatial_meta
-        ])
-
+        # Format tag (last field, checked at load time)
+        metadata = np.concatenate([np.array([self.N, self.T, self.Z, self.X, int(self.isComplexSMatrix)]), spatial_meta, np.array([self._FORMAT_TAG])])
+        
         np.savez(
             filePath,
             dense_matrix=dense,
-            norm_factor_inv= self.norm_factor_inv if self.norm_factor_inv is not None else np.array([]),
-            metadata=metadata
+            norm_factor_inv=self.norm_factor_inv if self.norm_factor_inv is not None else np.array([]),
+            metadata=metadata,
+            normalization_factor=np.float64(getattr(self, 'normalization_factor', 1.0))
         )
         print(f"[AOT-biomaps] DENSE SMatrix successfully saved to: {filePath}")
+
+    def _check_format_tag(self, meta):
+        """Ensure the npz was saved as a REAL/COMPLEX DENSE matrix (format tag + complex flag)."""
+        # 1. Identify the file's format first (useful message before any length check)
+        tag = int(meta[-1]) if len(meta) >= 1 else -1
+        if tag != self._FORMAT_TAG and tag in SMATRIX_FORMAT_TAGS:
+            raise ValueError(f"[AOT-biomaps] Wrong matrix format: file is {SMATRIX_FORMAT_TAGS[tag]} (tag {tag}), but this object is DENSE (tag {self._FORMAT_TAG}). Load it with the matching smatrixType or regenerate the SMatrix.")
+
+        # 2. Unknown / legacy file
+        if len(meta) < 13:
+            raise ValueError(f"[AOT-biomaps] Incompatible npz: metadata too short ({len(meta)} fields, expected >= 13). Not a DENSE file from this AOT-biomaps version — regenerate the SMatrix.")
+
+        # 3. REAL vs COMPLEX mismatch (isComplexSMatrix is meta[4] for DENSE)
+        file_is_complex = bool(int(meta[4]))
+        if file_is_complex != self.isComplexSMatrix:
+            kind_file = "COMPLEX" if file_is_complex else "REAL"
+            kind_self = "COMPLEX" if self.isComplexSMatrix else "REAL"
+            raise ValueError(f"[AOT-biomaps] SMatrix type mismatch: file was saved as {kind_file} but this object is configured as {kind_self}. Recreate AlgebraicRecon with the matching isComplexRecon setting or regenerate the SMatrix.")
 
     def _load_sparse_matrix_cpu(self, filePath):
         """Loads the DENSE matrix from the .npz file into CPU RAM."""
         print(f"[AOT-biomaps] Loading DENSE SMatrix from {filePath} into CPU RAM...")
         data = np.load(filePath)
-
+        if 'normalization_factor' in data:
+            self.normalization_factor = float(data['normalization_factor'])
+        else:
+            raise ValueError("[AOT-biomaps] npz has no 'normalization_factor': the matrix scale is unknown (saved by an older version?). Regenerate and re-save the SMatrix with this version.")
+        
         meta = data['metadata']
+        self._check_format_tag(meta)
         self.N, self.T, self.Z, self.X = map(int, meta[:4])
         self.isComplexSMatrix = bool(meta[4])
 
         # Restore the physical spatial crop info if present
         self._phys_box = None
-        if len(meta) >= 12 and int(meta[5]) == 1:
-            self._phys_box = {'z': (int(meta[6]), int(meta[7])),
-                            'x': (int(meta[8]), int(meta[9])),
-                            'Zf': int(meta[10]), 'Xf': int(meta[11])}
-        elif len(meta) >= 12 and int(meta[5]) == 2:
-            self._phys_box = {'dec': {"Z": int(meta[6]), "X": int(meta[7])},
-                            'Zf': int(meta[10]), 'Xf': int(meta[11])}
-
+        if int(meta[5]) == 1:
+            self._phys_box = {'z': (int(meta[6]), int(meta[7])), 'x': (int(meta[8]), int(meta[9])), 'Zf': int(meta[10]), 'Xf': int(meta[11])}
+        elif int(meta[5]) == 2:
+            self._phys_box = {'dec': {"Z": int(meta[6]), "X": int(meta[7])}, 'Zf': int(meta[10]), 'Xf': int(meta[11])}
+        
         self.dense_matrix = data['dense_matrix']
         self.dense_matrix_gpu = None
 
@@ -182,20 +205,22 @@ class SMatrix_DENSE(SMatrix):
         print(f"[AOT-biomaps] Direct-to-GPU loading of DENSE SMatrix from {filePath}...")
         self.load_module()
         data = np.load(filePath)
-
+        if 'normalization_factor' in data:
+            self.normalization_factor = float(data['normalization_factor'])
+        else:
+            raise ValueError("[AOT-biomaps] npz has no 'normalization_factor': the matrix scale is unknown (saved by an older version?). Regenerate and re-save the SMatrix with this version.")
+        
         meta = data['metadata']
+        self._check_format_tag(meta)
         self.N, self.T, self.Z, self.X = map(int, meta[:4])
         self.isComplexSMatrix = bool(meta[4])
 
         # Restore the physical spatial crop info if present
         self._phys_box = None
-        if len(meta) >= 12 and int(meta[5]) == 1:
-            self._phys_box = {'z': (int(meta[6]), int(meta[7])),
-                            'x': (int(meta[8]), int(meta[9])),
-                            'Zf': int(meta[10]), 'Xf': int(meta[11])}
-        elif len(meta) >= 12 and int(meta[5]) == 2:
-            self._phys_box = {'dec': {"Z": int(meta[6]), "X": int(meta[7])},
-                            'Zf': int(meta[10]), 'Xf': int(meta[11])}
+        if int(meta[5]) == 1:
+            self._phys_box = {'z': (int(meta[6]), int(meta[7])), 'x': (int(meta[8]), int(meta[9])), 'Zf': int(meta[10]), 'Xf': int(meta[11])}
+        elif int(meta[5]) == 2:
+            self._phys_box = {'dec': {"Z": int(meta[6]), "X": int(meta[7])}, 'Zf': int(meta[10]), 'Xf': int(meta[11])}
 
         cp_dtype = self._get_cp_dtype()
 
@@ -330,13 +355,13 @@ class SMatrix_DENSE(SMatrix):
                 e_tmp[self._vt_active_rows] = e_cpu
                 e_cpu = e_tmp
                 dense_2d = dense.transpose(1, 0, 2, 3).reshape(full_NT, full_ZX)
-                c = dense_2d.T @ e_cpu
+                c = dense_2d.conj().T @ e_cpu
                 if self._vs_active_cols is not None:
                     return c[self._vs_active_cols]
                 return c
 
             dense_2d = dense.transpose(1, 0, 2, 3).reshape(int(self.N * self.T), int(self.Z * self.X))
-            return dense_2d.T @ e_cpu
+            return dense_2d.conj().T @ e_cpu
     
     def apply_apodization(self, window_vector: Union[np.ndarray, 'cp.ndarray']):
         raise NotImplementedError("Apodization not implemented for DENSE matrix.")
@@ -626,6 +651,8 @@ class SMatrix_DENSE(SMatrix):
         if hasattr(self, "_full_T"):
             self.N, self.T = self._full_N, self._full_T
             self.Z, self.X = self._full_Z, self._full_X
+            for a in ("_full_N", "_full_T", "_full_Z", "_full_X"):  
+                delattr(self, a) 
         if verbose:
             print("[AOT-biomaps] Virtual truncation removed. Full matrix active.")
 
