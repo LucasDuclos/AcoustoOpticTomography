@@ -415,7 +415,7 @@ class SMatrix_SELL(SMatrix):
 
         data.close()
         self.device = 'cpu'
-        self._cpu_csr_cache = None
+        self._invalidate_cpu_csr_cache()
         print(f"[AOT-biomaps] SELL SMatrix loaded into CPU RAM ({self.total_storage} elements).")
 
     def _load_sparse_matrix_gpu(self, filePath):
@@ -608,8 +608,8 @@ class SMatrix_SELL(SMatrix):
                 e_tmp[self._vt_active_rows] = e_cpu
                 e_cpu = e_tmp
 
-            A = self._ensure_cpu_csr_cache()
-            c = A.conj().T.dot(e_cpu)
+            self._ensure_cpu_csr_cache()          
+            c = self._cpu_csrH_cache.dot(e_cpu)
 
             if virt and self._vs_active_cols is not None:
                 return c[self._vs_active_cols]
@@ -1377,14 +1377,9 @@ class SMatrix_SELL(SMatrix):
         self.device = 'cpu'
         self._invalidate_cpu_csr_cache() # Invalidate the CSR cache since the matrix has been moved to CPU
 
-    def _invalidate_cpu_csr_cache(self):
-        """Invalidate the cached scipy CSR after any mutation of sell_values."""
-        self._cpu_csr_cache = None
-
     def _ensure_cpu_csr_cache(self):
-        """Build (once) a scipy CSR matrix equivalent to the SELL layout.
-        Physical rows = inv_row_perm[sell_rowinds]. Much faster than np.add.at
-        (multithreaded scipy kernels) for repeated forward/backward projections."""
+        """Build (once) scipy CSR matrices equivalent to the SELL layout (A and A^H).
+        Much faster than np.add.at (multithreaded scipy kernels) for repeated projections."""
         if getattr(self, "_cpu_csr_cache", None) is not None:
             return self._cpu_csr_cache
 
@@ -1393,7 +1388,7 @@ class SMatrix_SELL(SMatrix):
 
         from scipy.sparse import csr_matrix
 
-        valid = self.sell_values != 0          # excludes slice padding (values == 0)
+        valid = self.sell_values != 0
         v_vals = self.sell_values[valid]
         v_cols = self.sell_colinds[valid].astype(np.int32)
         v_rows_sorted = self.sell_rowinds[valid]
@@ -1402,6 +1397,14 @@ class SMatrix_SELL(SMatrix):
         num_rows = int(self._full_N * self._full_T) if self._is_virtual_truncated() else int(self.N * self.T)
         num_cols = int(self._full_Z * self._full_X) if self._is_virtual_truncated() else int(self.Z * self.X)
 
-        coo = csr_matrix((v_vals, (v_rows_phys, v_cols)), shape=(num_rows, num_cols))
-        self._cpu_csr_cache = coo   # CSR handles duplicate-free sums automatically
+        self._cpu_csr_cache = csr_matrix((v_vals, (v_rows_phys, v_cols)), shape=(num_rows, num_cols))
+
+        # Pre-compute the Hermitian adjoint ONCE (conj + transpose + CSR conversion):
+        # doing A.conj().T inside backward_projection would copy O(nnz) at EVERY call.
+        self._cpu_csrH_cache = self._cpu_csr_cache.conj().T.tocsr()
         return self._cpu_csr_cache
+
+    def _invalidate_cpu_csr_cache(self):
+        """Invalidate the cached scipy matrices after any mutation of sell_values."""
+        self._cpu_csr_cache = None
+        self._cpu_csrH_cache = None
