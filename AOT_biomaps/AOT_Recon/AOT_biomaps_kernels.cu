@@ -528,7 +528,7 @@ extern "C"{
     /**
      * Kernel: backward_projection_kernel__SELL__COMPLEX
      * Purpose: Backward projection using SELL format for complex values: 
-     * c += Re(A^H * e). Result is written to a REAL array.
+     * c += A^H * e. Result is written to a COMPLEX (float2) array.
      */
     __global__ void backward_projection_kernel__SELL__COMPLEX(
         const float2* __restrict__ sell_values,
@@ -733,6 +733,133 @@ extern "C"{
 
             float val = old_values[old_idx];
             if (val == 0.0f) continue;
+
+            unsigned int old_col = old_colinds[old_idx];
+            if (old_col >= old_ZX) continue;
+
+            int new_col = old_to_new_col[old_col];
+            if (new_col < 0) continue;
+
+            if (new_j < new_len) {
+                long long new_idx = new_base + new_row_in_slice + (long long)new_j * slice_height;
+                if (new_idx >= 0 && new_idx < new_total_values) {
+                    new_values[new_idx] = val;
+                    new_colinds[new_idx] = (unsigned int)new_col;
+                }
+            }
+            new_j++;
+        }
+    }
+
+    /**
+    * Kernel: count_nnz_after_truncation__SELL__COMPLEX
+    * Purpose: Same as REAL variant, for complex values.
+    */
+    __global__ void count_nnz_after_truncation__SELL__COMPLEX(
+        const float2* __restrict__ sell_values,
+        const unsigned int* __restrict__ sell_colinds,
+        const long long* __restrict__ slice_ptr,
+        const int* __restrict__ slice_len,
+        const int* __restrict__ row_perm,
+        const int* __restrict__ old_to_new_phys_row,
+        const int* __restrict__ old_to_new_col,
+        int* __restrict__ new_row_nnz,
+        int old_NT,
+        int new_NT,
+        int slice_height,
+        long long total_storage,
+        int Z,
+        int X
+    ) {
+        int sorted_row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (sorted_row >= old_NT) return;
+
+        int old_phys_row = row_perm[sorted_row];
+        if (old_phys_row < 0 || old_phys_row >= old_NT) return;
+
+        int new_phys_row = old_to_new_phys_row[old_phys_row];
+        if (new_phys_row < 0 || new_phys_row >= new_NT) return;
+
+        int slice_id = sorted_row / slice_height;
+        long long base = slice_ptr[slice_id];
+        int len = slice_len[slice_id];
+        if (base < 0 || len < 0) return;
+
+        int row_in_slice = sorted_row % slice_height;
+        long long ZX = (long long)Z * X;
+        int count = 0;
+
+        for (int j = 0; j < len; ++j) {
+            long long idx = base + row_in_slice + (long long)j * slice_height;
+            if (idx < 0 || idx >= total_storage) break;
+
+            float2 v = sell_values[idx];
+            if (v.x != 0.0f || v.y != 0.0f) {
+                unsigned int old_col = sell_colinds[idx];
+                if (old_col < ZX) {
+                    if (old_to_new_col[old_col] != -1) {
+                        count++;
+                    }
+                }
+            }
+        }
+
+        new_row_nnz[new_phys_row] = count;
+    }
+
+    /**
+    * Kernel: fill_after_truncation__SELL__COMPLEX
+    * Purpose: Same as REAL variant, for complex values.
+    */
+    __global__ void fill_after_truncation__SELL__COMPLEX(
+        const float2* __restrict__ old_values,
+        const unsigned int* __restrict__ old_colinds,
+        const long long* __restrict__ old_slice_ptr,
+        const int* __restrict__ old_slice_len,
+        const int* __restrict__ old_row_perm,
+        const int* __restrict__ old_to_new_phys_row,
+        const int* __restrict__ old_to_new_col,
+        const int* __restrict__ new_inv_row_perm,
+        const long long* __restrict__ new_slice_ptr,
+        const int* __restrict__ new_slice_len,
+        float2* __restrict__ new_values,
+        unsigned int* __restrict__ new_colinds,
+        int old_NT,
+        int slice_height,
+        long long old_total_values,
+        long long new_total_values,
+        long long old_ZX
+    ) {
+        int sorted_row = blockIdx.x * blockDim.x + threadIdx.x;
+        if (sorted_row >= old_NT) return;
+
+        int old_phys_row = old_row_perm[sorted_row];
+        if (old_phys_row < 0 || old_phys_row >= old_NT) return;
+
+        int new_phys_row = old_to_new_phys_row[old_phys_row];
+        if (new_phys_row < 0) return;
+
+        int old_slice_id = sorted_row / slice_height;
+        long long old_base = old_slice_ptr[old_slice_id];
+        int old_len = old_slice_len[old_slice_id];
+
+        int new_sorted_row = new_inv_row_perm[new_phys_row];
+        if (new_sorted_row < 0) return;
+
+        int new_slice_id = new_sorted_row / slice_height;
+        long long new_base = new_slice_ptr[new_slice_id];
+        int new_len = new_slice_len[new_slice_id];
+
+        int old_row_in_slice = sorted_row % slice_height;
+        int new_row_in_slice = new_sorted_row % slice_height;
+
+        int new_j = 0;
+        for (int j = 0; j < old_len; ++j) {
+            long long old_idx = old_base + old_row_in_slice + (long long)j * slice_height;
+            if (old_idx < 0 || old_idx >= old_total_values) break;
+
+            float2 val = old_values[old_idx];
+            if (val.x == 0.0f && val.y == 0.0f) continue;
 
             unsigned int old_col = old_colinds[old_idx];
             if (old_col >= old_ZX) continue;
@@ -996,42 +1123,71 @@ extern "C"{
     *
     * from the sparse matrix coefficients.
     *
-    * This quantity is required for the diagonal PDHG preconditioner of Ehrhardt et al. (2019, Theorem 2).
+    * This quantity is required to build the diagonal primal preconditioner
+    * of the Ehrhardt PDHG preconditioner (Ehrhardt et al. 2019, Theorem 2).
     *
     * Notes:
-    * - Operates directly on the sparse coefficient arrays (values, col_ind), independently of the sparse storage format (CSR, SELL, ...).
-    * - Each thread processes one non-zero coefficient.
-    * - Atomic additions ensure correct accumulation into the column sums.
+    * - One thread processes one non-zero coefficient.
+    * - The matrix storage format is irrelevant since only the value array
+    *   and column indices are accessed.
+    * - Atomic additions guarantee correct accumulation into the column sums.
     */
-    __global__ void accumulate_abs_columns_atomic__REAL(
+    __global__
+    void accumulate_abs_columns_atomic__REAL(
         const float* __restrict__ values,
         const unsigned int* __restrict__ col_ind,
         long long total_nnz,
-        float* __restrict__ col_sum
-    ) {
-            long long idx = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+        float* __restrict__ col_sum)
+    {
+        long long idx = (long long)blockIdx.x * blockDim.x + threadIdx.x;
 
-            if(idx >= total_nnz) return;
+        if (idx >= total_nnz)
+            return;
 
-            float v = fabsf(values[idx]);
+        float v = fabsf(values[idx]);
 
-            if(v==0.0f) return;
+        if (v == 0.f)
+            return;
 
-            atomicAdd(&col_sum[col_ind[idx]], v);
+        atomicAdd(&col_sum[col_ind[idx]], v);
     }
 
     /**
-    * Kernel: accumulate_abs_columns_atomic__COMPLEX
+    * Kernel: accumulate_hessian_diag__SELL__COMPLEX
+    * Purpose: accumulate |a_ij|^2 into diag(A^H A), complex values.
+    */
+    __global__ void accumulate_hessian_diag__SELL__COMPLEX(
+        const float2* __restrict__ values,
+        const unsigned int* __restrict__ colinds,
+        long long total_nnz,
+        float* __restrict__ diag
+    ) {
+        long long idx = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx >= total_nnz) return;
+        float2 v = values[idx];
+        float m = hypotf(v.x, v.y);
+        if (m == 0.f) return;
+        atomicAdd(&diag[colinds[idx]], m * m);
+    }
+
+    /**
+    * Kernel: accumulate_abs_rows__SELL__COMPLEX
     *
     * Purpose:
-    * Compute the column-wise sums of coefficient magnitudes
+    * Compute the row-wise sums of coefficient magnitudes
     *
-    *      c_j = sum_i |A_ij|
+    *      r_i = sum_j |A_ij|
     *
     * where |A_ij| denotes the complex modulus.
     *
-    * This kernel is used to construct the diagonal primal step sizes of the
-    * Ehrhardt PDHG preconditioner.
+    * This quantity is required to build the diagonal dual step sizes of the
+    * Ehrhardt PDHG preconditioner (Ehrhardt et al. 2019, Theorem 2).
+    *
+    * Notes:
+    * - One thread processes one SELL row (sorted/permuted row space).
+    * - Coalesced access: consecutive threads iterate over the slice columns.
+    * - The complex modulus is computed as hypotf(real, imag).
+    * - No atomics needed: each row is owned by exactly one thread.
     */
     __global__ void accumulate_abs_rows__SELL__COMPLEX(
         const float2* __restrict__ sell_values,
@@ -1065,21 +1221,22 @@ extern "C"{
     }
 
     /**
-    * Kernel: accumulate_abs_columns_atomic__REAL
+    * Kernel: accumulate_abs_rows__SELL__REAL
     *
     * Purpose:
-    * Compute the column-wise absolute sums
+    * Compute the row-wise absolute sums
     *
-    *      c_j = sum_i |A_ij|
+    *      r_i = sum_j |A_ij|
     *
-    * from the sparse matrix coefficients.
+    * from the SELL-C-sigma coefficient arrays.
     *
-    * This quantity is required to build the diagonal primal preconditioner of Ehrhardt et al. (2019, Theorem 2).
+    * This quantity is required to build the diagonal dual step sizes of the
+    * Ehrhardt PDHG preconditioner (Ehrhardt et al. 2019, Theorem 2).
     *
     * Notes:
-    * - One thread processes one non-zero coefficient.
-    * - The matrix storage format is irrelevant since only the value array and column indices are accessed.
-    * - Atomic additions guarantee correct accumulation when multiple coefficients contribute to the same column.
+    * - One thread processes one SELL row (sorted/permuted row space).
+    * - Coalesced access: consecutive threads iterate over the slice columns.
+    * - No atomics needed: each row is owned by exactly one thread.
     */
     __global__
     void accumulate_abs_rows__SELL__REAL(

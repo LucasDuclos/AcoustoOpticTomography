@@ -98,10 +98,7 @@ class SMatrix(ABC):
         self.free()
     
     def _release_pool(self):
-        """
-        Release cuda memory
-        """
-        if CUPY_AVAILABLE:
+        if CUPY_AVAILABLE and check_gpu_available(self) and getattr(self, 'gpu_index', None) is not None:
             with cp.cuda.Device(self.gpu_index):
                 cp.get_default_memory_pool().free_all_blocks()
                 cp.cuda.Stream.null.synchronize()

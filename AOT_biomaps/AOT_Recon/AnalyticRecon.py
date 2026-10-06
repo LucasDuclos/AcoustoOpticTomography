@@ -30,7 +30,7 @@ class AnalyticRecon(Recon):
         self.reconGridX = None  
         self.AOsignal_demoldulated = None
 
-    def run(self, processType = ProcessType.PYTHON, withTumor= True):
+    def run(self, processType = ProcessType.PYTHON, withTumor= True, y=None):
         """
         This method is a placeholder for the analytic reconstruction process.
         It currently does not perform any operations but serves as a template for future implementations.
@@ -38,7 +38,7 @@ class AnalyticRecon(Recon):
         if(processType == ProcessType.CASToR):
             raise NotImplementedError("[AOT-biomaps] CASToR analytic reconstruction is not implemented yet.")
         elif(processType == ProcessType.PYTHON):
-            self._analyticReconPython(withTumor)
+            self._analyticReconPython(withTumor, y)
         else:
             raise ValueError(f"[AOT-biomaps] Unknown analytic reconstruction type: {processType}")
         
@@ -71,19 +71,23 @@ class AnalyticRecon(Recon):
         # Sinon, retourne False
         return (False, results_dir)
 
-    def _analyticReconPython(self,withTumor):
+    def _analyticReconPython(self,withTumor, y=None):
         """
         This method is a placeholder for the analytic reconstruction process in Python.
         It currently does not perform any operations but serves as a template for future implementations.
         
         Parameters:
             analyticType: The type of analytic reconstruction to perform (default is iFOURIER).
+            y: signal to be used in the reconstruction.
         """
-
-        if withTumor:
-            AOsignal = self.experiment.AOsignal_withTumor
+        if y is not None:
+            AOsignal = y
         else:
-            AOsignal = self.experiment.AOsignal_withoutTumor
+            if withTumor:
+                AOsignal = self.experiment.AOsignal_withTumor
+            else:
+                AOsignal = self.experiment.AOsignal_withoutTumor
+
         if hasattr(self.experiment, "expParams"):
             SampleRate = self.experiment.expParams['SampleRate'] if self.experiment.expParams['SampleRate'] is not None else self.experiment.params.general['ft']
         else:
@@ -94,7 +98,7 @@ class AnalyticRecon(Recon):
         X_m = np.arange(0, self.experiment.params.acoustic['probe']['num_elements'])* self.experiment.params.acoustic['probe']['element_width']
         dfX = 1 / (X_m[1] - X_m[0]) / len(X_m)
         self.reconGridZ = Z
-        self.reconGridX = np.linspace(self.experiment.params.general['Xrange'][0], self.experiment.params.general['Xrange'][1], self.experiment.params.acoustic['probe']['num_elements'])
+        self.reconGridX = (np.arange(self.experiment.params.acoustic['probe']['num_elements']) - (self.experiment.params.acoustic['probe']['num_elements'] - 1) / 2.0) * self.experiment.params.acoustic['probe']['element_width']
         if hasattr(self.experiment, "expParams"):
             self.experiment.expParams['Xrange'] = [X_m[0], X_m[-1]]
             self.experiment.expParams['Zrange'] = [Z[0], Z[-1]]
@@ -160,12 +164,12 @@ class AnalyticRecon(Recon):
         
         if withTumor:
             if self.reconPhantom is None:
-                raise ValueError("[AOT-biomaps] reconPhantom is None. Please check the reconstruction process.")
-            self.reconPhantom = self._resample_to_gt_grid(self.reconPhantom, withTumor=True)
+                raise ValueError("[AOT-biomaps] reconPhantom is None.")
+            self.reconPhantom, self.cropped_gt_phantom = self._resample_to_gt_grid(self.reconPhantom, withTumor=True)
         else:
             if self.reconLaser is None:
-                raise ValueError("[AOT-biomaps] reconLaser is None. Please check the reconstruction process.")
-            self.reconLaser = self._resample_to_gt_grid(self.reconLaser, withTumor=False)
+                raise ValueError("[AOT-biomaps] reconLaser is None.")
+            self.reconLaser, self.cropped_gt_laser = self._resample_to_gt_grid(self.reconLaser, withTumor=False)
     
     def _iFourierRecon(
         self,
@@ -375,9 +379,9 @@ class AnalyticRecon(Recon):
 
     def _resample_to_gt_grid(self, image, withTumor=True):
         """
-        Interpolate the reconstructed image onto the simulation grid
-        (Xrange, Zrange) sampled at (dx, dz) — identical grid in experimental
-        and simulated cases. The GT phantom, when available, lives on this grid.
+        Interpolates the reconstructed image onto the standard grid defined by Xrange and Zrange.
+        If a ground truth exists, it also crops and resamples it to match the grid.
+        If no ground truth is available (e.g., pure experimental data), returns None for GT.
         """
         Xrange = self.experiment.params.general['Xrange']
         Zrange = self.experiment.params.general['Zrange']
@@ -389,107 +393,97 @@ class AnalyticRecon(Recon):
         z_gt = Zrange[0] + dz * np.arange(Nz_gt)
         x_gt = Xrange[0] + dx * np.arange(Nx_gt)
 
-        if withTumor:
-            gt = self.experiment.OpticImage.phantom if self.experiment.OpticImage else None
-        else:
-            gt = self.experiment.OpticImage.laser.intensity if self.experiment.OpticImage else None
-        if gt is not None and gt.shape != (Nz_gt, Nx_gt):
-            print(f"[AOT-biomaps] WARNING: GT shape {gt.shape} != grid shape {(Nz_gt, Nx_gt)}")
+        num_elements = self.experiment.params.acoustic['probe']['num_elements']
+        pitch = self.experiment.params.acoustic['probe']['element_width']
+        x_recon = (np.arange(num_elements) - (num_elements - 1) / 2.0) * pitch
+        z_recon = np.asarray(self.reconGridZ)
+
+        gt = None
+        if hasattr(self.experiment, "OpticImage") and self.experiment.OpticImage is not None:
+            if withTumor and hasattr(self.experiment.OpticImage, 'phantom'):
+                gt = self.experiment.OpticImage.phantom
+            elif not withTumor and hasattr(self.experiment.OpticImage, 'laser') and hasattr(self.experiment.OpticImage.laser, 'intensity'):
+                gt = self.experiment.OpticImage.laser.intensity
 
         image = np.asarray(image)
-        z_recon = np.asarray(self.reconGridZ)
-        x_recon = np.asarray(self.reconGridX)
 
-        interp = RegularGridInterpolator((z_recon, x_recon), image, method='linear', bounds_error=False, fill_value=0.0)
-
+        interp = RegularGridInterpolator(
+            (z_recon, x_recon), image,
+            method='linear', bounds_error=False, fill_value=0.0
+        )
         Zq, Xq = np.meshgrid(z_gt, x_gt, indexing='ij')
+        resampled_recon = interp(np.stack([Zq.ravel(), Xq.ravel()], axis=-1)).reshape(Nz_gt, Nx_gt)
 
-        return interp(np.stack([Zq.ravel(), Xq.ravel()], axis=-1)).reshape(Nz_gt, Nx_gt)
+        if gt is None:
+            return resampled_recon, None
+        
+        x_min_val = max(x_gt[0], x_recon[0])
+        x_max_val = min(x_gt[-1], x_recon[-1])
+        z_min_val = max(z_gt[0], z_recon[0])
+        z_max_val = min(z_gt[-1], z_recon[-1])
+
+        x_indices = np.where((x_gt >= x_min_val) & (x_gt <= x_max_val))[0]
+        z_indices = np.where((z_gt >= z_min_val) & (z_gt <= z_max_val))[0]
+
+        cropped_recon = resampled_recon[np.ix_(z_indices, x_indices)]
+        cropped_gt = gt[np.ix_(z_indices, x_indices)]
+
+        return cropped_recon, cropped_gt
 
     def show(self, withTumor=True, savePath=None, scale='same', title=None, figsize=(8, 4)):
         """
-        Display the reconstructed images with a properly positioned colorbar.
-        The reconstruction is expected to be already resampled onto the GT grid
-        and normalized by run().
-
-        Args:
-            withTumor (bool): If True, displays reconPhantom. If False, displays reconLaser. Default is True.
-            savePath (str): Path to save the figure. If None, the figure is not saved. Default is None.
-            scale (str): Scale for the plots. 'same' forces vmin/vmax in [0,1]. Default is 'same'.
-            title (str): Title of the reconstruction subplot. Default is None.
-            figsize (tuple): Figure size (width, height). Default is (8, 4).
+        Display the cropped and resampled reconstruction alongside the cropped ground truth.
         """
         if self.reconGridZ is None or self.reconGridX is None:
-            raise ValueError("[AOT-biomaps] Run reconstruction first (reconGridZ/reconGridX missing).")
-        if scale not in ['same', 'auto']:
-            raise ValueError("[AOT-biomaps] Invalid scale option. Use 'same' or 'auto'.")
-        # --- Grille GT : extent commun aux deux images ---
+            raise ValueError("[AOT-biomaps] Run reconstruction first.")
+
+        if withTumor:
+            image = self.reconPhantom
+            ground_truth = self.cropped_gt_phantom
+            title_recon = "Reconstructed phantom with tumor" if title is None else title
+            title_gt = "Cropped Ground Truth"
+        else:
+            image = self.reconLaser
+            ground_truth = self.cropped_gt_laser
+            title_recon = "Reconstructed laser without tumor" if title is None else title
+            title_gt = "Cropped Ground Truth"
+
+        # Compute valid cropped extent in mm based on shape match
         Xrange = self.experiment.params.general['Xrange']
         Zrange = self.experiment.params.general['Zrange']
-        extent = [Xrange[0]*1e3, Xrange[1]*1e3, Zrange[1]*1e3, Zrange[0]*1e3]
+        dx = self.experiment.params.general['dx']
+        dz = self.experiment.params.general['dz']
+        
+        num_elements = self.experiment.params.acoustic['probe']['num_elements']
+        pitch = self.experiment.params.acoustic['probe']['element_width']
+        x_recon = (np.arange(num_elements) - (num_elements - 1) / 2.0) * pitch
+        
+        x_min_val = max(Xrange[0], x_recon[0]) * 1e3
+        x_max_val = min(Xrange[1], x_recon[-1]) * 1e3
+        z_min_val = Zrange[0] * 1e3
+        z_max_val = Zrange[1] * 1e3
+        
+        extent = [x_min_val, x_max_val, z_max_val, z_min_val]
 
-        # --- Ground truth & image ---
-        if withTumor:
-            if self.reconPhantom is None:
-                raise ValueError("[AOT-biomaps] Reconstructed phantom with tumor is empty. Run reconstruction first.")
-            image = self.reconPhantom
-            ground_truth = self.experiment.OpticImage.phantom if self.experiment.OpticImage else None
-            title_recon = "Reconstructed phantom with tumor" if title is None else title
-            title_gt = "Phantom with tumor"
-        else:
-            if self.reconLaser is None:
-                raise ValueError("[AOT-biomaps] Reconstructed laser without tumor is empty. Run reconstruction first.")
-            image = self.reconLaser
-            ground_truth = self.experiment.OpticImage.laser.intensity if self.experiment.OpticImage else None
-            title_recon = "Reconstructed laser without tumor" if title is None else title
-            title_gt = "Laser without tumor"
+        fig, axs = plt.subplots(1, 2, figsize=figsize, squeeze=False)
 
-        # --- Subplots ---
-        n_cols = 2 if ground_truth is not None else 1
-        fig, axs = plt.subplots(
-            1, n_cols,
-            figsize=figsize if n_cols == 2 else (figsize[0]/2, figsize[1]),
-            squeeze=False
-        )
-
-        if ground_truth is not None:
-            vmin, vmax = (0, 1) if scale == 'same' else (np.min(image), np.max(image))
-        else:
-            vmin, vmax = (0, np.max(image))
-
-        im0 = axs[0, 0].imshow(image, cmap='hot', vmin=vmin, vmax=vmax,
-                               extent=extent, aspect='equal')
+        vmin, vmax = (0, 1) if scale == 'same' else (np.min(image), np.max(image))
+        
+        axs[0, 0].imshow(image, cmap='hot', vmin=vmin, vmax=vmax, extent=extent, aspect='equal')
         axs[0, 0].set_title(title_recon)
         axs[0, 0].set_xlabel("X (mm)")
         axs[0, 0].set_ylabel("Z (mm)")
-        axs[0, 0].tick_params(axis='both', which='major')
 
         if ground_truth is not None:
             gt_vmin, gt_vmax = (0, 1) if scale == 'same' else (np.min(ground_truth), np.max(ground_truth))
-
-            im1 = axs[0, 1].imshow(ground_truth, cmap='hot', vmin=gt_vmin, vmax=gt_vmax,
-                                   extent=extent, aspect='equal')
+            axs[0, 1].imshow(ground_truth, cmap='hot', vmin=gt_vmin, vmax=gt_vmax, extent=extent, aspect='equal')
             axs[0, 1].set_title(title_gt)
             axs[0, 1].set_xlabel("X (mm)")
             axs[0, 1].set_ylabel("Z (mm)")
-            axs[0, 1].tick_params(axis='both', which='major')
 
-        plt.subplots_adjust(bottom=0.15, wspace=0.3)
-
-        # --- Colorbar ---
-        cbar_ax = fig.add_axes([0.25, -0.06, 0.5, 0.05])
-        cbar = fig.colorbar(im0, cax=cbar_ax, orientation='horizontal')
-        if ground_truth is not None and scale == 'same':
-            cbar.set_label('Normalized Intensity')
-        else:
-            cbar.set_label('Intensity')
-        cbar.ax.tick_params(labelsize=8)
-
-        # --- Save ---
+        plt.tight_layout()
         if savePath is not None:
-            if not os.path.exists(savePath):
-                os.makedirs(savePath)
-            filename = 'recon_with_tumor.png' if withTumor else 'recon_without_tumor.png'
+            os.makedirs(savePath, exist_ok=True)
+            filename = 'cropped_recon_with_tumor.png' if withTumor else 'cropped_recon_without_tumor.png'
             plt.savefig(os.path.join(savePath, filename), dpi=300, bbox_inches='tight')
-
         plt.show()
