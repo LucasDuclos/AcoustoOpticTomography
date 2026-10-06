@@ -860,3 +860,48 @@ class SMatrix_CSR(SMatrix):
 
     def _is_virtual_truncated(self):
         return getattr(self, "_vt_time_mask", None) is not None
+    
+    def to_gpu(self, gpu_index=0):
+        """
+        Transfer the CSR matrix from CPU RAM to GPU VRAM (reversible with to_cpu).
+        Refuses if the matrix currently lives on another GPU: call to_cpu() first (explicit two-step, avoids silent multi-GPU residency bugs).
+        """
+        if self.values_gpu is not None:
+            if self.gpu_index == gpu_index:
+                return  # already on the requested GPU
+            raise RuntimeError(f"[AOT-biomaps] Matrix currently lives on gpu:{self.gpu_index}. Call to_cpu() first, then to_gpu({gpu_index}) to move it explicitly.")
+        if self.h_values is None:
+            raise RuntimeError("[AOT-biomaps] CSR matrix not allocated on CPU, cannot transfer to GPU.")
+        self.gpu_index = gpu_index
+        self.load_module()  # compile/load AOT_biomaps_kernels if not already loaded
+        cp_dtype = self._get_cp_dtype()
+        with cp.cuda.Device(self.gpu_index):
+            # Force the exact dtypes expected by the CUDA kernels
+            self.values_gpu = cp.asarray(self.h_values).astype(cp_dtype)
+            self.col_ind_gpu = cp.asarray(self.h_col_ind).astype(cp.uint32)
+            self.row_ptr_gpu = cp.asarray(self.row_ptr).astype(cp.int64)
+            if self.norm_factor_inv is not None:
+                self.norm_factor_inv_gpu = cp.asarray(self.norm_factor_inv)
+            # Release the CPU copies (single residence on GPU)
+            self.h_values, self.h_col_ind = None, None
+            self.scipy_csr = None
+            self._release_pool()
+        self.device = f'gpu:{self.gpu_index}'
+
+    def to_cpu(self):
+        """Transfer the CSR matrix from GPU VRAM to CPU RAM (reversible with to_gpu)."""
+        if self.values_gpu is None:
+            return  # already on CPU
+        with cp.cuda.Device(self.gpu_index):
+            self.h_values = cp.asnumpy(self.values_gpu)
+            self.h_col_ind = cp.asnumpy(self.col_ind_gpu)
+            # row_ptr is already on CPU after _allocate_gpu; retrieve it otherwise
+            if self.row_ptr is None:
+                self.row_ptr = cp.asnumpy(self.row_ptr_gpu)
+            if self.norm_factor_inv_gpu is not None:
+                self.norm_factor_inv = cp.asnumpy(self.norm_factor_inv_gpu)
+        from scipy.sparse import csr_matrix
+        self.scipy_csr = csr_matrix((self.h_values, self.h_col_ind, self.row_ptr),
+                                    shape=(int(self.N * self.T), int(self.Z * self.X)))
+        self._free_specific()
+        self.device = 'cpu'

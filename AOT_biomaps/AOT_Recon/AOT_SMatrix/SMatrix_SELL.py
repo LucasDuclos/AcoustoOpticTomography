@@ -323,8 +323,7 @@ class SMatrix_SELL(SMatrix):
         slice_len = self.slice_len if self.slice_len is not None else cp.asnumpy(self.slice_len_gpu)
         
         # Vital metadata to reconstruct the geometry
-        metadata = np.array([self.N, self.T, self.Z, self.X, self.slice_height,
-                             self.total_storage, self.total_nnz, int(self.isComplexSMatrix)])
+        metadata = np.array([self.N, self.T, self.Z, self.X, self.slice_height, self.total_storage, self.total_nnz, int(self.isComplexSMatrix)])
 
         # Persist the physical spatial crop info (survives save/load cycles)
         pb = getattr(self, "_phys_box", None)
@@ -395,13 +394,10 @@ class SMatrix_SELL(SMatrix):
         self.isComplexSMatrix = bool(meta[7])
 
         self._phys_box = None
-        if len(meta) >= 15 and int(meta[8]) == 1:
-            self._phys_box = {'z': (int(meta[9]), int(meta[10])),
-                            'x': (int(meta[11]), int(meta[12])),
-                            'Zf': int(meta[13]), 'Xf': int(meta[14])}
-        elif len(meta) >= 15 and int(meta[8]) == 2:
-            self._phys_box = {'dec': {"Z": int(meta[9]), "X": int(meta[10])},
-                            'Zf': int(meta[13]), 'Xf': int(meta[14])}
+        if int(meta[8]) == 1:
+            self._phys_box = {'z': (int(meta[9]), int(meta[10])), 'x': (int(meta[11]), int(meta[12])), 'Zf': int(meta[13]), 'Xf': int(meta[14])}
+        elif int(meta[8]) == 2:
+            self._phys_box = {'dec': {"Z": int(meta[9]), "X": int(meta[10])}, 'Zf': int(meta[13]), 'Xf': int(meta[14])}
 
         # 2. CPU arrays
         self.sell_values = data['values']
@@ -471,18 +467,25 @@ class SMatrix_SELL(SMatrix):
         print(f"[AOT-biomaps] SELL SMatrix loaded into VRAM. Density restored.")
 
     def _build_sell_rowinds(self, num_rows=None):
-        """Rebuild sell_rowinds (full C rows per slice, incl. phantom rows on the last partial slice).
-        Must match _allocate_cpu: phantom rows (index >= num_rows) are harmless (values == 0)."""
+        """Rebuild sell_rowinds, fully vectorized (no Python loop over slices)."""
         num_rows = int(num_rows if num_rows is not None else self.N * self.T)
         C = int(self.slice_height)
         num_slices = len(self.slice_len)
-        out = np.zeros(self.total_storage, dtype=np.int32)
-        for s in range(num_slices):
-            base = int(self.slice_ptr[s])
-            length = int(self.slice_len[s])
-            if length > 0:
-                rows_in_slice = np.arange(s * C, s * C + C, dtype=np.int32) 
-                out[base:base + length * C] = np.tile(rows_in_slice, length)
+
+        lengths = np.asarray(self.slice_len, dtype=np.int64) * C
+        total = int(lengths.sum())
+        if total == 0:
+            return np.zeros(0, dtype=np.int32)
+
+        # Cumulative base offset of each slice
+        bases = np.concatenate(([0], np.cumsum(lengths)))
+
+        # For each position p in [0, total): slice s such that bases[s] <= p < bases[s+1]
+        p = np.arange(total, dtype=np.int64)
+        s = np.searchsorted(bases, p, side='right') - 1
+
+        # Row within slice layout: s*C + (p - bases[s]) % C
+        out = (s * C + (p - bases[s]) % C).astype(np.int32)
         return out
 
     def forward_projection(self, theta: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
@@ -1336,3 +1339,54 @@ class SMatrix_SELL(SMatrix):
 
         # No spatial truncation: full extent
         return [x0f, x1f, z1f, z0f]
+    
+    def to_gpu(self, gpu_index=0):
+        """
+        Transfer the SELL matrix from CPU RAM to GPU VRAM (reversible with to_cpu).
+        Refuses if the matrix currently lives on another GPU: call to_cpu() first (explicit two-step, avoids silent multi-GPU residency bugs).
+        """
+        if self.sell_values_gpu is not None:
+            if self.gpu_index == gpu_index:
+                return  # already on the requested GPU
+            raise RuntimeError(f"[AOT-biomaps] Matrix currently lives on gpu:{self.gpu_index}. Call to_cpu() first, then to_gpu({gpu_index}) to move it explicitly.")
+
+        if self.sell_values is None:
+            raise RuntimeError("[AOT-biomaps] SELL matrix not allocated on CPU, cannot transfer to GPU.")
+        self.gpu_index = gpu_index
+        self.load_module()
+        cp_dtype = self._get_cp_dtype()
+        with cp.cuda.Device(self.gpu_index):
+            # Force the exact dtypes expected by the CUDA kernels
+            self.sell_values_gpu = cp.asarray(self.sell_values).astype(cp_dtype)
+            self.sell_colinds_gpu = cp.asarray(self.sell_colinds).astype(cp.uint32)
+            self.slice_ptr_gpu = cp.asarray(self.slice_ptr).astype(cp.int64)
+            self.slice_len_gpu = cp.asarray(self.slice_len).astype(cp.int32)
+            self.row_perm_gpu = cp.asarray(self.row_perm).astype(cp.int32)
+            self.inv_row_perm_gpu = cp.asarray(self.inv_row_perm).astype(cp.int32)
+            if self.norm_factor_inv is not None:
+                self.norm_factor_inv_gpu = cp.asarray(self.norm_factor_inv)
+            self._release_pool()
+        self.device = f'gpu:{self.gpu_index}'
+
+    def to_cpu(self):
+        """Transfer the SELL matrix from GPU VRAM to CPU RAM (reversible with to_gpu)."""
+        if self.sell_values_gpu is None:
+            return  # already on CPU
+        with cp.cuda.Device(self.gpu_index):
+            self.sell_values = cp.asnumpy(self.sell_values_gpu)
+            self.sell_colinds = cp.asnumpy(self.sell_colinds_gpu)
+            # Keep/retrieve the CPU side pointers required by the class logic
+            if self.slice_ptr is None:
+                self.slice_ptr = cp.asnumpy(self.slice_ptr_gpu)
+            if self.slice_len is None:
+                self.slice_len = cp.asnumpy(self.slice_len_gpu)
+            if self.row_perm is None:
+                self.row_perm = cp.asnumpy(self.row_perm_gpu)
+            if self.inv_row_perm is None:
+                self.inv_row_perm = cp.asnumpy(self.inv_row_perm_gpu)
+            if self.norm_factor_inv_gpu is not None:
+                self.norm_factor_inv = cp.asnumpy(self.norm_factor_inv_gpu)
+        # Mandatory: rebuild the row indices required by the CPU projections
+        self.sell_rowinds = self._build_sell_rowinds()
+        self._free_specific()
+        self.device = 'cpu'

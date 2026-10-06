@@ -658,3 +658,32 @@ class SMatrix_DENSE(SMatrix):
 
     def _is_virtual_truncated(self):
         return getattr(self, "_vt_time_mask", None) is not None
+    
+    def to_gpu(self, gpu_index=0):
+        """
+        Transfer the DENSE matrix from CPU RAM to GPU VRAM (reversible with to_cpu).
+        Refuses if the matrix currently lives on another GPU: call to_cpu() first (explicit two-step, avoids silent multi-GPU residency bugs).
+        """
+        if self.dense_matrix_gpu is not None:
+            if self.gpu_index == gpu_index:
+                return  # already on the requested GPU
+            raise RuntimeError(f"[AOT-biomaps] Matrix currently lives on gpu:{self.gpu_index}. Call to_cpu() first, then to_gpu({gpu_index}) to move it explicitly.")
+
+        if self.dense_matrix is None:
+            raise RuntimeError("[AOT-biomaps] DENSE matrix not allocated on CPU, cannot transfer to GPU.")
+        self.gpu_index = gpu_index
+        self.load_module()
+        with cp.cuda.Device(self.gpu_index):
+            self.dense_matrix_gpu = cp.asarray(self.dense_matrix).astype(self._get_cp_dtype())
+            if self.norm_factor_inv is not None:
+                self.norm_factor_inv_gpu = cp.asarray(self.norm_factor_inv)
+            self._release_pool()
+        self.device = f'gpu:{self.gpu_index}'
+
+    def to_cpu(self):
+        """Transfer the DENSE matrix from GPU VRAM to CPU RAM (reversible with to_gpu)."""
+        if self.dense_matrix_gpu is None:
+            return  # already on CPU
+        self.dense_matrix = cp.asnumpy(self.dense_matrix_gpu)
+        self._free_specific()
+        self.device = 'cpu'

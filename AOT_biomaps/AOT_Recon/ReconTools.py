@@ -60,6 +60,42 @@ def get_device_context(SMatrix):
         return cp.cuda.Device(SMatrix.gpu_index)
     return contextlib.nullcontext()
 
+def ensure_device(SMatrix, device,show_logs=False):
+    """
+    Transfer the SMatrix to the requested device if needed (no-op if already there).
+
+    Args:
+        SMatrix: SMatrix instance (CSR, SELL or DENSE) implementing to_cpu()/to_gpu().
+        device: None (keep current device), 'cpu', 'gpu' or 'gpu:<index>'.
+        show_logs: If True, prints device transfer information.
+
+    Raises:
+        RuntimeError: If to_gpu() cannot be performed directly (GPU -> GPU requires
+            an explicit two-step transfer, handled here automatically).
+    """
+    if device is None or str(device) == str(SMatrix.device):
+        return
+
+    wants_gpu = str(device).startswith('gpu')
+    has_gpu = str(SMatrix.device).startswith('gpu')
+
+    if wants_gpu:
+        gpu_idx = int(str(device).split(':')[1]) if ':' in str(device) else 0
+        if has_gpu and SMatrix.gpu_index != gpu_idx:
+            # Explicit two-step transfer: GPU -> CPU -> GPU
+            if show_logs:
+                print(f"[AOT-biomaps] Transferring SMatrix from GPU {SMatrix.gpu_index} to CPU, then to GPU {gpu_idx}.")
+            SMatrix.to_cpu()
+            SMatrix.to_gpu(gpu_idx)
+        else:
+            if show_logs:
+                print(f"[AOT-biomaps] Transferring SMatrix to GPU {gpu_idx}.")
+            SMatrix.to_gpu(gpu_idx)
+    elif has_gpu:
+        if show_logs:
+            print(f"[AOT-biomaps] Transferring SMatrix to CPU.")
+        SMatrix.to_cpu()
+
 # =============================================================================
 # BASIC ARRAY OPERATIONS
 # =============================================================================

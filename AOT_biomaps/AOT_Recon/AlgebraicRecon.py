@@ -553,7 +553,7 @@ class AlgebraicRecon(Recon):
     def apply_apodization(self, window_vector: np.ndarray):
         self.SMatrix.apply_apodization(window_vector)
     
-    def run(self, y = None, processType: ProcessType = ProcessType.PYTHON, withTumor: bool = True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs: bool = True):
+    def run(self, y = None, processType: ProcessType = ProcessType.PYTHON, withTumor: bool = True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device: Optional[str] = None, show_criterion=True, show_logs: bool = True):
         """
         Run the algebraic reconstruction process.
         
@@ -565,6 +565,8 @@ class AlgebraicRecon(Recon):
             withTumor: If True, reconstruct with tumor data; otherwise without
             stop_criterion: Criterion for stopping the reconstruction
             stop_threshold: Threshold for the stopping criterion
+            stop_window_size: Window size (used to avoid early stop due to oscillations)
+            device: Device to use ('cpu' or 'gpu') (default: auto-detected with the device used in the SMatrix creation)
             show_criterion: If True, display the stopping criterion
             show_logs: If True, display progress logs
             
@@ -577,11 +579,11 @@ class AlgebraicRecon(Recon):
         if processType == ProcessType.CASToR:
             self._algebraic_recon_CASToR(withTumor=withTumor, show_logs=show_logs)
         elif processType == ProcessType.PYTHON:
-            self._algebraic_recon_Python(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+            self._algebraic_recon_Python(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, device=device, show_criterion=show_criterion, show_logs=show_logs)
         else:
             raise ValueError(f"[AOT-biomaps] Unknown Algebraic reconstruction type: {processType}")
 
-    def _algebraic_recon_Python(self, y=None, withTumor: bool = True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs: bool = True):
+    def _algebraic_recon_Python(self, y=None, withTumor: bool = True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device: Optional[str] = None, show_criterion=True, show_logs: bool = True):
         """
         Run algebraic reconstruction using Python implementation.
         
@@ -593,6 +595,7 @@ class AlgebraicRecon(Recon):
             stop_criterion: Criterion for stopping the reconstruction
             stop_threshold: Threshold for the stopping criterion
             stop_window_size: Window size (used to avoid early stop due to oscillations)
+            device: Device to use ('cpu' or 'gpu') (default: auto-detected with the device used in the SMatrix creation)
             show_criterion: If True, display the stopping criterion
             show_logs: If True, display progress logs
             
@@ -614,21 +617,21 @@ class AlgebraicRecon(Recon):
 
         # Dispatch to optimizer-specific method
         if self.optimizer == OptimizerType.MLEM:
-            self._run_MLEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_MLEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, device=device, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PGD:
-            self._run_PGD(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_PGD(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, device=device, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.MAPEM:
-            self._run_MAPEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_MAPEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, device=device, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.DEPIERRO:
-            self._run_DEPIERRO(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_DEPIERRO(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, device=device, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PPGMLEM:
-            self._run_PPGMLEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_PPGMLEM(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, device=device, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.FISTA:
-            self._run_FISTA(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_FISTA(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, device=device, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PGC:
-            self._run_PGC(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_PGC(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, device=device, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.PDHG:
-            self._run_PDHG(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
+            self._run_PDHG(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, device=device, show_criterion=show_criterion, show_logs=show_logs)
         elif self.optimizer == OptimizerType.LBFGS:
             self._run_LBFGS(y=y, withTumor=withTumor, stop_criterion=stop_criterion, stop_threshold=stop_threshold, stop_window_size=stop_window_size, show_criterion=show_criterion, show_logs=show_logs)
         else:
@@ -774,7 +777,7 @@ class AlgebraicRecon(Recon):
             print(f"[AOT-biomaps] Reconstruction completed successfully.")
         self.load_reconCASToR(withTumor=withTumor)
 
-    def _run_MLEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+    def _run_MLEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device=None, show_criterion=True, show_logs=True):
         """Run MLEM reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = MLEM(
@@ -785,6 +788,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -801,6 +805,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -809,7 +814,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_PGD(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+    def _run_PGD(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device=None, show_criterion=True, show_logs=True):
         """Run Projected Gradient Descent reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = PGD(
@@ -822,6 +827,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -840,6 +846,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -848,7 +855,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_LBFGS(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+    def _run_LBFGS(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device=None, show_criterion=True, show_logs=True):
         """Run LBFGS reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = LBFGS(
@@ -863,6 +870,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -883,6 +891,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -891,7 +900,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_MAPEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+    def _run_MAPEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device=None, show_criterion=True, show_logs=True):
         """Run MAPEM reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = MAPEM(
@@ -906,6 +915,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -926,6 +936,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -934,7 +945,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_DEPIERRO(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+    def _run_DEPIERRO(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device=None, show_criterion=True, show_logs=True):
         """Run DEPIERRO reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = DEPIERRO(
@@ -949,6 +960,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -969,6 +981,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction = self.isCostFunction,
                 withTumor=withTumor,
@@ -977,7 +990,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_PPGMLEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+    def _run_PPGMLEM(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device=None, show_criterion=True, show_logs=True):
         """Run PPGMLEM reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = PPGMLEM(
@@ -992,6 +1005,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1012,6 +1026,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1020,7 +1035,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_FISTA(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+    def _run_FISTA(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device=None, show_criterion=True, show_logs=True):
         """Run FISTA reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = FISTA(
@@ -1038,6 +1053,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1061,6 +1077,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1069,7 +1086,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_PGC(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+    def _run_PGC(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device=None, show_criterion=True, show_logs=True):
         """Run PGC reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = PGC(
@@ -1087,6 +1104,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1110,6 +1128,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1118,7 +1137,7 @@ class AlgebraicRecon(Recon):
                 show_criterion=show_criterion
             )
 
-    def _run_PDHG(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, show_criterion=True, show_logs=True):
+    def _run_PDHG(self, y, withTumor=True, stop_criterion=StopCriterionType.MAX_ITERATIONS, stop_threshold=None, stop_window_size=1, device=None, show_criterion=True, show_logs=True):
         """Run PDHG reconstruction."""
         if withTumor:
             self.reconPhantom, self.indices, self.cost_historyPhantom = PDHG(
@@ -1136,6 +1155,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,
@@ -1159,6 +1179,7 @@ class AlgebraicRecon(Recon):
                 stop_criterion=stop_criterion,
                 stop_threshold=stop_threshold,
                 stop_window_size=stop_window_size,
+                device=device,
                 isSavingEachIteration=self.isSavingEachIteration,
                 isCostFunction=self.isCostFunction,
                 withTumor=withTumor,

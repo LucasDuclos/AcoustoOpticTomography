@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import trange
 from typing import Optional, Union, Tuple
 
-from AOT_biomaps.AOT_Recon.ReconTools import get_array_module, get_device_context, forward_projection, backward_projection, get_potential_function, check_stopping_criterion, calculate_step_size_PGC
+from AOT_biomaps.AOT_Recon.ReconTools import ensure_device, get_array_module, get_device_context, forward_projection, backward_projection, get_potential_function, check_stopping_criterion, calculate_step_size_PGC
 from AOT_biomaps.AOT_Recon.ReconEnums import PotentialType, PotentialShapeType, StopCriterionType
 from AOT_biomaps.AOT_Recon.AOT_Preconditioner.NoPreconditioner import NoPreconditioner
 from AOT_biomaps.AOT_Recon.AOT_SMatrix.SMatrix_SELL import SMatrix_SELL
@@ -56,6 +56,7 @@ def PGC(
     stop_criterion: StopCriterionType = StopCriterionType.MAX_ITERATIONS,
     stop_threshold: float = 100.0,
     stop_window_size: int = 5,
+    device: Optional[str] = None,
     isSavingEachIteration: bool = True,
     isCostFunction: bool = False,
     withTumor: bool = True,
@@ -100,6 +101,7 @@ def PGC(
         stop_criterion: Criterion for stopping the iterations (StopCriterionType enum)
         stop_threshold: Threshold value for the stopping criterion (for MAX_iterations, this is ignored)
         stop_window_size: Window size (used to avoid early stop due to oscillations)
+        device: Device to use ('cpu' or 'gpu'), if None, uses SMatrix.device
         isSavingEachIteration: If True, stores intermediate reconstructions.
         isCostFunction: If True, tracks the cost function history.
         withTumor: Flag for description.
@@ -107,6 +109,7 @@ def PGC(
         show_logs: Displays tqdm progress bar.
         show_criterion: If True, shows stopping criterion evolution in progress bar
     """
+    ensure_device(SMatrix, device,show_logs=show_logs)
     xp = get_array_module(SMatrix)
     is_gpu = (xp.__name__ == 'cupy')
 
