@@ -149,7 +149,7 @@ def mse(SMatrix, lambda_true, lambda_pred):
 # ALGORITHM FUNCTIONS
 # =============================================================================
 
-def estimate_lipschitz_constant(SMatrix, preconditioner, num_iters=20):
+def estimate_lipschitz_constant(SMatrix, preconditioner, num_iters=20, show_logs=True):
     """
     Estimate the Lipschitz constant (spectral radius) of the gradient operator
     using the Power Iteration method.
@@ -164,7 +164,7 @@ def estimate_lipschitz_constant(SMatrix, preconditioner, num_iters=20):
         eps = 1e-12
         L_est = 0.0
 
-        for i in range(num_iters):
+        for _ in trange(num_iters, desc="[AOT-biomaps] Estimating Lipschitz constant", disable=not show_logs):
             # Forward projection -> u = A * v_k
             Av = forward_projection(SMatrix, v)
             if float(xp.sum(xp.abs(Av))) < eps:
@@ -189,7 +189,6 @@ def estimate_lipschitz_constant(SMatrix, preconditioner, num_iters=20):
             L_est = norm 
 
         return max(L_est, 0.0)
-
 
 def calculate_step_size_LS(SMatrix, preconditioner, eta, num_iters, show_logs):
     if eta is None:

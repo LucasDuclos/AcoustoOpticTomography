@@ -113,7 +113,7 @@ def calculate_step_size_PGD(SMatrix, preconditioner, num_iters, show_logs):
         - show_logs : Print information.
     """
 
-    L = estimate_lipschitz_constant(SMatrix, preconditioner=preconditioner, num_iters=num_iters)
+    L = estimate_lipschitz_constant(SMatrix, preconditioner=preconditioner, num_iters=num_iters, show_logs=show_logs)
 
     alpha = 1.0 / L if L > 0 else 1.0
 

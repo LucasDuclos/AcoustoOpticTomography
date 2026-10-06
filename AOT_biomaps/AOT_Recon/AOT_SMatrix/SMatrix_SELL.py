@@ -415,6 +415,7 @@ class SMatrix_SELL(SMatrix):
 
         data.close()
         self.device = 'cpu'
+        self._cpu_csr_cache = None
         print(f"[AOT-biomaps] SELL SMatrix loaded into CPU RAM ({self.total_storage} elements).")
 
     def _load_sparse_matrix_gpu(self, filePath):
@@ -537,28 +538,19 @@ class SMatrix_SELL(SMatrix):
         else:
             theta_cpu = np.asarray(theta, dtype=dtype) if not isinstance(theta, np.ndarray) else theta
 
-            if virt:
-                full_NT = self._full_N * self._full_T
+            if virt and self._vs_active_cols is not None:
                 full_ZX = self._full_Z * self._full_X
-                if self._vs_active_cols is not None:
-                    theta_tmp = np.zeros(full_ZX, dtype=dtype)
-                    theta_tmp[self._vs_active_cols] = theta_cpu
-                    theta_cpu = theta_tmp
-            else:
-                full_NT = self.N * self.T
+                theta_tmp = np.zeros(full_ZX, dtype=dtype)
+                theta_tmp[self._vs_active_cols] = theta_cpu
+                theta_cpu = theta_tmp
 
-            valid = self.sell_values != 0
-            v_vals = self.sell_values[valid]
-            v_cols = self.sell_colinds[valid]
-            v_rows = self.sell_rowinds[valid]
-
-            q_permuted = np.zeros(full_NT, dtype=dtype)
-            np.add.at(q_permuted, v_rows, v_vals * theta_cpu[v_cols])
-            q_cpu = q_permuted[self.inv_row_perm]
+            A = self._ensure_cpu_csr_cache()
+            q = A.dot(theta_cpu)
 
             if virt:
-                return q_cpu[self._vt_active_rows]
-            return q_cpu
+                return q[self._vt_active_rows]
+            return q
+
 
     def backward_projection(self, e: Union[np.ndarray, 'cp.ndarray']) -> Union[np.ndarray, 'cp.ndarray']:
         """Backprojection: c = phi_s . A_sell^H . P . phi_t^T . e."""
@@ -612,23 +604,12 @@ class SMatrix_SELL(SMatrix):
 
             if virt:
                 full_NT = self._full_N * self._full_T
-                full_ZX = self._full_Z * self._full_X
                 e_tmp = np.zeros(full_NT, dtype=dtype)
                 e_tmp[self._vt_active_rows] = e_cpu
                 e_cpu = e_tmp
-            else:
-                full_NT = self.N * self.T
-                full_ZX = self.Z * self.X
 
-            e_cpu_permuted = e_cpu[self.row_perm]
-            c = np.zeros(full_ZX, dtype=dtype)
-
-            valid = self.sell_values != 0
-            v_vals = self.sell_values[valid]
-            v_cols = self.sell_colinds[valid]
-            v_rows = self.sell_rowinds[valid]
-
-            np.add.at(c, v_cols.astype(np.int64), np.conj(v_vals) * e_cpu_permuted[v_rows])
+            A = self._ensure_cpu_csr_cache()
+            c = A.conj().T.dot(e_cpu)
 
             if virt and self._vs_active_cols is not None:
                 return c[self._vs_active_cols]
@@ -663,6 +644,8 @@ class SMatrix_SELL(SMatrix):
                 if col < len(window_cpu):
                     self.sell_values[i] *= window_cpu[col]
 
+            self._invalidate_cpu_csr_cache() # Invalidate the CSR cache since the matrix has changed
+
     def compute_norm_factor(self):
         """Column normalization factor, on the effective (virtually truncated) operator."""
         virt = self._is_virtual_truncated()
@@ -696,8 +679,7 @@ class SMatrix_SELL(SMatrix):
                 self.norm_factor_inv_gpu = 1.0 / (col_sum_gpu + 1e-10)
                 self.norm_factor_inv = cp.asnumpy(self.norm_factor_inv_gpu)
         else:
-            col_sums = np.zeros(full_ZX, dtype=np.float32)
-            np.add.at(col_sums, self.sell_colinds.astype(np.int64), np.abs(self.sell_values))
+            col_sums = np.bincount(self.sell_colinds.astype(np.int64), weights=np.abs(self.sell_values).astype(np.float64), minlength=full_ZX).astype(np.float32)
 
             if virt and self._vs_active_cols is not None:
                 col_sums = col_sums[self._vs_active_cols]
@@ -794,9 +776,8 @@ class SMatrix_SELL(SMatrix):
                 self._release_pool()
                 return diag
         else:
-            diag = np.zeros(full_ZX, dtype=np.float32)
             valid = self.sell_values != 0
-            np.add.at(diag, self.sell_colinds[valid].astype(np.int64), np.abs(self.sell_values[valid]) ** 2)
+            diag = np.bincount(self.sell_colinds[valid].astype(np.int64), weights=np.abs(self.sell_values[valid]).astype(np.float64) ** 2, minlength=full_ZX).astype(np.float32)
 
             if virt and self._vs_active_cols is not None:
                 diag = diag[self._vs_active_cols]
@@ -824,7 +805,8 @@ class SMatrix_SELL(SMatrix):
             for i in range(0, self.sell_values.size, chunk):
                 max_val = max(max_val, float(np.abs(self.sell_values[i:i+chunk]).max()))
             if max_val > 0:
-                self.sell_values /= max_val           
+                self.sell_values /= max_val    
+            self._invalidate_cpu_csr_cache() # Invalidate CPU CSR cache after normalization       
         else:
             warnings.warn("[AOT-biomaps] SELL Matrix not allocated, normalization impossible.")
             return
@@ -1191,6 +1173,8 @@ class SMatrix_SELL(SMatrix):
                 # B.7 Rebuild sell_rowinds for CPU projections
                 self.sell_rowinds = self._build_sell_rowinds(new_NT)
 
+                self._invalidate_cpu_csr_cache() # Invalidate the CSR cache since the matrix has changed
+
             # ==========================================================
             # Common bookkeeping
             # ==========================================================
@@ -1367,6 +1351,7 @@ class SMatrix_SELL(SMatrix):
                 self.norm_factor_inv_gpu = cp.asarray(self.norm_factor_inv)
             self._release_pool()
         self.device = f'gpu:{self.gpu_index}'
+        self._invalidate_cpu_csr_cache() # Invalidate the CSR cache since the matrix has been moved to GPU
 
     def to_cpu(self):
         """Transfer the SELL matrix from GPU VRAM to CPU RAM (reversible with to_gpu)."""
@@ -1390,3 +1375,33 @@ class SMatrix_SELL(SMatrix):
         self.sell_rowinds = self._build_sell_rowinds()
         self._free_specific()
         self.device = 'cpu'
+        self._invalidate_cpu_csr_cache() # Invalidate the CSR cache since the matrix has been moved to CPU
+
+    def _invalidate_cpu_csr_cache(self):
+        """Invalidate the cached scipy CSR after any mutation of sell_values."""
+        self._cpu_csr_cache = None
+
+    def _ensure_cpu_csr_cache(self):
+        """Build (once) a scipy CSR matrix equivalent to the SELL layout.
+        Physical rows = inv_row_perm[sell_rowinds]. Much faster than np.add.at
+        (multithreaded scipy kernels) for repeated forward/backward projections."""
+        if getattr(self, "_cpu_csr_cache", None) is not None:
+            return self._cpu_csr_cache
+
+        if self.sell_values is None:
+            raise RuntimeError("[AOT-biomaps] SELL matrix not allocated on CPU.")
+
+        from scipy.sparse import csr_matrix
+
+        valid = self.sell_values != 0          # excludes slice padding (values == 0)
+        v_vals = self.sell_values[valid]
+        v_cols = self.sell_colinds[valid].astype(np.int32)
+        v_rows_sorted = self.sell_rowinds[valid]
+        v_rows_phys = self.inv_row_perm[v_rows_sorted].astype(np.int32)
+
+        num_rows = int(self._full_N * self._full_T) if self._is_virtual_truncated() else int(self.N * self.T)
+        num_cols = int(self._full_Z * self._full_X) if self._is_virtual_truncated() else int(self.Z * self.X)
+
+        coo = csr_matrix((v_vals, (v_rows_phys, v_cols)), shape=(num_rows, num_cols))
+        self._cpu_csr_cache = coo   # CSR handles duplicate-free sums automatically
+        return self._cpu_csr_cache

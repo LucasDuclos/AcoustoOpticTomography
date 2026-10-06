@@ -156,11 +156,7 @@ def calculate_step_size_PDHG(
         # 1. STANDARD PDHG (Scalar Steps)
         # ==========================================================
         if preconditioner_type == PreconditionerType.NONE:
-            L_data = estimate_lipschitz_constant(
-                SMatrix,
-                preconditioner=NoPreconditioner(SMatrix=SMatrix),
-                num_iters=num_iters
-            )
+            L_data = estimate_lipschitz_constant(SMatrix, preconditioner=NoPreconditioner(SMatrix=SMatrix), num_iters=num_iters, show_logs=show_logs)
             L_grad = 8.0  # ||∇||^2 <= 8 for 2D finite differences
             L_total = num_subsets * L_data + L_grad
 

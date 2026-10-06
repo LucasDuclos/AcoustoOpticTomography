@@ -114,7 +114,7 @@ def calculate_step_size_FISTA(SMatrix, preconditioner, potential_type, beta, del
     - L_data = λ_max(P⁻¹ Aᴴ A) (estimated via Power Iteration).
     - L_prior is derived from the maximum eigenvalue of the regularization Hessian (Gerschgorin bounds).
     """
-    L_data = estimate_lipschitz_constant(SMatrix, preconditioner=preconditioner, num_iters=num_iters)
+    L_data = estimate_lipschitz_constant(SMatrix, preconditioner=preconditioner, num_iters=num_iters, show_logs=show_logs)
     
     # Bounding the Hessian of the regularization term
     if potential_type == PotentialType.QUADRATIC:
