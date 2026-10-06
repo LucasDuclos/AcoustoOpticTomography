@@ -1337,6 +1337,7 @@ class SMatrix_SELL(SMatrix):
         if self.sell_values is None:
             raise RuntimeError("[AOT-biomaps] SELL matrix not allocated on CPU, cannot transfer to GPU.")
         self.gpu_index = gpu_index
+        self.device = f'gpu:{self.gpu_index}'
         self.load_module()
         cp_dtype = self._get_cp_dtype()
         with cp.cuda.Device(self.gpu_index):
@@ -1350,7 +1351,7 @@ class SMatrix_SELL(SMatrix):
             if self.norm_factor_inv is not None:
                 self.norm_factor_inv_gpu = cp.asarray(self.norm_factor_inv)
             self._release_pool()
-        self.device = f'gpu:{self.gpu_index}'
+        
         self._invalidate_cpu_csr_cache() # Invalidate the CSR cache since the matrix has been moved to GPU
 
     def to_cpu(self):
@@ -1392,15 +1393,13 @@ class SMatrix_SELL(SMatrix):
         v_vals = self.sell_values[valid]
         v_cols = self.sell_colinds[valid].astype(np.int32)
         v_rows_sorted = self.sell_rowinds[valid]
-        v_rows_phys = self.inv_row_perm[v_rows_sorted].astype(np.int32)
+        # sorted row -> physical row: physical = row_perm[sorted]  (NOT inv_row_perm!)
+        v_rows_phys = self.row_perm[v_rows_sorted].astype(np.int32)
 
         num_rows = int(self._full_N * self._full_T) if self._is_virtual_truncated() else int(self.N * self.T)
         num_cols = int(self._full_Z * self._full_X) if self._is_virtual_truncated() else int(self.Z * self.X)
 
         self._cpu_csr_cache = csr_matrix((v_vals, (v_rows_phys, v_cols)), shape=(num_rows, num_cols))
-
-        # Pre-compute the Hermitian adjoint ONCE (conj + transpose + CSR conversion):
-        # doing A.conj().T inside backward_projection would copy O(nnz) at EVERY call.
         self._cpu_csrH_cache = self._cpu_csr_cache.conj().T.tocsr()
         return self._cpu_csr_cache
 

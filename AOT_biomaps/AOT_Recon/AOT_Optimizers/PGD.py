@@ -227,7 +227,7 @@ def PGD(
 
         prec_str = preconditioner.get_name()
         cplx_str = "COMPLEX (4-phases quadrature) " if SMatrix.isComplexSMatrix else "REAL "
-        description = f"[AOT-biomaps] {cplx_str} PGD 4-phases ({SMatrix.matrix_type.name}) --- {prec_str} --- {'WITH' if withTumor else 'WITHOUT'} TUMOR --- DEVICE: {SMatrix.device.upper()}"
+        description = f"[AOT-biomaps] {cplx_str} PGD ({SMatrix.matrix_type.name}) --- {prec_str} --- {'WITH' if withTumor else 'WITHOUT'} TUMOR --- DEVICE: {SMatrix.device.upper()}"
         iterator = trange(numIterations, desc=description) if show_logs else range(numIterations)
 
         for it in iterator:

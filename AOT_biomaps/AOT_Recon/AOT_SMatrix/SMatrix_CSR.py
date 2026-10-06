@@ -873,6 +873,7 @@ class SMatrix_CSR(SMatrix):
         if self.h_values is None:
             raise RuntimeError("[AOT-biomaps] CSR matrix not allocated on CPU, cannot transfer to GPU.")
         self.gpu_index = gpu_index
+        self.device = f'gpu:{self.gpu_index}'
         self.load_module()  # compile/load AOT_biomaps_kernels if not already loaded
         cp_dtype = self._get_cp_dtype()
         with cp.cuda.Device(self.gpu_index):
@@ -886,7 +887,7 @@ class SMatrix_CSR(SMatrix):
             self.h_values, self.h_col_ind = None, None
             self.scipy_csr = None
             self._release_pool()
-        self.device = f'gpu:{self.gpu_index}'
+        
 
     def to_cpu(self):
         """Transfer the CSR matrix from GPU VRAM to CPU RAM (reversible with to_gpu)."""

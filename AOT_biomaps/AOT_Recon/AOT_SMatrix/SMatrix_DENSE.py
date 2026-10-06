@@ -672,14 +672,14 @@ class SMatrix_DENSE(SMatrix):
         if self.dense_matrix is None:
             raise RuntimeError("[AOT-biomaps] DENSE matrix not allocated on CPU, cannot transfer to GPU.")
         self.gpu_index = gpu_index
+        self.device = f'gpu:{self.gpu_index}'
         self.load_module()
         with cp.cuda.Device(self.gpu_index):
             self.dense_matrix_gpu = cp.asarray(self.dense_matrix).astype(self._get_cp_dtype())
             if self.norm_factor_inv is not None:
                 self.norm_factor_inv_gpu = cp.asarray(self.norm_factor_inv)
             self._release_pool()
-        self.device = f'gpu:{self.gpu_index}'
-
+        
     def to_cpu(self):
         """Transfer the DENSE matrix from GPU VRAM to CPU RAM (reversible with to_gpu)."""
         if self.dense_matrix_gpu is None:
